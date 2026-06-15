@@ -6,6 +6,10 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3:8b";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
 const GEMINI_MODEL = "gemini-2.0-flash";
 
+const GROQ_API_KEY = process.env.GROQ_API_KEY ?? "";
+const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+
 // ─── Ollama ───────────────────────────────────────────
 async function callOllama(message: string, systemPrompt: string): Promise<string> {
   const res = await fetch(`${OLLAMA_URL}/api/chat`, {
@@ -53,6 +57,37 @@ async function callGemini(message: string, systemPrompt: string): Promise<string
   return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "応答を取得できませんでした。";
 }
 
+// ─── Groq ────────────────────────────────────────────
+async function callGroq(message: string, systemPrompt: string): Promise<string> {
+  if (!GROQ_API_KEY) {
+    throw new Error("GROQ_API_KEYが設定されていません。.env.localを確認してください。");
+  }
+
+  const res = await fetch(GROQ_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: message },
+      ],
+      temperature: 0.7,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err?.error?.message ?? `Groq error: ${res.status}`);
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? "応答を取得できませんでした。";
+}
+
 // ─── ルーティング判定 ──────────────────────────────────
 function shouldUseGemini(message: string): boolean {
   const geminiKeywords = [
@@ -66,7 +101,7 @@ function shouldUseGemini(message: string): boolean {
 export async function POST(req: NextRequest) {
   const { message, provider, mode } = (await req.json()) as {
     message?: string;
-    provider?: "ollama" | "gemini" | "auto";
+    provider?: "ollama" | "gemini" | "groq" | "auto";
     mode?: SecretaryMode;
   };
 
@@ -77,17 +112,21 @@ export async function POST(req: NextRequest) {
   // 秘書モード別のシステムプロンプトを取得
   const systemPrompt = getSystemPrompt(mode);
 
-  // provider: "ollama" | "gemini" | "auto"
-  let useGemini = false;
-  if (provider === "gemini") useGemini = true;
-  else if (provider === "auto") useGemini = shouldUseGemini(message);
+  let selectedProvider: "ollama" | "gemini" | "groq" = "ollama";
+  if (provider === "gemini") selectedProvider = "gemini";
+  else if (provider === "groq") selectedProvider = "groq";
+  else if (provider === "auto") {
+    // autoはGroqを優先（クラウドで最速）、フォールバックはGemini
+    selectedProvider = shouldUseGemini(message) ? "gemini" : "groq";
+  }
 
   try {
-    const reply = useGemini
-      ? await callGemini(message, systemPrompt)
-      : await callOllama(message, systemPrompt);
-    const usedProvider = useGemini ? "gemini" : "ollama";
-    return NextResponse.json({ reply, provider: usedProvider, mode: mode ?? "note" });
+    let reply: string;
+    if (selectedProvider === "gemini") reply = await callGemini(message, systemPrompt);
+    else if (selectedProvider === "groq") reply = await callGroq(message, systemPrompt);
+    else reply = await callOllama(message, systemPrompt);
+
+    return NextResponse.json({ reply, provider: selectedProvider, mode: mode ?? "note" });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "不明なエラー";
     console.error(msg);
