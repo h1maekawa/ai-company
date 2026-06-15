@@ -5,29 +5,41 @@ const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3:8b";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
 const GEMINI_MODEL = "gemini-2.0-flash";
-
 const GROQ_API_KEY = process.env.GROQ_API_KEY ?? "";
 const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // ─── Ollama ───────────────────────────────────────────
 async function callOllama(message: string, systemPrompt: string): Promise<string> {
-  const res = await fetch(`${OLLAMA_URL}/api/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message },
-      ],
-      stream: false,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-  if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
-  const data = await res.json();
-  return data?.message?.content ?? "応答を取得できませんでした。";
+  try {
+    const res = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: message },
+        ],
+        stream: false,
+      }),
+    });
+
+    if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
+    const data = await res.json();
+    return data?.message?.content ?? "応答を取得できませんでした。";
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      throw new Error("Ollamaサーバーに接続できません（クラウド環境ではGroqまたはGeminiをご利用ください）。");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // ─── Gemini ───────────────────────────────────────────
@@ -57,7 +69,7 @@ async function callGemini(message: string, systemPrompt: string): Promise<string
   return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "応答を取得できませんでした。";
 }
 
-// ─── Groq ────────────────────────────────────────────
+// ─── Groq ─────────────────────────────────────────────
 async function callGroq(message: string, systemPrompt: string): Promise<string> {
   if (!GROQ_API_KEY) {
     throw new Error("GROQ_API_KEYが設定されていません。.env.localを確認してください。");
@@ -109,14 +121,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "メッセージが空です" }, { status: 400 });
   }
 
-  // 秘書モード別のシステムプロンプトを取得
   const systemPrompt = getSystemPrompt(mode);
 
-  let selectedProvider: "ollama" | "gemini" | "groq" = "ollama";
-  if (provider === "gemini") selectedProvider = "gemini";
+  let selectedProvider: "ollama" | "gemini" | "groq" = "groq";
+  if (provider === "ollama") selectedProvider = "ollama";
+  else if (provider === "gemini") selectedProvider = "gemini";
   else if (provider === "groq") selectedProvider = "groq";
   else if (provider === "auto") {
-    // autoはGroqを優先（クラウドで最速）、フォールバックはGemini
     selectedProvider = shouldUseGemini(message) ? "gemini" : "groq";
   }
 

@@ -29,14 +29,14 @@ function renderMarkdown(text: string): string {
 const PROVIDER_LABELS: Record<Provider, string> = {
   ollama: "🖥️ Ollama（ローカル）",
   gemini: "✨ Gemini（クラウド）",
-  groq:   "⚡ Groq（超高速）",
-  auto:   "🤖 Auto（自動判定）",
+  groq: "⚡ Groq（超高速）",
+  auto: "🤖 Auto（自動判定）",
 };
 
 const PROVIDER_BADGE: Record<string, string> = {
   ollama: "bg-slate-700 text-slate-300",
   gemini: "bg-blue-900 text-blue-300",
-  groq:   "bg-orange-900 text-orange-300",
+  groq: "bg-orange-900 text-orange-300",
 };
 
 const MODE_ICON: Record<SecretaryMode, string> = {
@@ -68,7 +68,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [provider, setProvider] = useState<Provider>("ollama");
+  const [provider, setProvider] = useState<Provider>("groq");
   const [mode, setMode] = useState<SecretaryMode>("note");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -116,7 +116,6 @@ export default function Home() {
   function handleModeChange(newMode: SecretaryMode) {
     if (newMode === mode) return;
     setMode(newMode);
-    // 会話履歴は維持（必要なら setMessages([]) でリセット可能）
   }
 
   return (
@@ -130,7 +129,7 @@ export default function Home() {
           <div>
             <h1 className="text-white font-semibold text-base leading-none">AI秘書</h1>
             <p className="text-slate-500 text-xs mt-0.5">
-              {MODE_ICON[mode]} {SECRETARY_LABELS[mode]} · Ollama + Gemini + Groq
+              {MODE_ICON[mode]} {SECRETARY_LABELS[mode]} · Ollama + Groq + Gemini
             </p>
           </div>
         </div>
@@ -141,16 +140,15 @@ export default function Home() {
             <button
               key={p}
               onClick={() => setProvider(p)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                provider === p
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${provider === p
                   ? "bg-blue-600 text-white"
                   : "text-slate-400 hover:text-slate-200"
-              }`}
+                }`}
             >
               {p === "ollama" ? "🖥️ Ollama"
                 : p === "gemini" ? "✨ Gemini"
-                : p === "groq" ? "⚡ Groq"
-                : "🤖 Auto"}
+                  : p === "groq" ? "⚡ Groq"
+                    : "🤖 Auto"}
             </button>
           ))}
         </div>
@@ -164,11 +162,10 @@ export default function Home() {
             <button
               key={m}
               onClick={() => handleModeChange(m)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                mode === m
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${mode === m
                   ? "bg-blue-600 text-white border-blue-500"
                   : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500"
-              }`}
+                }`}
               title={SECRETARY_DESCRIPTIONS[m]}
             >
               {MODE_ICON[m]} {SECRETARY_LABELS[m]}
@@ -183,8 +180,8 @@ export default function Home() {
           {SECRETARY_DESCRIPTIONS[mode]} ・{" "}
           {provider === "ollama" && "ローカルLLM（プライベート・オフライン動作）"}
           {provider === "gemini" && "Google Gemini 2.0 Flash（高性能・最新情報対応）"}
-          {provider === "groq" && "Groq LPU（llama-3.3-70b）超高速クラウド推論"}
-          {provider === "auto" && "キーワードで自動判定：「最新」「ニュース」→ Gemini、それ以外 → Groq"}
+          {provider === "groq" && "Groq LPU · llama-3.3-70b（超高速クラウド推論）"}
+          {provider === "auto" && "キーワードで自動判定：「最新」「ニュース」「トレンド」→ Gemini、それ以外 → Groq"}
         </p>
       </div>
 
@@ -229,17 +226,16 @@ export default function Home() {
                     <span className={`text-xs px-2 py-0.5 rounded-full ${PROVIDER_BADGE[msg.provider]}`}>
                       {msg.provider === "ollama" ? "🖥️ Ollama"
                         : msg.provider === "groq" ? "⚡ Groq"
-                        : "✨ Gemini"}
+                          : "✨ Gemini"}
                     </span>
                   )}
                 </div>
               )}
               <div
-                className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                  msg.role === "user"
+                className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === "user"
                     ? "bg-blue-600 text-white rounded-br-sm"
                     : "bg-slate-800 text-slate-200 rounded-bl-sm"
-                }`}
+                  }`}
               >
                 {msg.role === "assistant" ? (
                   <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
