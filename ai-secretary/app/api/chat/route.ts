@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSystemPrompt, SecretaryMode } from "@/app/lib/prompts";
 
-const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
+const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3:8b";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
 const GEMINI_MODEL = "gemini-2.0-flash";
