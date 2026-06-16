@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSystemPrompt, SecretaryMode } from "@/app/lib/prompts";
+import { getVaultFile } from "@/app/lib/vault";
 
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3:8b";
@@ -109,6 +110,30 @@ function shouldUseGemini(message: string): boolean {
   return geminiKeywords.some((kw) => message.includes(kw));
 }
 
+// ─── メモリ読み込み ──────────────────────────────────
+async function loadMemoryFromVault(): Promise<string> {
+  const memoryFiles = [
+    { name: "profile.md", path: "memory/profile.md" },
+    { name: "goals.md", path: "memory/goals.md" },
+    { name: "today.md", path: "memory/today.md" },
+  ];
+
+  const loadedParts: string[] = [];
+
+  for (const file of memoryFiles) {
+    try {
+      const { content } = await getVaultFile(file.path);
+      if (content && content.trim()) {
+        loadedParts.push(`=== ${file.name} ===\n${content.trim()}`);
+      }
+    } catch (e) {
+      console.error(`Failed to load memory file ${file.name}:`, e);
+    }
+  }
+
+  return loadedParts.join("\n\n");
+}
+
 // ─── メインハンドラー ──────────────────────────────────
 export async function POST(req: NextRequest) {
   const { message, provider, mode } = (await req.json()) as {
@@ -121,7 +146,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "メッセージが空です" }, { status: 400 });
   }
 
-  const systemPrompt = getSystemPrompt(mode);
+  let systemPrompt = getSystemPrompt(mode);
+
+  try {
+    const memory = await loadMemoryFromVault();
+    if (memory) {
+      systemPrompt = `${systemPrompt}\n\n---\n## あなたが把握しているユーザー情報（自動読み込み）\n\n${memory}\n---\n`;
+    }
+  } catch (e) {
+    console.error("Failed to append memory files to system prompt:", e);
+  }
 
   let selectedProvider: "ollama" | "gemini" | "groq" = "groq";
   if (provider === "ollama") selectedProvider = "ollama";
