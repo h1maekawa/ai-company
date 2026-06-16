@@ -4,8 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import {
   SECRETARY_LABELS,
   SECRETARY_DESCRIPTIONS,
-  SecretaryMode,
 } from "@/app/lib/prompts";
+import { SecretaryMode, SECRETARY_MODES } from "@/app/lib/config/modes";
 
 type Provider = "ollama" | "gemini" | "groq" | "auto";
 type Message = {
@@ -41,7 +41,8 @@ const PROVIDER_BADGE: Record<string, string> = {
 
 const MODE_ICON: Record<SecretaryMode, string> = {
   personal: "👤",
-  business: "💼",
+  company: "💼",
+  finance: "💰",
   note: "📝",
 };
 
@@ -51,10 +52,15 @@ const MODE_EXAMPLES: Record<SecretaryMode, string[]> = {
     "今週の振り返りをしたい",
     "睡眠リズムを整えたい",
   ],
-  business: [
+  company: [
     "今期のKPIを整理して",
     "新規事業の論点を洗い出して",
     "意思決定の壁打ちをしたい",
+  ],
+  finance: [
+    "現在の資産比率（ポートフォリオ）をどう最適化すべき？",
+    "ウォッチリストに登録している企業の評価方法について",
+    "長期的なインデックス積立と個別株投資の戦略バランス",
   ],
   note: [
     "今日の記事を企画して",
@@ -158,7 +164,7 @@ export default function Home() {
       <div className="border-b border-slate-800 px-6 py-3 bg-slate-900/40">
         <div className="max-w-3xl mx-auto flex flex-wrap gap-2 items-center">
           <span className="text-slate-500 text-xs mr-1">秘書モード:</span>
-          {(["personal", "business", "note"] as SecretaryMode[]).map((m) => (
+          {SECRETARY_MODES.map((m) => (
             <button
               key={m}
               onClick={() => handleModeChange(m)}
