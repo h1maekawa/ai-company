@@ -6,6 +6,7 @@ import { callGemini } from "@/app/lib/ai/gemini";
 import { callGroq } from "@/app/lib/ai/groq";
 import { loadMemoryFromVault } from "@/app/lib/memory/loader";
 import { parseSaveSuggestion } from "@/app/lib/parser/saveSuggestion";
+import { saveChatLog } from "@/app/lib/memory/logs";
 
 // ─── ルーティング判定 ──────────────────────────────────
 function shouldUseGemini(message: string): boolean {
@@ -74,6 +75,11 @@ export async function POST(req: NextRequest) {
 
     // Hybrid precheck and suggestion parsing
     const parsed = parseSaveSuggestion(message, rawReply);
+
+    // ─── Save Summary Log in the background (fire-and-forget) ───
+    saveChatLog(activeMode, message, parsed.replyWithoutMetadata).catch((err) => {
+      console.error("[DEBUG] Background saveChatLog failed:", err);
+    });
 
     return NextResponse.json({
       reply: parsed.replyWithoutMetadata,

@@ -4,6 +4,7 @@ import { callGroq } from "../ai/groq";
 import { callGemini } from "../ai/gemini";
 import { callOllama } from "../ai/ollama";
 import { toSlug } from "../utils/slug";
+import { applyWikiLinks } from "../parser/wikilink";
 
 export interface GenerateNoteInput {
   title: string;
@@ -76,6 +77,9 @@ ${templateContent ? `\n必ず以下の【テンプレート構成】に沿って
   // 3. Generate article with LLM
   const generatedArticle = await callLLM(userMessage, systemPrompt);
 
+  // Apply WikiLinks to body content
+  const linkedArticle = applyWikiLinks(generatedArticle);
+
   // 4. Generate unique serial ID
   const id = await generateUniqueId("nt");
 
@@ -91,7 +95,7 @@ source_ref: [${sourceRef.map(s => `"${s}"`).join(", ")}]
 related: []
 ---
 
-${generatedArticle.trim()}
+${linkedArticle.trim()}
 `;
 
   // 6. Resolve naming conflict and save

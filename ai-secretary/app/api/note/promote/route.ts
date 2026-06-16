@@ -5,6 +5,8 @@ import { toSlug } from "@/app/lib/utils/slug";
 import { callGroq } from "@/app/lib/ai/groq";
 import { callGemini } from "@/app/lib/ai/gemini";
 import { callOllama } from "@/app/lib/ai/ollama";
+import { saveKnowledge } from "@/app/lib/memory/knowledge";
+import { KnowledgeCategory } from "@/app/lib/parser/saveSuggestion";
 
 const KNOWLEDGE_CATEGORIES = [
   "sales",
@@ -27,8 +29,8 @@ async function callLLM(message: string, systemPrompt: string): Promise<string> {
   }
 }
 
-// Scans all category directories to find a file matching the knowledgeId
-async function findKnowledgeFile(knowledgeId: string): Promise<{ path: string; content: string } | null> {
+// Scans all category directories to find a file matching the knowledgeId, returning SHA as well
+async function findKnowledgeFile(knowledgeId: string): Promise<{ path: string; content: string; sha?: string } | null> {
   const idRegex = new RegExp(`id:\\s*${knowledgeId}`);
   for (const cat of KNOWLEDGE_CATEGORIES) {
     const dir = `memory/knowledge/${cat}`;
@@ -36,9 +38,9 @@ async function findKnowledgeFile(knowledgeId: string): Promise<{ path: string; c
       const fileNames = await listVaultDirectory(dir);
       for (const name of fileNames) {
         const filePath = `${dir}/${name}`;
-        const { content } = await getVaultFile(filePath);
+        const { content, sha } = await getVaultFile(filePath);
         if (idRegex.test(content)) {
-          return { path: filePath, content };
+          return { path: filePath, content, sha };
         }
       }
     } catch (e) {
@@ -79,6 +81,17 @@ function parseMarkdownContent(markdown: string): { title: string; contentBody: s
   return { title, contentBody, frontmatter };
 }
 
+function parseArray(valStr: string | undefined): string[] {
+  if (!valStr) return [];
+  try {
+    const clean = valStr.trim().replace(/^\[|\]$/g, "");
+    if (!clean) return [];
+    return clean.split(",").map(item => item.trim().replace(/^"|"|^'|'$/g, ""));
+  } catch (e) {
+    return [];
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { knowledgeId } = await req.json();
@@ -95,13 +108,38 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { title, contentBody } = parseMarkdownContent(source.content);
-    const slug = toSlug(title) || "promoted-note";
+    const { title, contentBody, frontmatter } = parseMarkdownContent(source.content);
+    
+    // Parse existing frontmatter values to carry over
+    const category = (frontmatter.category || "misc") as KnowledgeCategory;
+    const importance = parseInt(frontmatter.importance || "1", 10) as (1 | 2 | 3);
+    const tags = parseArray(frontmatter.tags);
+    const source_ref = parseArray(frontmatter.source_ref);
+    const related = parseArray(frontmatter.related);
+
+    // Extract slug from filename (removes YYYY-MM-DD- prefix and .md suffix)
+    const fileName = source.path.split("/").pop() || "";
+    const slug = fileName.slice(11, fileName.lastIndexOf("."));
+
+    // 2. Update status of original Knowledge entry to "promoted"
+    await saveKnowledge({
+      title,
+      slug,
+      category,
+      importance,
+      content: contentBody,
+      status: "promoted", // Update status
+      tags,
+      source_ref,
+      related,
+      id: knowledgeId,
+      sha: source.sha,
+    });
 
     const now = new Date();
     const dateHyphen = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
-    // 2. Create and Save Note Research File
+    // 3. Create and Save Note Research File
     const researchId = await generateUniqueId("nt");
     const researchFrontmatter = `---
 id: ${researchId}
@@ -131,7 +169,7 @@ ${contentBody}
     const researchPath = `${researchDir}/${researchFileName}`;
     await saveVaultFile(researchPath, researchFrontmatter);
 
-    // 3. LLM compiles Note Draft based on Research contents
+    // 4. LLM compiles Note Draft based on Research contents
     const systemPrompt = `あなたはプロのnote記事執筆者・編集者です。
 与えられたリサーチメモや箇条書きテキストに基づいて、読者の共感を呼び、わかりやすく行動を促す本格的なnote記事（下書き）を執筆してください。
 
@@ -151,7 +189,7 @@ ${contentBody}
 
     const generatedDraft = await callLLM(userMsg, systemPrompt);
 
-    // 4. Save Note Draft File
+    // 5. Save Note Draft File
     const draftId = await generateUniqueId("nt");
     const draftFrontmatter = `---
 id: ${draftId}
