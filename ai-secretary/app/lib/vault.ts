@@ -131,3 +131,56 @@ export async function saveVaultFile(
     }
   }
 }
+
+/**
+ * Lists filenames in a directory on GitHub Vault (production) or Local Filesystem (development)
+ */
+export async function listVaultDirectory(dirPath: string): Promise<string[]> {
+  if (GITHUB_OWNER && GITHUB_REPO && GITHUB_TOKEN) {
+    const githubPath = getGitHubPath(dirPath);
+    const url = `${API_BASE}/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}?ref=${GITHUB_BRANCH}`;
+
+    console.log(`[DEBUG] Vault-Utility LIST request to: ${url}`);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Vault-API',
+      },
+      cache: 'no-store',
+    });
+
+    if (response.status === 404) {
+      return [];
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = (await response.json()) as Array<{ name: string; type: string }>;
+    if (!Array.isArray(data)) {
+      return [];
+    }
+
+    return data.filter(item => item.type === 'file').map(item => item.name);
+  } else {
+    // Local filesystem fallback
+    try {
+      const localPath = path.resolve(process.cwd(), '..', dirPath);
+      if (fs.existsSync(localPath) && fs.statSync(localPath).isDirectory()) {
+        return fs.readdirSync(localPath).filter(name => {
+          const full = path.join(localPath, name);
+          return fs.statSync(full).isFile();
+        });
+      }
+    } catch (e) {
+      console.error(`[DEBUG] Local directory list failed for ${dirPath}:`, e);
+    }
+    return [];
+  }
+}
+

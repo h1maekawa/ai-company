@@ -54,7 +54,7 @@ const MODE_EXAMPLES: Record<SecretaryMode, string[]> = {
   ],
   company: [
     "今期のKPIを整理して",
-    "新規事業の論点を洗い出して",
+    "新規事業 of 論点を洗い出して",
     "意思決定の壁打ちをしたい",
   ],
   finance: [
@@ -70,6 +70,17 @@ const MODE_EXAMPLES: Record<SecretaryMode, string[]> = {
   ],
 };
 
+const KNOWLEDGE_CATEGORIES = [
+  { value: "sales", label: "📈 営業 (Sales)" },
+  { value: "marketing", label: "📢 マーケティング (Marketing)" },
+  { value: "recruiting", label: "👥 採用 (Recruiting)" },
+  { value: "investing", label: "💰 投資 (Investing)" },
+  { value: "systems", label: "⚙️ システム (Systems)" },
+  { value: "content", label: "📝 コンテンツ (Content)" },
+  { value: "strategy", label: "🎯 戦略 (Strategy)" },
+  { value: "misc", label: "📂 その他 (Misc)" },
+];
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -77,6 +88,15 @@ export default function Home() {
   const [provider, setProvider] = useState<Provider>("groq");
   const [mode, setMode] = useState<SecretaryMode>("note");
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Modal suggestion states
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalSlug, setModalSlug] = useState("");
+  const [modalCategory, setModalCategory] = useState("misc");
+  const [modalImportance, setModalImportance] = useState<1 | 2 | 3>(1);
+  const [modalContent, setModalContent] = useState("");
+  const [savingKnowledge, setSavingKnowledge] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -98,10 +118,27 @@ export default function Home() {
       });
       const data = await res.json();
       const reply = data.reply ?? data.error ?? "エラーが発生しました。";
+      
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: reply, provider: data.provider, mode: data.mode },
       ]);
+
+      // Pop modal if the Hybrid checker suggests saving
+      if (data.suggestSave) {
+        setModalTitle(text.slice(0, 30));
+        setModalSlug(data.slug || "knowledge-draft");
+        setModalCategory(data.knowledgeCategory || "misc");
+        setModalImportance(data.importance || 1);
+        
+        // Structure question and answer details for Vault content
+        const formatted = `## ユーザーの質問\n${text}\n\n## AI秘書の回答\n${reply}`;
+        setModalContent(formatted);
+        
+        setTimeout(() => {
+          setShowSaveModal(true);
+        }, 800);
+      }
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -109,6 +146,40 @@ export default function Home() {
       ]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSaveKnowledge() {
+    if (!modalTitle.trim() || !modalSlug.trim()) {
+      alert("タイトルとスラグを入力してください。");
+      return;
+    }
+
+    setSavingKnowledge(true);
+    try {
+      const res = await fetch("/api/knowledge/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: modalTitle,
+          slug: modalSlug,
+          category: modalCategory,
+          importance: modalImportance,
+          content: modalContent,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(`ナレッジを保存しました！\nID: ${data.id}\nパス: ${data.path}`);
+        setShowSaveModal(false);
+      } else {
+        alert(`保存に失敗しました: ${data.error || "不明なエラー"}`);
+      }
+    } catch {
+      alert("通信エラー。保存できませんでした。");
+    } finally {
+      setSavingKnowledge(false);
     }
   }
 
@@ -295,6 +366,109 @@ export default function Home() {
           </button>
         </div>
       </div>
+
+      {/* Save Suggestion Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1a1d26] border border-slate-700/60 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl shadow-blue-500/5 p-6 space-y-4">
+            <div className="flex items-center gap-2 text-blue-400">
+              <span className="text-xl font-bold">💡</span>
+              <h3 className="text-white font-semibold text-lg">ナレッジ保存の提案</h3>
+            </div>
+            
+            <p className="text-slate-400 text-xs leading-relaxed">
+              この会話には重要な戦略や知見が含まれている可能性があります。Obsidianのナレッジベースに保存しますか？
+            </p>
+
+            <div className="space-y-3 pt-2">
+              <div>
+                <label className="block text-slate-400 text-xs font-medium mb-1">タイトル (日本語)</label>
+                <input
+                  type="text"
+                  value={modalTitle}
+                  onChange={(e) => setModalTitle(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
+                  placeholder="タイトルを入力..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 text-xs font-medium mb-1">ファイル名スラグ (英数字とハイフンのみ)</label>
+                <input
+                  type="text"
+                  value={modalSlug}
+                  onChange={(e) => setModalSlug(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
+                  placeholder="例: docomo-sales-improvement"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 text-xs font-medium mb-1">カテゴリ</label>
+                  <select
+                    value={modalCategory}
+                    onChange={(e) => setModalCategory(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
+                  >
+                    {KNOWLEDGE_CATEGORIES.map((cat) => (
+                      <option key={cat.value} value={cat.value}>
+                        {cat.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 text-xs font-medium mb-1">重要度</label>
+                  <div className="flex items-center gap-1.5 h-[38px]">
+                    {[1, 2, 3].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setModalImportance(star as 1 | 2 | 3)}
+                        className="text-lg focus:outline-none transition-transform active:scale-95"
+                      >
+                        {modalImportance >= star ? (
+                          <span className="text-yellow-400">★</span>
+                        ) : (
+                          <span className="text-slate-600">☆</span>
+                        )}
+                      </button>
+                    ))}
+                    <span className="text-slate-500 text-xs ml-1">
+                      {modalImportance === 3 ? "資産化優先" : modalImportance === 2 ? "再利用価値" : "メモレベル"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800/80">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 text-xs font-medium transition-colors"
+              >
+                スキップ
+              </button>
+              <button
+                onClick={handleSaveKnowledge}
+                disabled={savingKnowledge}
+                className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-5 py-2 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:bg-slate-700 disabled:text-slate-500"
+              >
+                {savingKnowledge ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-white rounded-full animate-spin"></span>
+                    保存中...
+                  </>
+                ) : (
+                  "保存する"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
