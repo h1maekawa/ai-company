@@ -1,25 +1,125 @@
-import { SecretaryMode } from "../config/modes";
-import { MEMORY_MAP } from "../config/memory-map";
+import fs from "fs";
+import path from "path";
+import { MEMORY_SCOPES, DEFAULT_GLOBAL_SCOPE } from "../config/scopes";
 import { getVaultFile } from "../vault";
 
-/**
- * Loads Obsidian memory files according to the selected secretary mode
- * and merges them into a single context string.
- */
-export async function loadMemoryFromVault(mode: SecretaryMode): Promise<string> {
-  const fileDefs = MEMORY_MAP[mode] || MEMORY_MAP.personal; // Fallback to personal
-  const loadedParts: string[] = [];
+export type LoadedMemory = {
+  files: {
+    path: string;
+    content: string;
+  }[];
+};
 
-  for (const file of fileDefs) {
+/**
+ * Recursively scans a directory on the local filesystem and finds all .md files.
+ */
+function scanDirectoryRecursive(dirPath: string): string[] {
+  const absolutePath = path.resolve(process.cwd(), "..", dirPath);
+  const results: string[] = [];
+
+  if (!fs.existsSync(absolutePath)) {
+    return [];
+  }
+
+  const stat = fs.statSync(absolutePath);
+  if (!stat.isDirectory()) {
+    return [];
+  }
+
+  const recurse = (currentAbsPath: string, relativePathPrefix: string) => {
     try {
-      const { content } = await getVaultFile(file.path);
-      if (content && content.trim()) {
-        loadedParts.push(`=== ${file.name} ===\n${content.trim()}`);
+      const items = fs.readdirSync(currentAbsPath, { withFileTypes: true });
+      for (const item of items) {
+        const itemRelPath = path.join(relativePathPrefix, item.name);
+        const itemAbsPath = path.join(currentAbsPath, item.name);
+
+        if (item.isDirectory()) {
+          recurse(itemAbsPath, itemRelPath);
+        } else if (item.isFile() && item.name.endsWith(".md")) {
+          results.push(itemRelPath);
+        }
       }
     } catch (e) {
-      console.error(`Failed to load memory file ${file.name} for mode ${mode}:`, e);
+      console.error(`[DEBUG] Failed to scan directory ${currentAbsPath}:`, e);
+    }
+  };
+
+  recurse(absolutePath, dirPath);
+  return results;
+}
+
+/**
+ * Loads memory files dynamically based on Local, Shared, and Global scopes.
+ * Follows the priority: local > shared > global.
+ */
+export async function loadScopedMemory(secretaryId: string): Promise<LoadedMemory> {
+  const scope = MEMORY_SCOPES[secretaryId];
+  const loadedFiles: { path: string; content: string }[] = [];
+  const processedPaths = new Set<string>();
+
+  const localPaths = scope ? scope.local : [];
+  const sharedPaths = scope ? scope.shared : [];
+  const globalPaths = scope ? (scope.global.length > 0 ? scope.global : DEFAULT_GLOBAL_SCOPE) : DEFAULT_GLOBAL_SCOPE;
+
+  const allScopeGroups = [
+    { type: "local", paths: localPaths },
+    { type: "shared", paths: sharedPaths },
+    { type: "global", paths: globalPaths }
+  ];
+
+  for (const group of allScopeGroups) {
+    for (const rawPath of group.paths) {
+      // Normalize path (remove trailing slash for fs checks)
+      const cleanPath = rawPath.replace(/\/$/, "");
+      if (processedPaths.has(cleanPath)) continue;
+      processedPaths.add(cleanPath);
+
+      const absolutePath = path.resolve(process.cwd(), "..", cleanPath);
+      if (!fs.existsSync(absolutePath)) {
+        continue;
+      }
+
+      const stat = fs.statSync(absolutePath);
+      if (stat.isFile()) {
+        if (cleanPath.endsWith(".md")) {
+          try {
+            const { content } = await getVaultFile(cleanPath);
+            if (content && content.trim()) {
+              loadedFiles.push({ path: cleanPath, content });
+            }
+          } catch (e) {
+            console.error(`Failed to load file ${cleanPath}:`, e);
+          }
+        }
+      } else if (stat.isDirectory()) {
+        const mdFiles = scanDirectoryRecursive(cleanPath);
+        for (const mdFile of mdFiles) {
+          try {
+            const { content } = await getVaultFile(mdFile);
+            if (content && content.trim()) {
+              loadedFiles.push({ path: mdFile, content });
+            }
+          } catch (e) {
+            console.error(`Failed to load directory file ${mdFile}:`, e);
+          }
+        }
+      }
     }
   }
 
-  return loadedParts.join("\n\n");
+  return { files: loadedFiles };
+}
+
+/**
+ * Legacy compatibility wrapper. Maps a legacy mode to a default secretary.
+ */
+export async function loadMemoryFromVault(mode: string): Promise<string> {
+  let secretaryId = "executive-coo";
+  if (mode === "personal") secretaryId = "personal-task";
+  else if (mode === "company") secretaryId = "company-strategy";
+  else if (mode === "finance") secretaryId = "finance-strategy";
+  else if (mode === "note") secretaryId = "note-monetize-funnel";
+
+  const { files } = await loadScopedMemory(secretaryId);
+  return files.map(f => `=== ${f.path.split("/").pop()} ===\n${f.content.trim()}`).join("\n\n");
 }

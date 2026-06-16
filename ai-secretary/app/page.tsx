@@ -1,24 +1,25 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import {
-  SECRETARY_LABELS,
-  SECRETARY_DESCRIPTIONS,
-} from "@/app/lib/prompts";
-import { SecretaryMode, SECRETARY_MODES } from "@/app/lib/config/modes";
+import OrgTree from "@/components/OrgTree";
+import Breadcrumbs from "@/components/Breadcrumbs";
+import ExecutivePanel from "@/components/ExecutivePanel";
+import FlowMap from "@/components/FlowMap";
+import { ContextBus, TaskNode, createDefaultBus } from "@/app/lib/context/bus";
+import { findSecretary } from "@/app/lib/config/registry";
 
 type Provider = "ollama" | "gemini" | "groq" | "auto";
 type Message = {
   role: "user" | "assistant";
   content: string;
   provider?: "ollama" | "gemini" | "groq";
-  mode?: SecretaryMode;
+  secretaryId?: string;
 };
 
 function renderMarkdown(text: string): string {
   return text
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold text-blue-400 mt-5 mb-2">$1</h2>')
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold text-slate-300 mt-3 mb-1">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 class="text-base font-bold text-blue-400 mt-4 mb-2">$1</h2>')
+    .replace(/^### (.+)$/gm, '<h3 class="text-sm font-semibold text-slate-350 mt-3 mb-1">$1</h3>')
     .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal text-slate-300">$1</li>')
     .replace(/^[-•] (.+)$/gm, '<li class="ml-4 list-disc text-slate-300">$1</li>')
     .replace(/\*\*(.+?)\*\*/g, '<strong class="text-white">$1</strong>')
@@ -35,39 +36,8 @@ const PROVIDER_LABELS: Record<Provider, string> = {
 
 const PROVIDER_BADGE: Record<string, string> = {
   ollama: "bg-slate-700 text-slate-300",
-  gemini: "bg-blue-900 text-blue-300",
-  groq: "bg-orange-900 text-orange-300",
-};
-
-const MODE_ICON: Record<SecretaryMode, string> = {
-  personal: "👤",
-  company: "💼",
-  finance: "💰",
-  note: "📝",
-};
-
-const MODE_EXAMPLES: Record<SecretaryMode, string[]> = {
-  personal: [
-    "今日やるべきこと整理して",
-    "今週の振り返りをしたい",
-    "睡眠リズムを整えたい",
-  ],
-  company: [
-    "今期のKPIを整理して",
-    "新規事業の論点を洗い出して",
-    "意思決定の壁打ちをしたい",
-  ],
-  finance: [
-    "現在の資産比率（ポートフォリオ）をどう最適化すべき？",
-    "ウォッチリストに登録している企業の評価方法について",
-    "長期的なインデックス積立と個別株投資の戦略バランス",
-  ],
-  note: [
-    "今日の記事を企画して",
-    "楽天証券に合う記事ネタを5つ出して",
-    "新NISAでタイトル案を5つ出して",
-    "今月の投稿計画を立てて",
-  ],
+  gemini: "bg-blue-900 text-blue-350",
+  groq: "bg-amber-900 text-amber-305",
 };
 
 const KNOWLEDGE_CATEGORIES = [
@@ -86,10 +56,12 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [provider, setProvider] = useState<Provider>("groq");
-  const [mode, setMode] = useState<SecretaryMode>("note");
+  const [selectedSecretaryId, setSelectedSecretaryId] = useState<string>("executive-router");
+  const [contextBus, setContextBus] = useState<ContextBus>(createDefaultBus());
+  const [recommendedNext, setRecommendedNext] = useState<string | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Note Mode tools state
+  // Note Mode sub-tab state (shown when in Note secretaries)
   const [noteTab, setNoteTab] = useState<"chat" | "write">("chat");
   const [noteTitle, setNoteTitle] = useState("");
   const [noteTheme, setNoteTheme] = useState("");
@@ -115,9 +87,29 @@ export default function Home() {
   const [promoteSuccess, setPromoteSuccess] = useState(false);
   const [promotedInfo, setPromotedInfo] = useState<{ draftPath?: string; draftId?: string }>({});
 
+  // Load Context Bus on mount
+  useEffect(() => {
+    async function loadCurrentBus() {
+      try {
+        const res = await fetch("/api/chat");
+        const data = await res.json();
+        if (data.currentBus) {
+          setContextBus(data.currentBus);
+          setSelectedSecretaryId(data.currentBus.activeSecretary || "executive-router");
+        }
+      } catch (e) {
+        console.error("[DEBUG] Failed to load initial ContextBus:", e);
+      }
+    }
+    loadCurrentBus();
+  }, []);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  const activeSecretary = findSecretary(selectedSecretaryId);
+  const isNoteMode = selectedSecretaryId.startsWith("note-");
 
   async function handleSubmit() {
     const text = input.trim();
@@ -126,35 +118,65 @@ export default function Home() {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInput("");
     setLoading(true);
+    setRecommendedNext(undefined); // Reset recommendation
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, provider, mode }),
+        body: JSON.stringify({
+          message: text,
+          provider,
+          secretaryId: selectedSecretaryId,
+        }),
       });
       const data = await res.json();
       const reply = data.reply ?? data.error ?? "エラーが発生しました。";
-      
+
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: reply, provider: data.provider, mode: data.mode },
+        {
+          role: "assistant",
+          content: reply,
+          provider: data.provider,
+          secretaryId: data.secretaryId,
+        },
       ]);
 
-      // Pop modal if the Hybrid checker suggests saving
+      if (data.currentBus) {
+        setContextBus(data.currentBus);
+      }
+
+      // Auto Routing Trigger (confidence >= 0.8)
+      if (data.routeTo) {
+        setSelectedSecretaryId(data.routeTo);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `📢 **自動ルーティング**: [${findSecretary(data.routeTo)?.config.name || data.routeTo}] に自動遷移しました。`,
+          },
+        ]);
+      }
+
+      // Proposal Routing Trigger (confidence 0.5 - 0.79)
+      if (data.recommendedNext) {
+        setRecommendedNext(data.recommendedNext);
+      }
+
+      // Pop modal if save is suggested
       if (data.suggestSave) {
         setModalTitle(text.slice(0, 30));
         setModalSlug(data.slug || "knowledge-draft");
         setModalCategory(data.knowledgeCategory || "misc");
         setModalImportance(data.importance || 1);
-        
-        // Structure question and answer details for Vault content
+
         const formatted = `## ユーザーの質問\n${text}\n\n## AI秘書の回答\n${reply}`;
         setModalContent(formatted);
-        
+
         setTimeout(() => {
           setShowSaveModal(true);
-        }, 800);
+        }, 850);
       }
     } catch {
       setMessages((prev) => [
@@ -165,6 +187,20 @@ export default function Home() {
       setLoading(false);
     }
   }
+
+  const handleAcceptRecommendation = () => {
+    if (!recommendedNext) return;
+    const nextId = recommendedNext;
+    setSelectedSecretaryId(nextId);
+    setRecommendedNext(undefined);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        content: `📢 **遷移承認**: [${findSecretary(nextId)?.config.name || nextId}] に切り替えました。引き続きこちらで対話できます。`,
+      },
+    ]);
+  };
 
   async function handleSaveKnowledge() {
     if (!modalTitle.trim() || !modalSlug.trim()) {
@@ -231,7 +267,13 @@ export default function Home() {
   }
 
   async function handleGenerateNote() {
-    if (!noteTitle.trim() || !noteTheme.trim() || !noteTarget.trim() || !notePurpose.trim() || !noteCta.trim()) {
+    if (
+      !noteTitle.trim() ||
+      !noteTheme.trim() ||
+      !noteTarget.trim() ||
+      !notePurpose.trim() ||
+      !noteCta.trim()
+    ) {
       alert("すべての入力項目を入力してください。");
       return;
     }
@@ -285,355 +327,446 @@ export default function Home() {
     }
   }
 
-  function handleModeChange(newMode: SecretaryMode) {
-    if (newMode === mode) return;
-    setMode(newMode);
-  }
-
   return (
-    <div className="min-h-screen bg-[#0f1117] flex flex-col">
-      {/* Header */}
-      <header className="border-b border-slate-800 px-6 py-3 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold">
-            AI
-          </div>
-          <div>
-            <h1 className="text-white font-semibold text-base leading-none">AI秘書</h1>
-            <p className="text-slate-500 text-xs mt-0.5">
-              {MODE_ICON[mode]} {SECRETARY_LABELS[mode]} · Ollama + Groq + Gemini
-            </p>
-          </div>
-        </div>
+    <div className="min-h-screen bg-[#0b0c10] text-slate-350 flex h-screen overflow-hidden">
+      {/* 1. Left Sidebar (Organization Tree) */}
+      <OrgTree
+        activeSecretaryId={selectedSecretaryId}
+        taskPipeline={contextBus.taskPipeline}
+        onSelectSecretary={(id) => {
+          setSelectedSecretaryId(id);
+          setRecommendedNext(undefined);
+        }}
+      />
 
-        {/* Provider selector */}
-        <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
-          {(["ollama", "groq", "gemini", "auto"] as Provider[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setProvider(p)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${provider === p
-                  ? "bg-blue-600 text-white"
-                  : "text-slate-400 hover:text-slate-200"
-                }`}
-            >
-              {p === "ollama" ? "🖥️ Ollama"
-                : p === "gemini" ? "✨ Gemini"
-                  : p === "groq" ? "⚡ Groq"
+      {/* Main Workspace Area */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0e1017]">
+        {/* Header Block */}
+        <header className="border-b border-slate-900 bg-[#12141c]/60 backdrop-blur-md px-6 py-4 flex flex-col gap-3 shrink-0">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <Breadcrumbs activeSecretaryId={selectedSecretaryId} />
+              <span className="text-xxs px-2.5 py-1 rounded bg-slate-800 text-slate-400 font-semibold border border-slate-700/60">
+                {activeSecretary?.config.role || "司令塔役"}
+              </span>
+            </div>
+
+            {/* LLM Provider Selector */}
+            <div className="flex gap-1 bg-slate-900 rounded-lg p-1 border border-slate-800">
+              {(["ollama", "groq", "gemini", "auto"] as Provider[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setProvider(p)}
+                  className={`px-3 py-1.5 rounded text-xxs font-semibold transition-colors ${
+                    provider === p
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-500/10"
+                      : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  {p === "ollama"
+                    ? "🖥️ Ollama"
+                    : p === "gemini"
+                    ? "✨ Gemini"
+                    : p === "groq"
+                    ? "⚡ Groq"
                     : "🤖 Auto"}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      {/* Secretary mode selector */}
-      <div className="border-b border-slate-800 px-6 py-3 bg-slate-900/40">
-        <div className="max-w-3xl mx-auto flex flex-wrap gap-2 items-center">
-          <span className="text-slate-500 text-xs mr-1">秘書モード:</span>
-          {SECRETARY_MODES.map((m) => (
-            <button
-              key={m}
-              onClick={() => handleModeChange(m)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${mode === m
-                  ? "bg-blue-600 text-white border-blue-500"
-                  : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500"
-                }`}
-              title={SECRETARY_DESCRIPTIONS[m]}
-            >
-              {MODE_ICON[m]} {SECRETARY_LABELS[m]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Note mode sub-tabs */}
-      {mode === "note" && (
-        <div className="bg-slate-900/20 border-b border-slate-800/40 px-6 py-2">
-          <div className="max-w-3xl mx-auto flex gap-2">
-            <button
-              onClick={() => setNoteTab("chat")}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${noteTab === "chat" ? "bg-slate-850 text-blue-400 border border-blue-500/30" : "text-slate-400 hover:text-slate-200"}`}
-            >
-              💬 チャット
-            </button>
-            <button
-              onClick={() => setNoteTab("write")}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${noteTab === "write" ? "bg-slate-850 text-blue-400 border border-blue-500/30" : "text-slate-400 hover:text-slate-200"}`}
-            >
-              ✍️ 下書き生成ツール
-            </button>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* Provider description */}
-      <div className="border-b border-slate-800/50 px-6 py-2 bg-slate-900/30">
-        <p className="text-slate-500 text-xs text-center">
-          {SECRETARY_DESCRIPTIONS[mode]} ・{" "}
-          {provider === "ollama" && "ローカルLLM（プライベート・オフライン動作）"}
-          {provider === "gemini" && "Google Gemini 2.0 Flash（高性能・最新情報対応）"}
-          {provider === "groq" && "Groq LPU · llama-3.3-70b（超高速クラウド推論）"}
-          {provider === "auto" && "キーワードで自動判定：「最新」「ニュース」「トレンド」→ Gemini、それ以外 → Groq"}
-        </p>
-      </div>
+          {/* Executive metrics Panel */}
+          <ExecutivePanel contextBus={contextBus} recommendedNext={recommendedNext} />
 
-      {/* Chat area or Note Form */}
-      <main className="flex-1 overflow-y-auto px-4 py-6 max-w-3xl w-full mx-auto">
-        {mode === "note" && noteTab === "write" ? (
-          <div className="bg-slate-900/30 border border-slate-800/85 rounded-2xl p-6 space-y-4 shadow-xl">
-            <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-              <span className="text-xl">✍️</span>
-              <h2 className="text-white font-semibold text-lg">Note下書き生成ツール</h2>
-            </div>
-            
-            <p className="text-slate-400 text-xs leading-relaxed">
-              テンプレートに沿ってAIが記事構成から本文、CTAを含んだnoteの執筆下書きを自動生成し、Obsidianのdraftsフォルダに保存します。
-            </p>
+          {/* FlowMap Tracker */}
+          <FlowMap
+            decisionHistory={contextBus.decisionHistory}
+            activeSecretaryId={selectedSecretaryId}
+          />
+        </header>
 
-            <div className="space-y-3 pt-2">
-              <div>
-                <label className="block text-slate-400 text-xs font-medium mb-1">記事タイトル (ファイル名用)</label>
-                <input
-                  type="text"
-                  value={noteTitle}
-                  onChange={(e) => setNoteTitle(e.target.value)}
-                  className="w-full bg-slate-800/60 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
-                  placeholder="例: 月5万円の副収入を得るための投資アプリ3選"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-400 text-xs font-medium mb-1">テーマ (記事の題材や書きたい内容)</label>
-                <textarea
-                  value={noteTheme}
-                  onChange={(e) => setNoteTheme(e.target.value)}
-                  className="w-full bg-slate-800/60 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors h-20 resize-none"
-                  placeholder="例: 初心者会社員向けの積立投資アプリの比較と選び方。SBI証券や楽天証券を想定。"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-400 text-xs font-medium mb-1">想定ターゲット</label>
-                  <input
-                    type="text"
-                    value={noteTarget}
-                    onChange={(e) => setNoteTarget(e.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
-                    placeholder="例: 20〜30代の投資初心者会社員"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 text-xs font-medium mb-1">記事の目的</label>
-                  <input
-                    type="text"
-                    value={notePurpose}
-                    onChange={(e) => setNotePurpose(e.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
-                    placeholder="例: 投資への一歩を踏み出してもらう"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-400 text-xs font-medium mb-1">CTA (行動喚起)</label>
-                  <input
-                    type="text"
-                    value={noteCta}
-                    onChange={(e) => setNoteCta(e.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
-                    placeholder="例: 記事内のアフィリエイトリンクから口座開設"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 text-xs font-medium mb-1">適用テンプレート</label>
-                  <select
-                    value={noteTemplate}
-                    onChange={(e) => setNoteTemplate(e.target.value)}
-                    className="w-full bg-slate-800/60 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
-                  >
-                    <option value="sales-template">📈 営業・マーケティング</option>
-                    <option value="finance-template">💰 ファイナンス・投資</option>
-                    <option value="career-template">💼 就活・キャリア</option>
-                    <option value="great-person-template">📜 労働×偉人・歴史</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800/80">
+        {/* Note Mode Subtabs (Planning/Writing/Monetize Room subtabs) */}
+        {isNoteMode && (
+          <div className="bg-[#12141c]/30 border-b border-slate-900/60 px-6 py-2 shrink-0">
+            <div className="flex gap-2">
               <button
-                onClick={handleGenerateNote}
-                disabled={generatingNote}
-                className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-6 py-2.5 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:bg-slate-700"
+                onClick={() => setNoteTab("chat")}
+                className={`px-3 py-1 rounded text-xxs font-bold border transition-colors ${
+                  noteTab === "chat"
+                    ? "bg-blue-900/20 text-blue-400 border-blue-500/30"
+                    : "bg-slate-800/40 text-slate-400 border-slate-700/50 hover:text-slate-300"
+                }`}
               >
-                {generatingNote ? (
-                  <>
-                    <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-white rounded-full animate-spin"></span>
-                    記事執筆中...
-                  </>
-                ) : (
-                  "下書き生成"
-                )}
+                💬 チャット壁打ち
+              </button>
+              <button
+                onClick={() => setNoteTab("write")}
+                className={`px-3 py-1 rounded text-xxs font-bold border transition-colors ${
+                  noteTab === "write"
+                    ? "bg-blue-900/20 text-blue-400 border-blue-500/30"
+                    : "bg-slate-800/40 text-slate-400 border-slate-700/50 hover:text-slate-300"
+                }`}
+              >
+                ✍️ 下書き生成ツール
               </button>
             </div>
           </div>
-        ) : (
-          <>
-            {messages.length === 0 && (
-              <div className="text-center mt-16 space-y-4">
-                <p className="text-slate-300 text-lg">
-                  {MODE_ICON[mode]} {SECRETARY_LABELS[mode]}
-                </p>
-                <p className="text-slate-500 text-sm">{SECRETARY_DESCRIPTIONS[mode]}</p>
-                <div className="flex flex-col gap-2 items-center mt-6">
-                  {MODE_EXAMPLES[mode].map((ex) => (
-                    <button
-                      key={ex}
-                      onClick={() => setInput(ex)}
-                      className="text-sm text-slate-500 hover:text-slate-300 border border-slate-700 hover:border-slate-500 rounded-lg px-4 py-2 transition-colors"
-                    >
-                      {ex}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {messages.map((msg, i) => (
-              <div key={i} className={`mb-6 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                {msg.role === "assistant" && (
-                  <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold mr-3 mt-1 shrink-0">
-                    AI
-                  </div>
-                )}
-                <div className="max-w-[85%]">
-                  {msg.role === "assistant" && (msg.provider || msg.mode) && (
-                    <div className="mb-1 flex gap-1.5 flex-wrap">
-                      {msg.mode && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">
-                          {MODE_ICON[msg.mode]} {SECRETARY_LABELS[msg.mode]}
-                        </span>
-                      )}
-                      {msg.provider && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${PROVIDER_BADGE[msg.provider]}`}>
-                          {msg.provider === "ollama" ? "🖥️ Ollama"
-                            : msg.provider === "groq" ? "⚡ Groq"
-                              : "✨ Gemini"}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <div
-                    className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === "user"
-                        ? "bg-blue-600 text-white rounded-br-sm"
-                        : "bg-slate-800 text-slate-200 rounded-bl-sm"
-                      }`}
-                  >
-                    {msg.role === "assistant" ? (
-                      <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
-                    ) : (
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {loading && (
-              <div className="flex justify-start mb-6">
-                <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold mr-3 mt-1 shrink-0">
-                  AI
-                </div>
-                <div className="bg-slate-800 rounded-2xl rounded-bl-sm px-4 py-3">
-                  <span className="text-slate-400 text-sm">
-                    {MODE_ICON[mode]} {SECRETARY_LABELS[mode]} · {PROVIDER_LABELS[provider]}で考え中
-                  </span>
-                  <span className="text-slate-400 text-sm animate-pulse">...</span>
-                </div>
-              </div>
-            )}
-          </>
         )}
 
-        <div ref={bottomRef} />
-      </main>
+        {/* Main interactive window */}
+        <main className="flex-1 overflow-y-auto px-6 py-6 w-full max-w-4xl mx-auto flex flex-col justify-between">
+          <div className="w-full">
+            {isNoteMode && noteTab === "write" ? (
+              // Write tool
+              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-6 space-y-4 shadow-xl shadow-black/10">
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+                  <span className="text-lg">✍️</span>
+                  <h3 className="text-white font-bold text-sm">Note下書き生成ツール</h3>
+                </div>
 
-      {/* Input panel (hidden in Note editor) */}
-      {!(mode === "note" && noteTab === "write") && (
-        <div className="border-t border-slate-800 px-4 py-4">
-          <div className="max-w-3xl mx-auto flex gap-3 items-end">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={`${SECRETARY_LABELS[mode]} に話しかける... (Enter で送信 / Shift+Enter で改行)`}
-              rows={1}
-              className="flex-1 bg-slate-800 text-slate-200 placeholder-slate-500 rounded-xl px-4 py-3 text-sm resize-none outline-none border border-slate-700 focus:border-blue-500 min-h-[44px] max-h-40"
-              onInput={(e) => {
-                const t = e.currentTarget;
-                t.style.height = "auto";
-                t.style.height = Math.min(t.scrollHeight, 160) + "px";
-              }}
-            />
-            <button
-              onClick={handleSubmit}
-              disabled={loading || !input.trim()}
-              className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-xl px-5 py-3 text-sm font-medium shrink-0 h-[44px]"
-            >
-              送信
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Save Suggestion Modal */}
-      {showSaveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#1a1d26] border border-slate-700/60 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl shadow-blue-500/5 p-6 space-y-4">
-            <div className="flex items-center gap-2 text-blue-400 border-b border-slate-800/80 pb-2">
-              <span className="text-xl font-bold">💡</span>
-              <h3 className="text-white font-semibold text-lg">ナレッジ保存の提案</h3>
-            </div>
-            
-            {!saveSuccess ? (
-              // Stage 1: Edit parameters & confirm saving
-              <>
-                <p className="text-slate-400 text-xs leading-relaxed">
-                  この会話には重要な戦略や知見が含まれている可能性があります。Obsidianのナレッジベースに保存しますか？
-                </p>
-
-                <div className="space-y-3 pt-2">
+                <div className="space-y-3">
                   <div>
-                    <label className="block text-slate-400 text-xs font-medium mb-1">タイトル (日本語)</label>
+                    <label className="block text-slate-500 text-xxs font-semibold mb-1">
+                      記事タイトル (ファイル名用)
+                    </label>
                     <input
                       type="text"
-                      value={modalTitle}
-                      onChange={(e) => setModalTitle(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
-                      placeholder="タイトルを入力..."
+                      value={noteTitle}
+                      onChange={(e) => setNoteTitle(e.target.value)}
+                      className="w-full bg-slate-850 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-colors"
+                      placeholder="例: 月5万円の副収入を得るための投資アプリ3選"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 text-xs font-medium mb-1">ファイル名スラグ (英数字とハイフンのみ)</label>
+                    <label className="block text-slate-500 text-xxs font-semibold mb-1">
+                      テーマ (記事の題材や書きたい内容)
+                    </label>
+                    <textarea
+                      value={noteTheme}
+                      onChange={(e) => setNoteTheme(e.target.value)}
+                      className="w-full bg-slate-850 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-colors h-20 resize-none"
+                      placeholder="例: 初心者会社員向けの積立投資アプリの比較と選び方。SBI証券や楽天証券を想定。"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-slate-500 text-xxs font-semibold mb-1">
+                        想定ターゲット
+                      </label>
+                      <input
+                        type="text"
+                        value={noteTarget}
+                        onChange={(e) => setNoteTarget(e.target.value)}
+                        className="w-full bg-slate-850 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-colors"
+                        placeholder="例: 20〜30代の投資初心者会社員"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 text-xxs font-semibold mb-1">
+                        記事の目的
+                      </label>
+                      <input
+                        type="text"
+                        value={notePurpose}
+                        onChange={(e) => setNotePurpose(e.target.value)}
+                        className="w-full bg-slate-850 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-colors"
+                        placeholder="例: 投資への一歩を踏み出してもらう"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-slate-500 text-xxs font-semibold mb-1">
+                        CTA (行動喚起)
+                      </label>
+                      <input
+                        type="text"
+                        value={noteCta}
+                        onChange={(e) => setNoteCta(e.target.value)}
+                        className="w-full bg-slate-850 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-colors"
+                        placeholder="例: 記事内のアフィリエイトリンクから口座開設"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 text-xxs font-semibold mb-1">
+                        適用テンプレート
+                      </label>
+                      <select
+                        value={noteTemplate}
+                        onChange={(e) => setNoteTemplate(e.target.value)}
+                        className="w-full bg-slate-850 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-colors"
+                      >
+                        <option value="sales-template">📈 営業・マーケティング</option>
+                        <option value="finance-template">💰 ファイナンス・投資</option>
+                        <option value="career-template">💼 就活・キャリア</option>
+                        <option value="great-person-template">📜 労働×偉人・歴史</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800/80">
+                  <button
+                    onClick={handleGenerateNote}
+                    disabled={generatingNote}
+                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-6 py-2.5 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:bg-slate-700"
+                  >
+                    {generatingNote ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-white rounded-full animate-spin"></span>
+                        記事執筆中...
+                      </>
+                    ) : (
+                      "下書き生成"
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              // Chat
+              <>
+                {messages.length === 0 && (
+                  <div className="text-center mt-12 space-y-4">
+                    <span className="text-3xl block">
+                      {activeSecretary?.config.id === "executive-router" ? "👑" : "👤"}
+                    </span>
+                    <h3 className="text-white font-bold text-base">
+                      {activeSecretary?.config.name || "副代表AI (ルーティング)"}
+                    </h3>
+                    <p className="text-slate-500 text-xs max-w-md mx-auto leading-relaxed">
+                      {activeSecretary?.config.prompt.substring(0, 150) ||
+                        "相談内容に合わせた専門秘書への自動案内、または直接対話が可能です。"}
+                      ...
+                    </p>
+                  </div>
+                )}
+
+                {messages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={`mb-6 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    {msg.role === "assistant" && (
+                      <div className="w-7 h-7 rounded-full bg-slate-850 border border-slate-800 flex items-center justify-center text-xs font-bold mr-3 mt-1 shrink-0">
+                        AI
+                      </div>
+                    )}
+                    <div className="max-w-[85%]">
+                      {msg.role === "assistant" && (msg.provider || msg.secretaryId) && (
+                        <div className="mb-1 flex gap-1.5 flex-wrap">
+                          {msg.secretaryId && (
+                            <span className="text-xxs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/40">
+                              {findSecretary(msg.secretaryId)?.config.name.replace(/\s*\(.*\)/, "") ||
+                                msg.secretaryId}
+                            </span>
+                          )}
+                          {msg.provider && (
+                            <span
+                              className={`text-xxs px-2 py-0.5 rounded-full ${
+                                PROVIDER_BADGE[msg.provider]
+                              }`}
+                            >
+                              {msg.provider.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <div
+                        className={`rounded-xl px-4 py-3 text-xs leading-relaxed ${
+                          msg.role === "user"
+                            ? "bg-blue-600 text-white rounded-tr-none"
+                            : "bg-[#161821] text-slate-200 rounded-tl-none border border-slate-800/80"
+                        }`}
+                      >
+                        {msg.role === "assistant" ? (
+                          <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                        ) : (
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {loading && (
+                  <div className="flex justify-start mb-6">
+                    <div className="w-7 h-7 rounded-full bg-slate-850 border border-slate-800 flex items-center justify-center text-xs font-bold mr-3 mt-1 shrink-0">
+                      AI
+                    </div>
+                    <div className="bg-[#161821] border border-slate-800/80 rounded-xl rounded-tl-none px-4 py-3">
+                      <span className="text-slate-500 text-xs">
+                        {activeSecretary?.config.name || "副代表AI"} が思考中
+                      </span>
+                      <span className="text-slate-400 text-xs animate-pulse">...</span>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Recommended transition suggestion banner */}
+          {recommendedNext && !loading && (
+            <div className="my-4 p-3 bg-blue-900/10 border border-blue-500/20 rounded-xl flex items-center justify-between gap-3 shadow-md shadow-blue-500/5">
+              <div className="text-xxs text-slate-400">
+                💡 COO推薦: この話題は{" "}
+                <strong className="text-blue-400">
+                  {findSecretary(recommendedNext)?.config.name || recommendedNext}
+                </strong>{" "}
+                が最適です。切り替えますか？
+              </div>
+              <button
+                onClick={handleAcceptRecommendation}
+                className="bg-blue-600 hover:bg-blue-500 text-white text-xxs font-bold px-3 py-1.5 rounded-lg transition-colors"
+              >
+                切り替える
+              </button>
+            </div>
+          )}
+
+          {/* Input Box */}
+          {!(isNoteMode && noteTab === "write") && (
+            <div className="mt-6 border-t border-slate-900 pt-4 bg-[#0e1017]">
+              <div className="flex gap-3 items-end">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={`${
+                    activeSecretary?.config.name || "副代表AI"
+                  } にメッセージを送る... (Enterで送信 / Shift+Enterで改行)`}
+                  rows={1}
+                  className="flex-1 bg-slate-900 text-slate-200 placeholder-slate-650 rounded-xl px-4 py-3 text-xs resize-none outline-none border border-slate-800 focus:border-blue-500 min-h-[42px] max-h-36 transition-colors"
+                  onInput={(e) => {
+                    const t = e.currentTarget;
+                    t.style.height = "auto";
+                    t.style.height = Math.min(t.scrollHeight, 140) + "px";
+                  }}
+                />
+                <button
+                  onClick={handleSubmit}
+                  disabled={loading || !input.trim()}
+                  className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-xl px-5 py-3 text-xs font-bold shrink-0 h-[42px] transition-colors"
+                >
+                  送信
+                </button>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* 2. Right Sidebar (Task Pipeline View) */}
+      <aside className="w-60 bg-slate-900 border-l border-slate-800 flex flex-col h-full overflow-y-auto">
+        <div className="p-4 border-b border-slate-800">
+          <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+            📋 タスクパイプライン
+          </h3>
+          <p className="text-xxs text-slate-500 mt-0.5">Context Bus タスク一覧</p>
+        </div>
+
+        <div className="flex-1 p-3 space-y-2">
+          {contextBus.taskPipeline.length === 0 ? (
+            <div className="text-center py-8 text-slate-600 text-xxs leading-relaxed">
+              登録済みのタスクはありません。
+              <br />
+              (会話中にAIが自動的にタスクを作成します)
+            </div>
+          ) : (
+            contextBus.taskPipeline.map((task) => {
+              const statusColors = {
+                pending: "bg-slate-800 text-slate-500 border-slate-700/60",
+                in_progress: "bg-amber-900/20 text-amber-400 border-amber-500/20",
+                done: "bg-emerald-900/20 text-emerald-400 border-emerald-500/20",
+                blocked: "bg-rose-900/20 text-rose-400 border-rose-500/20",
+              };
+              const statusLabels = {
+                pending: "未着手",
+                in_progress: "進行中",
+                done: "完了",
+                blocked: "保留",
+              };
+
+              return (
+                <div
+                  key={task.id}
+                  className="p-2.5 rounded-lg bg-slate-850 border border-slate-800/80 space-y-1.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-xxs font-bold text-slate-300 leading-tight">
+                      {task.title}
+                    </span>
+                    <span
+                      className={`text-xxxxs px-1.5 py-0.5 rounded border ${
+                        statusColors[task.status]
+                      }`}
+                    >
+                      {statusLabels[task.status]}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xxxxs text-slate-500">
+                    <span>担当: {findSecretary(task.owner)?.config.name.replace(/\s*\(.*\)/, "") || task.owner}</span>
+                    <span>ID: {task.id}</span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </aside>
+
+      {/* Save Suggestion Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#13151f] border border-slate-800 rounded-xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-2 text-blue-400 border-b border-slate-850 pb-2">
+              <span className="text-lg">💡</span>
+              <h3 className="text-white font-bold text-sm">ナレッジ保存の提案</h3>
+            </div>
+
+            {!saveSuccess ? (
+              <>
+                <p className="text-slate-400 text-xxs leading-relaxed">
+                  この会話には重要なナレッジが含まれています。Obsidianナレッジベースに保存しますか？
+                </p>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-slate-500 text-xxs font-semibold mb-1">
+                      タイトル (日本語)
+                    </label>
+                    <input
+                      type="text"
+                      value={modalTitle}
+                      onChange={(e) => setModalTitle(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-500 text-xxs font-semibold mb-1">
+                      ファイル名スラグ (英数字・ハイフン)
+                    </label>
                     <input
                       type="text"
                       value={modalSlug}
                       onChange={(e) => setModalSlug(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
-                      placeholder="例: docomo-sales-improvement"
+                      className="w-full bg-slate-900 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-colors"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-slate-400 text-xs font-medium mb-1">カテゴリ</label>
+                      <label className="block text-slate-500 text-xxs font-semibold mb-1">
+                        カテゴリ
+                      </label>
                       <select
                         value={modalCategory}
                         onChange={(e) => setModalCategory(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
+                        className="w-full bg-slate-900 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-colors"
                       >
                         {KNOWLEDGE_CATEGORIES.map((cat) => (
                           <option key={cat.value} value={cat.value}>
@@ -644,114 +777,97 @@ export default function Home() {
                     </div>
 
                     <div>
-                      <label className="block text-slate-400 text-xs font-medium mb-1">重要度</label>
-                      <div className="flex items-center gap-1.5 h-[38px]">
+                      <label className="block text-slate-500 text-xxs font-semibold mb-1">
+                        重要度
+                      </label>
+                      <div className="flex items-center gap-1.5 h-[34px]">
                         {[1, 2, 3].map((star) => (
                           <button
                             key={star}
-                            type="button"
                             onClick={() => setModalImportance(star as 1 | 2 | 3)}
-                            className="text-lg focus:outline-none transition-transform active:scale-95"
+                            className="text-sm focus:outline-none"
                           >
                             {modalImportance >= star ? (
                               <span className="text-yellow-400">★</span>
                             ) : (
-                              <span className="text-slate-600">☆</span>
+                              <span className="text-slate-700">☆</span>
                             )}
                           </button>
                         ))}
-                        <span className="text-slate-500 text-xs ml-1">
-                          {modalImportance === 3 ? "資産化優先" : modalImportance === 2 ? "再利用価値" : "メモレベル"}
-                        </span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800/80">
+                <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-850">
                   <button
                     onClick={closeSaveModal}
-                    className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 text-xs font-medium transition-colors"
+                    className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-900 text-xxs font-semibold transition-colors"
                   >
                     スキップ
                   </button>
                   <button
                     onClick={handleSaveKnowledge}
                     disabled={savingKnowledge}
-                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-5 py-2 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:bg-slate-700 disabled:text-slate-500"
+                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-5 py-2 text-xxs font-semibold transition-colors disabled:bg-slate-800"
                   >
-                    {savingKnowledge ? (
-                      <>
-                        <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-white rounded-full animate-spin"></span>
-                        保存中...
-                      </>
-                    ) : (
-                      "保存する"
-                    )}
+                    {savingKnowledge ? "保存中..." : "保存する"}
                   </button>
                 </div>
               </>
             ) : !promoteSuccess ? (
-              // Stage 2: Save successful, trigger Promotion (Note creation)
-              <div className="space-y-4 pt-2">
-                <div className="text-center py-2">
-                  <span className="text-3xl">🎉</span>
-                  <h4 className="text-white font-medium text-base mt-2">ナレッジを保存しました！</h4>
-                  <p className="text-slate-500 text-xs mt-1">ID: {savedKnowledgeId}</p>
+              <div className="space-y-4 text-center">
+                <span className="text-3xl block">🎉</span>
+                <h4 className="text-white font-bold text-sm">ナレッジを保存しました！</h4>
+                <p className="text-slate-500 text-xxs">ID: {savedKnowledgeId}</p>
+
+                <div className="bg-slate-900/60 border border-slate-850 rounded-lg p-3 text-slate-400 text-xxs text-left leading-relaxed">
+                  <strong>続けてNote記事に昇格（Promote）しますか？</strong>
+                  <br />
+                  自動的にリサーチファイルを生成し、AIによる下書き執筆段階に移ります。
                 </div>
 
-                <div className="bg-slate-800/40 border border-slate-800 rounded-lg p-3 text-slate-300 text-xs leading-relaxed">
-                  <strong>続けてNote記事に昇格（Promote）しますか？</strong><br/>
-                  このナレッジから自動的にリサーチファイルを作成し、AIによるNote用の執筆下書きを生成します。
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800/80">
+                <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-850">
                   <button
                     onClick={closeSaveModal}
-                    className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 text-xs font-medium transition-colors"
+                    className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-900 text-xxs font-semibold transition-colors"
                   >
-                    閉じる (完了)
+                    閉じる
                   </button>
                   <button
                     onClick={handlePromoteKnowledge}
                     disabled={promoting}
-                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-5 py-2 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:bg-slate-700"
+                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-5 py-2 text-xxs font-semibold transition-colors"
                   >
-                    {promoting ? (
-                      <>
-                        <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-white rounded-full animate-spin"></span>
-                        昇格処理中...
-                      </>
-                    ) : (
-                      "昇格する"
-                    )}
+                    {promoting ? "昇格中..." : "昇格する"}
                   </button>
                 </div>
               </div>
             ) : (
-              // Stage 3: Promotion successful, display output info
-              <div className="space-y-4 pt-2">
-                <div className="text-center py-2">
-                  <span className="text-3xl">🚀</span>
-                  <h4 className="text-white font-medium text-base mt-2">Note下書きへ昇格しました！</h4>
+              <div className="space-y-4">
+                <span className="text-3xl block text-center">🚀</span>
+                <h4 className="text-white font-bold text-sm text-center">Note下書きへ昇格完了！</h4>
+
+                <div className="bg-slate-900 border border-slate-850 rounded-lg p-4 space-y-2 text-xxs text-slate-400">
+                  <div>
+                    <span className="font-semibold text-slate-300">📁 リサーチ:</span>{" "}
+                    {promotedInfo.draftPath?.replace("/drafts/", "/research/").replace(".md", "")}{" "}
+                    (Research)
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-300">✍️ 下書き:</span>{" "}
+                    {promotedInfo.draftPath}
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-300">🆔 下書きID:</span>{" "}
+                    {promotedInfo.draftId}
+                  </div>
                 </div>
 
-                <div className="bg-slate-850 border border-slate-800 rounded-lg p-4 space-y-2 text-xs">
-                  <div className="text-slate-400">
-                    <span className="font-semibold text-slate-300">📁 リサーチパス:</span> {promotedInfo.draftPath?.replace("/drafts/", "/research/").replace(".md", "") + " (Research)"}
-                  </div>
-                  <div className="text-slate-400">
-                    <span className="font-semibold text-slate-300">✍️ 下書きパス:</span> {promotedInfo.draftPath}
-                  </div>
-                  <div className="text-slate-400">
-                    <span className="font-semibold text-slate-300">🆔 下書きID:</span> {promotedInfo.draftId}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end pt-4 border-t border-slate-800/80">
+                <div className="flex items-center justify-end pt-4 border-t border-slate-850">
                   <button
                     onClick={closeSaveModal}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg px-6 py-2 text-xs font-medium transition-colors"
+                    className="bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg px-6 py-2 text-xxs font-semibold transition-colors"
                   >
                     閉じる
                   </button>

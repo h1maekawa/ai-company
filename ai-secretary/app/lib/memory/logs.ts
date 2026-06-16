@@ -19,7 +19,7 @@ async function callLLM(message: string, systemPrompt: string): Promise<string> {
  * Summarizes the current conversation and appends or creates a daily log summary file.
  */
 export async function saveChatLog(
-  mode: SecretaryMode,
+  secretaryId: string,
   message: string,
   reply: string
 ): Promise<{ success: boolean; path: string; id: string }> {
@@ -59,7 +59,7 @@ ${reply}
   // 2. Generate unique serial ID
   const id = await generateUniqueId("lg");
 
-  const targetDir = `memory/chat-log/${mode}`;
+  const targetDir = `memory/chat-log/${secretaryId}`;
   const targetFilePath = `${targetDir}/${dateHyphen}-summary.md`;
 
   let finalContent = "";
@@ -87,7 +87,7 @@ ${summaryContent.trim()}
     finalContent = `---
 id: ${id}
 type: chat_summary
-mode: ${mode}
+secretaryId: ${secretaryId}
 created: ${dateHyphen}
 updated: ${dateHyphen}
 ---
