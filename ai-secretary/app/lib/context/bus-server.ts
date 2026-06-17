@@ -3,7 +3,7 @@ import path from "path";
 import { ContextBus, serializeBus, parseBus, createDefaultBus } from "./bus";
 
 const WORKSPACE_DIR = "/Users/maekawahiroyuki/Desktop/ai-company";
-const BUS_FILE_PATH = path.join(WORKSPACE_DIR, "memory", "context", "current-bus.json");
+const BUS_FILE_PATH = path.join(WORKSPACE_DIR, "memory", "current-bus.json");
 
 /**
  * Loads ContextBus state from JSON file
