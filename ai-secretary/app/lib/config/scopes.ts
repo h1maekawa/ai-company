@@ -16,22 +16,23 @@ export const DEFAULT_GLOBAL_SCOPE = [
 
 // Personal Brain — shared across all secretaries as the top-level identity context
 export const PERSONAL_BRAIN_SCOPE = "memory/brain/personal/";
+export const COMPANY_BRAIN_SCOPE = "memory/brain/company/";
 
 export const MEMORY_SCOPES: MemoryScopes = {
-  // Executive Board — always reads the full Personal Brain
+  // Executive Board — always reads the full Personal Brain & Company Brain
   "executive-coo": {
     local: ["memory/today.md"],
     shared: ["memory/goals.md"],
-    global: ["memory/brain/personal/", "memory/profile.md"]
+    global: ["memory/brain/personal/", "memory/brain/company/", "memory/profile.md"]
   },
   "executive-cso": {
     local: ["memory/goals.md"],
-    shared: ["memory/brain/personal/"],
+    shared: ["memory/brain/personal/", "memory/brain/company/"],
     global: ["memory/profile.md"]
   },
   "executive-cfo": {
     local: ["memory/goals.md"],
-    shared: ["memory/brain/personal/"],
+    shared: ["memory/brain/personal/", "memory/brain/company/"],
     global: ["memory/profile.md"]
   },
 
@@ -57,31 +58,36 @@ export const MEMORY_SCOPES: MemoryScopes = {
     global: ["memory/personal/profile.md"]
   },
 
-  // Company Division — strategy reads brain for CEO context
+  // Company Division — strategy reads personal and company brains for context
   "company-strategy": {
     local: ["memory/company/tasks.md"],
     shared: ["memory/company/goals.md"],
-    global: ["memory/brain/personal/identity.md", "memory/brain/personal/goals.md", "memory/company/profile.md"]
+    global: [
+      "memory/brain/personal/identity.md",
+      "memory/brain/personal/goals.md",
+      "memory/brain/company/",
+      "memory/company/profile.md"
+    ]
   },
   "company-recruit": {
     local: ["memory/company/tasks.md"],
-    shared: ["memory/brain/personal/identity.md"],
-    global: ["memory/company/profile.md"]
+    shared: ["memory/brain/personal/identity.md", "memory/brain/company/identity.md"],
+    global: ["memory/brain/company/sales-strategy.md", "memory/company/profile.md"]
   },
   "company-crm": {
     local: [],
-    shared: [],
-    global: ["memory/company/profile.md"]
+    shared: ["memory/brain/company/monetization.md"],
+    global: ["memory/brain/company/sales-strategy.md", "memory/company/profile.md"]
   },
   "company-dmm": {
     local: ["memory/company/tasks.md"],
-    shared: [],
+    shared: ["memory/brain/company/sales-strategy.md"],
     global: []
   },
   "company-proposal": {
     local: [],
-    shared: ["memory/brain/personal/identity.md"],
-    global: ["memory/company/profile.md"]
+    shared: ["memory/brain/personal/identity.md", "memory/brain/company/identity.md"],
+    global: ["memory/brain/company/sales-strategy.md", "memory/company/profile.md"]
   },
 
   // Finance Division — reads investing brain for intent context
@@ -162,21 +168,21 @@ export const MEMORY_SCOPES: MemoryScopes = {
     global: []
   },
 
-  // Note Monetize Room — reads full note-business brain and monetization map
+  // Note Monetize Room — reads full note-business brain and monetization maps
   "note-monetize-strategy": {
     local: ["memory/note/ideas.md"],
-    shared: ["memory/brain/personal/note-business.md"],
-    global: ["memory/brain/personal/monetization.md"]
+    shared: ["memory/brain/personal/note-business.md", "memory/brain/company/monetization.md"],
+    global: ["memory/brain/personal/monetization.md", "memory/brain/company/sales-strategy.md"]
   },
   "note-monetize-product": {
     local: ["memory/note/ideas.md"],
-    shared: ["memory/brain/personal/note-business.md"],
+    shared: ["memory/brain/personal/note-business.md", "memory/brain/company/monetization.md"],
     global: ["memory/brain/personal/monetization.md"]
   },
   "note-monetize-funnel": {
     local: ["memory/note/ideas.md"],
-    shared: ["memory/brain/personal/note-business.md"],
-    global: ["memory/brain/personal/monetization.md"]
+    shared: ["memory/brain/personal/note-business.md", "memory/brain/company/monetization.md"],
+    global: ["memory/brain/personal/monetization.md", "memory/brain/company/sales-strategy.md"]
   },
 
   // System Division
