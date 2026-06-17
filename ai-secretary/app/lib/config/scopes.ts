@@ -17,12 +17,13 @@ export const DEFAULT_GLOBAL_SCOPE = [
 // Personal Brain — shared across all secretaries as the top-level identity context
 export const PERSONAL_BRAIN_SCOPE = "memory/brain/personal/";
 export const COMPANY_BRAIN_SCOPE = "memory/brain/company/";
+export const PERSONAL_MEMORY_SCOPE = "memory/personal/";
 
 export const MEMORY_SCOPES: MemoryScopes = {
   // Inbox Secretary
   "executive-inbox": {
     local: ["memory/today.md"],
-    shared: ["memory/brain/personal/"],
+    shared: ["memory/brain/personal/", "memory/personal/"],
     global: ["memory/profile.md"]
   },
 
@@ -30,16 +31,16 @@ export const MEMORY_SCOPES: MemoryScopes = {
   "executive-coo": {
     local: ["memory/today.md"],
     shared: ["memory/goals.md"],
-    global: ["memory/brain/personal/", "memory/brain/company/", "memory/profile.md"]
+    global: ["memory/brain/personal/", "memory/brain/company/", "memory/personal/", "memory/profile.md"]
   },
   "executive-cso": {
     local: ["memory/goals.md"],
-    shared: ["memory/brain/personal/", "memory/brain/company/"],
+    shared: ["memory/brain/personal/", "memory/brain/company/", "memory/personal/"],
     global: ["memory/profile.md"]
   },
   "executive-cfo": {
     local: ["memory/goals.md"],
-    shared: ["memory/brain/personal/", "memory/brain/company/"],
+    shared: ["memory/brain/personal/", "memory/brain/company/", "memory/personal/"],
     global: ["memory/profile.md"]
   },
 
@@ -122,7 +123,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
   // Note Planning Room — reads note-business brain for strategy context
   "note-planning-trend": {
     local: ["memory/note/ideas.md"],
-    shared: ["memory/brain/personal/note-business.md"],
+    shared: ["memory/brain/personal/note-business.md", "memory/personal/content_strategy.md"],
     global: ["memory/brain/personal/current-focus.md"]
   },
   "note-planning-needs": {
@@ -178,7 +179,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
   // Note Monetize Room — reads full note-business brain and monetization maps
   "note-monetize-strategy": {
     local: ["memory/note/ideas.md"],
-    shared: ["memory/brain/personal/note-business.md", "memory/brain/company/monetization.md"],
+    shared: ["memory/brain/personal/note-business.md", "memory/brain/company/monetization.md", "memory/personal/content_strategy.md"],
     global: ["memory/brain/personal/monetization.md", "memory/brain/company/sales-strategy.md"]
   },
   "note-monetize-product": {
