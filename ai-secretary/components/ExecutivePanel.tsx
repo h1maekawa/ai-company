@@ -1,5 +1,5 @@
 import React from "react";
-import { ContextBus } from "@/app/lib/context/bus";
+import { ContextBus, getActiveBus } from "@/app/lib/context/bus";
 
 interface ExecutivePanelProps {
   contextBus: ContextBus;
@@ -7,6 +7,8 @@ interface ExecutivePanelProps {
 }
 
 export default function ExecutivePanel({ contextBus, recommendedNext }: ExecutivePanelProps) {
+  const activeBus = getActiveBus(contextBus);
+  
   return (
     <div className="bg-[#151720] border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row gap-4 justify-between w-full shadow-lg shadow-black/30">
       {/* Metric 1: Goal */}
@@ -15,7 +17,7 @@ export default function ExecutivePanel({ contextBus, recommendedNext }: Executiv
           🏆 Current Goal
         </span>
         <p className="text-white font-bold text-sm mt-1 truncate">
-          {contextBus.currentGoal || "未設定（一般的な対話）"}
+          {activeBus.currentGoal || "未設定（一般的な対話）"}
         </p>
       </div>
 
@@ -25,7 +27,7 @@ export default function ExecutivePanel({ contextBus, recommendedNext }: Executiv
           🎯 Current Priority
         </span>
         <p className="text-blue-400 font-bold text-sm mt-1 truncate">
-          {contextBus.currentIntent || "一般指示分類中"}
+          {activeBus.currentIntent || "一般指示分類中"}
         </p>
       </div>
 
@@ -37,7 +39,7 @@ export default function ExecutivePanel({ contextBus, recommendedNext }: Executiv
         <p className="text-amber-400 font-bold text-sm mt-1 truncate">
           {recommendedNext
             ? `遷移推奨: ${recommendedNext}`
-            : contextBus.activeSecretary === "executive-coo"
+            : activeBus.activeSecretary === "executive-coo"
             ? "進行整理完了"
             : "作業中..."}
         </p>
@@ -50,8 +52,8 @@ export default function ExecutivePanel({ contextBus, recommendedNext }: Executiv
         </span>
         <div className="flex items-center gap-2 mt-1">
           <span className="text-white font-bold text-sm">
-            {contextBus.taskPipeline.filter(t => t.status === "done").length} /{" "}
-            {contextBus.taskPipeline.length}
+            {activeBus.taskPipeline.filter(t => t.status === "done").length} /{" "}
+            {activeBus.taskPipeline.length}
           </span>
           <span className="text-slate-500 text-xxs">完了</span>
         </div>
@@ -59,3 +61,4 @@ export default function ExecutivePanel({ contextBus, recommendedNext }: Executiv
     </div>
   );
 }
+

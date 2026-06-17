@@ -110,15 +110,12 @@ export async function loadScopedMemory(secretaryId: string): Promise<LoadedMemor
   return { files: loadedFiles };
 }
 
-/**
- * Legacy compatibility wrapper. Maps a legacy mode to a default secretary.
- */
 export async function loadMemoryFromVault(mode: string): Promise<string> {
-  let secretaryId = "executive-coo";
-  if (mode === "personal") secretaryId = "personal-task";
-  else if (mode === "company") secretaryId = "company-strategy";
-  else if (mode === "finance") secretaryId = "finance-strategy";
-  else if (mode === "note") secretaryId = "note-monetize-funnel";
+  let secretaryId = "executive-assistant";
+  if (mode === "personal") secretaryId = "personal-note";
+  else if (mode === "company") secretaryId = "crestix-system";
+  else if (mode === "finance") secretaryId = "personal-finance";
+  else if (mode === "note") secretaryId = "personal-note";
 
   const { files } = await loadScopedMemory(secretaryId);
   return files.map(f => `=== ${f.path.split("/").pop()} ===\n${f.content.trim()}`).join("\n\n");

@@ -1,23 +1,26 @@
 import fs from "fs";
 import path from "path";
+import { CompanyType } from "../config/projects";
 
 const WORKSPACE_DIR = "/Users/maekawahiroyuki/Desktop/ai-company";
-const CAPTURE_BASE_DIR = path.join(WORKSPACE_DIR, "memory", "capture");
 
 export type CaptureEvent = {
   id: string;
   source: "chat" | "voice" | "api" | "line";
+  company: CompanyType;
   text: string;
   createdAt: string;
 };
 
 /**
  * Saves a raw user input as a capture event markdown file.
- * Structure: memory/capture/YYYY/MM/CAP-YYYYMMDD-XXX.md
+ * Personal: memory/personal/capture/YYYY/MM/CAP-YYYYMMDD-XXX.md
+ * Crestix:  memory/crestix/capture/YYYY/MM/CAP-YYYYMMDD-XXX.md
  */
 export async function saveCaptureEvent(
   text: string,
-  source: "chat" | "voice" | "api" | "line" = "chat"
+  source: "chat" | "voice" | "api" | "line" = "chat",
+  company: CompanyType = "personal"
 ): Promise<CaptureEvent> {
   const now = new Date();
   const year = String(now.getFullYear());
@@ -25,12 +28,16 @@ export async function saveCaptureEvent(
   const day = String(now.getDate()).padStart(2, "0");
   const dateStr = `${year}${month}${day}`;
 
-  const targetDir = path.join(CAPTURE_BASE_DIR, year, month);
+  const captureBase = company === "crestix"
+    ? path.join(WORKSPACE_DIR, "memory", "crestix", "capture")
+    : path.join(WORKSPACE_DIR, "memory", "personal", "capture");
+
+  const targetDir = path.join(captureBase, year, month);
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });
   }
 
-  // Get index count (find next non-existent file index)
+  // Find the next available file index
   let idx = 1;
   while (idx < 1000) {
     const fileId = `CAP-${dateStr}-${String(idx).padStart(3, "0")}`;
@@ -39,6 +46,7 @@ export async function saveCaptureEvent(
       const event: CaptureEvent = {
         id: fileId,
         source,
+        company,
         text,
         createdAt: now.toISOString(),
       };
@@ -47,6 +55,7 @@ export async function saveCaptureEvent(
 id: "${event.id}"
 type: "raw_capture"
 source: "${event.source}"
+company: "${event.company}"
 classified: false
 createdAt: "${event.createdAt}"
 ---

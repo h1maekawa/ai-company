@@ -1,68 +1,73 @@
 import fs from "fs";
 import path from "path";
-import { InboxTask, InboxClassification } from "../router/inbox";
-import { ContextBus, TaskNode, pushTask } from "../context/bus";
+import { ContextBus, TaskNode, InboxItem, pushTask } from "../context/bus";
 import { saveBus } from "../context/bus-server";
+import { CompanyType } from "../config/projects";
 
 const WORKSPACE_DIR = "/Users/maekawahiroyuki/Desktop/ai-company";
-const INBOX_DIR = path.join(WORKSPACE_DIR, "memory", "inbox");
+
+function getInboxDir(company: CompanyType): string {
+  return company === "crestix"
+    ? path.join(WORKSPACE_DIR, "memory", "crestix", "inbox")
+    : path.join(WORKSPACE_DIR, "memory", "personal", "inbox");
+}
 
 export interface InboxApprovePayload {
-  classification: InboxClassification;
-  approvedTasks: InboxTask[];
-  rejectedTasks: InboxTask[];
+  approvedItems: InboxItem[];
+  rejectedItems: InboxItem[];
+  company: CompanyType;
 }
 
 /**
  * Pipeline to handle task approval from the Inbox.
- * Persists history to memory/inbox/YYYY-MM-DD.md and adds tasks to the ContextBus pipeline.
+ * Persists history and adds tasks to the correct company's ContextBus pipeline.
  */
 export async function processInboxApproval(
   bus: ContextBus,
   payload: InboxApprovePayload
 ): Promise<ContextBus> {
-  const { classification, approvedTasks, rejectedTasks } = payload;
+  const { approvedItems, rejectedItems, company } = payload;
   const now = new Date();
   const dateStr = now.toISOString().split("T")[0];
   const timeStr = now.toTimeString().split(" ")[0].replace(/:/g, "");
   const fileId = `ib-${dateStr}-${timeStr}`;
 
-  // 1. Create directory if not exists
-  if (!fs.existsSync(INBOX_DIR)) {
-    fs.mkdirSync(INBOX_DIR, { recursive: true });
+  const inboxDir = getInboxDir(company);
+  if (!fs.existsSync(inboxDir)) {
+    fs.mkdirSync(inboxDir, { recursive: true });
   }
 
-  // 2. Construct Markdown content
+  // Construct archive Markdown
   let content = `---\n`;
   content += `id: "${fileId}"\n`;
   content += `type: "inbox_dump"\n`;
+  content += `company: "${company}"\n`;
   content += `status: "processed"\n`;
   content += `date: "${dateStr}"\n`;
   content += `---\n\n`;
 
-  content += `### Raw Input\n\`\`\`txt\n${classification.rawInput}\n\`\`\`\n\n`;
-  
-  content += `### Approved Tasks\n`;
-  if (approvedTasks.length > 0) {
-    approvedTasks.forEach(t => {
-      content += `- [${t.department.toUpperCase()}] ${t.title} (Suggested: ${t.suggestedSecretary || "None"}, Reason: ${t.reason})\n`;
+  content += `### Approved Items\n`;
+  if (approvedItems.length > 0) {
+    approvedItems.forEach(item => {
+      content += `- [${(item.type || "task").toUpperCase()}] ${item.title || item.rawText}`;
+      if (item.projectId) content += ` (Project: ${item.projectId})`;
+      if (item.priority) content += ` (Priority: ${item.priority})`;
+      if (item.suggestedSecretary) content += ` (Secretary: ${item.suggestedSecretary})`;
+      content += `\n`;
     });
   } else {
     content += `(None)\n`;
   }
-  content += `\n`;
-
-  content += `### Rejected/Pending Tasks\n`;
-  if (rejectedTasks.length > 0) {
-    rejectedTasks.forEach(t => {
-      content += `- [${t.department.toUpperCase()}] ${t.title}\n`;
+  content += `\n### Rejected Items\n`;
+  if (rejectedItems.length > 0) {
+    rejectedItems.forEach(item => {
+      content += `- ${item.title || item.rawText}\n`;
     });
   } else {
     content += `(None)\n`;
   }
 
-  const filePath = path.join(INBOX_DIR, `${dateStr}.md`);
-  
+  const filePath = path.join(inboxDir, `${dateStr}.md`);
   let fileContent = "";
   if (fs.existsSync(filePath)) {
     fileContent = fs.readFileSync(filePath, "utf-8") + "\n\n---\n\n" + content;
@@ -71,25 +76,40 @@ export async function processInboxApproval(
   }
   fs.writeFileSync(filePath, fileContent, "utf-8");
 
-  // 3. Inject tasks into ContextBus pipeline
-  let updatedBus = { ...bus };
-  
-  approvedTasks.forEach(t => {
-    // Map to TaskNode
-    const taskNode: TaskNode = {
-      id: t.id,
-      title: t.title,
-      owner: t.suggestedSecretary || `executive-coo`,
-      status: "approved"
-    };
-    updatedBus = pushTask(updatedBus, taskNode);
+  // Temporarily switch active company to target so pushTask works on correct bus
+  const originalCompany = bus.activeCompany;
+  let updatedBus: ContextBus = { ...bus, activeCompany: company };
+
+  // Inject approved tasks into the correct company's taskPipeline
+  const processedIds = new Set([
+    ...approvedItems.map(item => item.id),
+    ...rejectedItems.map(item => item.id)
+  ]);
+
+  approvedItems.forEach(item => {
+    if (item.type === "task" || !item.type) {
+      const taskNode: TaskNode = {
+        id: item.id,
+        title: item.title || item.rawText,
+        owner: item.suggestedSecretary || "executive-assistant",
+        status: "approved",
+        projectId: item.projectId,
+      };
+      updatedBus = pushTask(updatedBus, taskNode);
+    }
   });
 
-  // Clear pending inbox tasks once processed
-  updatedBus.pendingInboxTasks = [];
-  
-  // Save updated context bus state
-  await saveBus(updatedBus);
+  // Remove processed items from the company's inboxQueue
+  const targetCompanyBus = company === "crestix" ? updatedBus.crestix : updatedBus.personal;
+  const cleanedQueue = (targetCompanyBus.inboxQueue ?? []).filter(
+    item => !processedIds.has(item.id)
+  );
+  updatedBus = {
+    ...updatedBus,
+    [company]: { ...targetCompanyBus, inboxQueue: cleanedQueue },
+    activeCompany: originalCompany, // restore original
+  };
 
+  await saveBus(updatedBus);
   return updatedBus;
 }

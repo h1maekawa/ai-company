@@ -1,27 +1,34 @@
-import { getVaultFile, saveVaultFile } from "../vault";
+import fs from "fs";
+import path from "path";
 import { ContextBus, serializeBus, parseBus, createDefaultBus } from "./bus";
 
-const BUS_FILE_PATH = "memory/context/current-bus.md";
+const WORKSPACE_DIR = "/Users/maekawahiroyuki/Desktop/ai-company";
+const BUS_FILE_PATH = path.join(WORKSPACE_DIR, "memory", "context", "current-bus.json");
 
 /**
- * Loads ContextBus state from Obsidian vault
+ * Loads ContextBus state from JSON file
  */
 export async function loadBus(): Promise<ContextBus> {
   try {
-    const { content } = await getVaultFile(BUS_FILE_PATH);
-    if (content && content.trim()) {
-      return parseBus(content);
+    if (fs.existsSync(BUS_FILE_PATH)) {
+      const content = fs.readFileSync(BUS_FILE_PATH, "utf-8");
+      if (content && content.trim()) {
+        return parseBus(content);
+      }
     }
   } catch (e) {
-    console.warn(`[DEBUG] Current bus file not found at ${BUS_FILE_PATH}, using default.`, e);
+    console.warn(`[bus-server] Bus file not found or invalid at ${BUS_FILE_PATH}, using default.`, e);
   }
   return createDefaultBus();
 }
 
 /**
- * Saves ContextBus state to Obsidian vault
+ * Saves ContextBus state to JSON file
  */
 export async function saveBus(bus: ContextBus): Promise<void> {
-  const content = serializeBus(bus);
-  await saveVaultFile(BUS_FILE_PATH, content);
+  const dir = path.dirname(BUS_FILE_PATH);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(BUS_FILE_PATH, serializeBus(bus), "utf-8");
 }

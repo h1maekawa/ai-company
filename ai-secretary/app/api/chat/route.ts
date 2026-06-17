@@ -8,7 +8,10 @@ import {
   switchSecretary,
   pushDecision,
   pushTask,
-  ContextBus
+  ContextBus,
+  getActiveBus,
+  DecisionNode,
+  TaskNode
 } from "@/app/lib/context/bus";
 import { loadBus, saveBus } from "@/app/lib/context/bus-server";
 import { routeRequest } from "@/app/lib/router/executive";
@@ -18,6 +21,7 @@ import { saveVaultFile } from "@/app/lib/vault";
 import { classifyInbox } from "@/app/lib/router/inbox";
 import { processInboxApproval, InboxApprovePayload } from "@/app/lib/pipeline/inboxPipeline";
 import { saveCaptureEvent } from "@/app/lib/memory/capture";
+import { addToInboxQueue } from "@/app/lib/pipeline/inboxQueue";
 
 // ─── ルーティング判定 ──────────────────────────────────
 function shouldUseGemini(message: string): boolean {
@@ -77,39 +81,48 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Handle Switch Company Action
+  if (action === "switch-company") {
+    let bus = await loadBus();
+    bus.activeCompany = payload.company;
+    const activeSec = getActiveBus(bus).activeSecretary;
+    await saveBus(bus);
+    return NextResponse.json({
+      success: true,
+      currentBus: bus,
+      activeSecretary: activeSec
+    });
+  }
+
   if (!message?.trim()) {
     return NextResponse.json({ error: "メッセージが空です" }, { status: 400 });
   }
 
+  // 1. Load Context Bus
+  let bus = await loadBus();
+
   // Step 1: Capture Raw Input Event
   try {
-    await saveCaptureEvent(message, "chat");
+    await saveCaptureEvent(message, "chat", bus.activeCompany);
   } catch (err) {
     console.error("[DEBUG] Failed to save capture event:", err);
   }
 
-  // Handle Inbox Routing & Classification
+  // Handle Inbox Queue buffering for executive-inbox
   if (secretaryId === "executive-inbox") {
-    let bus = await loadBus();
-    const classification = await classifyInbox(message);
-    bus.pendingInboxTasks = classification.tasks;
-    bus = switchSecretary(bus, "executive-inbox", "Inbox雑投げ解析実行");
-    await saveBus(bus);
+    bus = await addToInboxQueue(bus, message);
 
-    const flow = [...bus.decisionHistory.map(d => d.to), "executive-inbox"];
+    const activeBus = getActiveBus(bus);
+    const flow = [...activeBus.decisionHistory.map((d: DecisionNode) => d.to), "executive-inbox"];
     await saveFlowMapLog(flow);
 
     return NextResponse.json({
-      reply: `インプットを分析し、${classification.tasks.length}個のタスクに自動分類しました。内容をご確認の上、「承認して流す」をクリックしてください。必要に応じて修正・保留も可能です。`,
+      reply: `インボックスにインプットを収集しました。画面上でタスクやアイデアとして整理してください。`,
       currentBus: bus,
       flow,
-      secretaryId: "executive-inbox",
-      classification
+      secretaryId: "executive-inbox"
     });
   }
-
-  // 1. Load Context Bus
-  let bus = await loadBus();
 
   let routeTo: string | undefined = undefined;
   let confidence: number | undefined = undefined;
@@ -150,7 +163,7 @@ export async function POST(req: NextRequest) {
     }
   } else {
     // Direct or manual selection
-    if (targetSecId !== bus.activeSecretary) {
+    if (targetSecId !== getActiveBus(bus).activeSecretary) {
       bus = switchSecretary(bus, targetSecId, "手動選択による切り替え");
     }
   }
@@ -172,21 +185,21 @@ export async function POST(req: NextRequest) {
     console.error("[DEBUG] Scoped memory load failed:", e);
   }
 
-  // 5. Build system prompt
+  const activeBus = getActiveBus(bus);
   const busContext = `
 ---
-## 会話共有コンテキスト（Context Bus）
-現在の意図 (Intent): ${bus.currentIntent || "未設定"}
-現在の目標 (Goal): ${bus.currentGoal || "未設定"}
-担当部署: ${bus.activeDepartment}
+## 会話共有コンテキスト（Context Bus - ${bus.activeCompany}）
+現在の意図 (Intent): ${activeBus.currentIntent || "未設定"}
+現在の目標 (Goal): ${activeBus.currentGoal || "未設定"}
+担当部署: ${activeBus.activeDepartment}
 現在のアクティブ秘書: ${registryEntry.config.name} (${targetSecId})
-直前の秘書: ${bus.previousSecretary || "なし"}
+直前の秘書: ${activeBus.previousSecretary || "なし"}
 
 ### 決定履歴 (Decision History):
-${bus.decisionHistory.slice(-5).map(h => `- [${h.timestamp}] ${h.from} → ${h.to} (理由: ${h.reason})`).join("\n")}
+${activeBus.decisionHistory.slice(-5).map((h: DecisionNode) => `- [${h.timestamp}] ${h.from} → ${h.to} (理由: ${h.reason})`).join("\n")}
 
 ### タスクパイプライン (Task Pipeline):
-${bus.taskPipeline.map(t => `- [${t.status}] ${t.title} (担当: ${t.owner}) (ID: ${t.id})`).join("\n")}
+${activeBus.taskPipeline.map((t: TaskNode) => `- [${t.status}] ${t.title} (担当: ${t.owner}) (ID: ${t.id})`).join("\n")}
 ---
 `;
 
@@ -272,8 +285,9 @@ ${busUpdateInstruction}
     if (busUpdateMatch) {
       try {
         const updates = JSON.parse(busUpdateMatch[1]);
-        if (updates.currentIntent) bus.currentIntent = updates.currentIntent;
-        if (updates.currentGoal) bus.currentGoal = updates.currentGoal;
+        const activeBus = getActiveBus(bus);
+        if (updates.currentIntent) activeBus.currentIntent = updates.currentIntent;
+        if (updates.currentGoal) activeBus.currentGoal = updates.currentGoal;
         if (updates.newTask) {
           bus = pushTask(bus, {
             id: updates.newTask.id || `tk-${Date.now()}`,
@@ -301,7 +315,7 @@ ${busUpdateInstruction}
     });
 
     // Save FlowMap Log
-    const flow = [...bus.decisionHistory.map(d => d.to), targetSecId];
+    const flow = [...getActiveBus(bus).decisionHistory.map((d: DecisionNode) => d.to), targetSecId];
     await saveFlowMapLog(flow);
 
     // Save Context Bus back to file
@@ -313,7 +327,7 @@ ${busUpdateInstruction}
       routeTo,
       confidence,
       flow,
-      activeAuthority: registryEntry.config.authority || "",
+      activeAuthority: "",
       currentBus: bus,
       recommendedNext,
       provider: selectedProvider,

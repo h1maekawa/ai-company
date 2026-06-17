@@ -1,5 +1,7 @@
+import { CompanyType } from "../config/projects";
 import { findSecretary } from "../config/registry";
-import { InboxTask } from "../router/inbox";
+
+export type { CompanyType };
 
 export type DecisionNode = {
   timestamp: string;
@@ -8,7 +10,7 @@ export type DecisionNode = {
   reason: string;
 };
 
-export type TaskStatus = 
+export type TaskStatus =
   | "inboxed"
   | "approved"
   | "assigned"
@@ -23,198 +25,135 @@ export type TaskNode = {
   title: string;
   owner: string;
   status: TaskStatus;
+  projectId?: string;
 };
 
-export type ContextBus = {
+export type InboxItem = {
+  id: string;
+  rawText: string;
+  approvalStatus: "pending" | "approved" | "rejected";
+  createdAt: string;
+  company?: CompanyType;
+
+  // PMO MVP fields
+  type?: "task" | "idea" | "decision";
+  title?: string;
+  content?: string;
+  suggestedDepartment?: string;
+  suggestedSecretary?: string;
+  priority?: "S" | "A" | "B";
+  projectId?: string;
+};
+
+export type CompanyBus = {
   currentIntent: string;
   currentGoal: string;
-
   activeDepartment: string;
   activeSecretary: string;
   previousSecretary?: string;
-
   decisionHistory: DecisionNode[];
   taskPipeline: TaskNode[];
-  
-  // Temporal inbox classification buffer
-  pendingInboxTasks?: InboxTask[];
+  inboxQueue: InboxItem[];
+  updatedAt: string;
+};
 
+export type ContextBus = {
+  activeCompany: CompanyType;
+  personal: CompanyBus;
+  crestix: CompanyBus;
   createdAt: string;
   updatedAt: string;
 };
 
 /**
- * Creates an empty/default ContextBus state
+ * Creates an empty CompanyBus with defaults
  */
-export function createDefaultBus(): ContextBus {
+export function createDefaultCompanyBus(defaultSecretary: string = "executive-assistant"): CompanyBus {
   const now = new Date().toISOString().split("T")[0];
   return {
     currentIntent: "",
     currentGoal: "",
     activeDepartment: "executive",
-    activeSecretary: "executive-coo",
+    activeSecretary: defaultSecretary,
     previousSecretary: "",
     decisionHistory: [],
     taskPipeline: [],
-    pendingInboxTasks: [],
-    createdAt: now,
-    updatedAt: now
+    inboxQueue: [],
+    updatedAt: now,
   };
 }
 
 /**
- * Custom YAML serializer for ContextBus
+ * Creates an empty ContextBus with defaults
  */
-export function serializeBus(bus: ContextBus): string {
-  const cleanVal = (val?: string) => (val ? val.replace(/"/g, '\\"') : "");
-
-  let yaml = "---\n";
-  yaml += `currentIntent: "${cleanVal(bus.currentIntent)}"\n`;
-  yaml += `currentGoal: "${cleanVal(bus.currentGoal)}"\n`;
-  yaml += `activeDepartment: "${cleanVal(bus.activeDepartment)}"\n`;
-  yaml += `activeSecretary: "${cleanVal(bus.activeSecretary)}"\n`;
-  yaml += `previousSecretary: "${cleanVal(bus.previousSecretary)}"\n`;
-  
-  yaml += "decisionHistory:\n";
-  if (bus.decisionHistory && bus.decisionHistory.length > 0) {
-    bus.decisionHistory.forEach(d => {
-      yaml += `  - timestamp: "${cleanVal(d.timestamp)}"\n`;
-      yaml += `    from: "${cleanVal(d.from)}"\n`;
-      yaml += `    to: "${cleanVal(d.to)}"\n`;
-      yaml += `    reason: "${cleanVal(d.reason)}"\n`;
-    });
-  }
-
-  yaml += "taskPipeline:\n";
-  if (bus.taskPipeline && bus.taskPipeline.length > 0) {
-    bus.taskPipeline.forEach(t => {
-      yaml += `  - id: "${cleanVal(t.id)}"\n`;
-      yaml += `    title: "${cleanVal(t.title)}"\n`;
-      yaml += `    owner: "${cleanVal(t.owner)}"\n`;
-      yaml += `    status: "${cleanVal(t.status)}"\n`;
-    });
-  }
-
-  yaml += "pendingInboxTasks:\n";
-  if (bus.pendingInboxTasks && bus.pendingInboxTasks.length > 0) {
-    bus.pendingInboxTasks.forEach(t => {
-      yaml += `  - id: "${cleanVal(t.id)}"\n`;
-      yaml += `    title: "${cleanVal(t.title)}"\n`;
-      yaml += `    department: "${cleanVal(t.department)}"\n`;
-      yaml += `    suggestedSecretary: "${cleanVal(t.suggestedSecretary)}"\n`;
-      yaml += `    confidence: ${t.confidence}\n`;
-      yaml += `    reason: "${cleanVal(t.reason)}"\n`;
-    });
-  }
-
-  yaml += `createdAt: "${cleanVal(bus.createdAt)}"\n`;
-  yaml += `updatedAt: "${cleanVal(bus.updatedAt)}"\n`;
-  yaml += "---\n";
-
-  return yaml;
+export function createDefaultBus(): ContextBus {
+  const now = new Date().toISOString().split("T")[0];
+  return {
+    activeCompany: "personal",
+    personal: createDefaultCompanyBus("personal-note"),
+    crestix: createDefaultCompanyBus("crestix-system"),
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 /**
- * Custom YAML parser for ContextBus
+ * Serialize ContextBus to JSON string (for storage)
  */
-export function parseBus(yaml: string): ContextBus {
-  const lines = yaml.split("\n");
-  const bus = createDefaultBus();
+export function serializeBus(bus: ContextBus): string {
+  return JSON.stringify(bus, null, 2);
+}
 
-  let currentKey: "decisionHistory" | "taskPipeline" | "pendingInboxTasks" | "" = "";
-  let currentItem: any = null;
-
-  for (let line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed === "---") continue;
-
-    // Handle array list items
-    if (line.startsWith("  - ") || line.startsWith("    - ")) {
-      if (currentItem) {
-        if (currentKey === "decisionHistory") bus.decisionHistory.push(currentItem);
-        if (currentKey === "taskPipeline") bus.taskPipeline.push(currentItem);
-        if (currentKey === "pendingInboxTasks") {
-          bus.pendingInboxTasks = bus.pendingInboxTasks || [];
-          bus.pendingInboxTasks.push(currentItem);
-        }
-      }
-      currentItem = {};
-      const keyVal = trimmed.substring(2).trim();
-      const colonIdx = keyVal.indexOf(":");
-      if (colonIdx !== -1) {
-        const k = keyVal.substring(0, colonIdx).trim();
-        const v = keyVal.substring(colonIdx + 1).trim().replace(/^["']|["']$/g, "").replace(/\\"/g, '"');
-        if (k === "confidence") {
-          currentItem[k] = Number(v) || 0.5;
-        } else {
-          currentItem[k] = v;
-        }
-      }
-      continue;
-    }
-
-    if (line.startsWith("    ") && currentItem) {
-      const colonIdx = trimmed.indexOf(":");
-      if (colonIdx !== -1) {
-        const k = trimmed.substring(0, colonIdx).trim();
-        const v = trimmed.substring(colonIdx + 1).trim().replace(/^["']|["']$/g, "").replace(/\\"/g, '"');
-        if (k === "confidence") {
-          currentItem[k] = Number(v) || 0.5;
-        } else {
-          currentItem[k] = v;
-        }
-      }
-      continue;
-    }
-
-    // Handle root-level key-values
-    const colonIdx = trimmed.indexOf(":");
-    if (colonIdx !== -1) {
-      if (currentItem) {
-        if (currentKey === "decisionHistory") bus.decisionHistory.push(currentItem);
-        if (currentKey === "taskPipeline") bus.taskPipeline.push(currentItem);
-        if (currentKey === "pendingInboxTasks") {
-          bus.pendingInboxTasks = bus.pendingInboxTasks || [];
-          bus.pendingInboxTasks.push(currentItem);
-        }
-        currentItem = null;
-      }
-
-      const k = trimmed.substring(0, colonIdx).trim();
-      const v = trimmed.substring(colonIdx + 1).trim().replace(/^["']|["']$/g, "").replace(/\\"/g, '"');
-
-      if (k === "decisionHistory") {
-        currentKey = "decisionHistory";
-        bus.decisionHistory = [];
-      } else if (k === "taskPipeline") {
-        currentKey = "taskPipeline";
-        bus.taskPipeline = [];
-      } else if (k === "pendingInboxTasks") {
-        currentKey = "pendingInboxTasks";
-        bus.pendingInboxTasks = [];
-      } else {
-        currentKey = "";
-        if (k === "currentIntent") bus.currentIntent = v;
-        else if (k === "currentGoal") bus.currentGoal = v;
-        else if (k === "activeDepartment") bus.activeDepartment = v;
-        else if (k === "activeSecretary") bus.activeSecretary = v;
-        else if (k === "previousSecretary") bus.previousSecretary = v;
-        else if (k === "createdAt") bus.createdAt = v;
-        else if (k === "updatedAt") bus.updatedAt = v;
-      }
-    }
+/**
+ * Parse ContextBus from JSON string
+ */
+export function parseBus(json: string): ContextBus {
+  try {
+    const parsed = JSON.parse(json);
+    // Ensure all required fields exist (migration safety)
+    const defaultBus = createDefaultBus();
+    return {
+      activeCompany: parsed.activeCompany ?? defaultBus.activeCompany,
+      personal: {
+        ...defaultBus.personal,
+        ...parsed.personal,
+        decisionHistory: parsed.personal?.decisionHistory ?? [],
+        taskPipeline: parsed.personal?.taskPipeline ?? [],
+        inboxQueue: parsed.personal?.inboxQueue ?? [],
+      },
+      crestix: {
+        ...defaultBus.crestix,
+        ...parsed.crestix,
+        decisionHistory: parsed.crestix?.decisionHistory ?? [],
+        taskPipeline: parsed.crestix?.taskPipeline ?? [],
+        inboxQueue: parsed.crestix?.inboxQueue ?? [],
+      },
+      createdAt: parsed.createdAt ?? defaultBus.createdAt,
+      updatedAt: parsed.updatedAt ?? defaultBus.updatedAt,
+    };
+  } catch (e) {
+    console.error("[bus] Failed to parse ContextBus JSON, using default:", e);
+    return createDefaultBus();
   }
+}
 
-  if (currentItem) {
-    if (currentKey === "decisionHistory") bus.decisionHistory.push(currentItem);
-    if (currentKey === "taskPipeline") bus.taskPipeline.push(currentItem);
-    if (currentKey === "pendingInboxTasks") {
-      bus.pendingInboxTasks = bus.pendingInboxTasks || [];
-      bus.pendingInboxTasks.push(currentItem);
-    }
-  }
+/**
+ * Get the active CompanyBus based on activeCompany
+ */
+export function getActiveBus(bus: ContextBus): CompanyBus {
+  return bus.activeCompany === "crestix" ? bus.crestix : bus.personal;
+}
 
-  return bus;
+/**
+ * Update the active CompanyBus
+ */
+export function setActiveBus(bus: ContextBus, companyBus: CompanyBus): ContextBus {
+  const now = new Date().toISOString().split("T")[0];
+  return {
+    ...bus,
+    [bus.activeCompany]: companyBus,
+    updatedAt: now,
+  };
 }
 
 /**
@@ -224,12 +163,12 @@ export function updateBus(bus: ContextBus, updates: Partial<ContextBus>): Contex
   return {
     ...bus,
     ...updates,
-    updatedAt: new Date().toISOString().split("T")[0]
+    updatedAt: new Date().toISOString().split("T")[0],
   };
 }
 
 /**
- * Appends a new decision to the decision history
+ * Appends a new decision to the active company's decision history
  */
 export function pushDecision(
   bus: ContextBus,
@@ -237,35 +176,39 @@ export function pushDecision(
 ): ContextBus {
   const newNode: DecisionNode = {
     ...decision,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
-  return {
-    ...bus,
-    decisionHistory: [...bus.decisionHistory, newNode],
-    updatedAt: new Date().toISOString().split("T")[0]
+  const activeBus = getActiveBus(bus);
+  const updatedCompanyBus: CompanyBus = {
+    ...activeBus,
+    decisionHistory: [...activeBus.decisionHistory, newNode],
+    updatedAt: new Date().toISOString().split("T")[0],
   };
+  return setActiveBus(bus, updatedCompanyBus);
 }
 
 /**
- * Registers or updates a task in the task pipeline
+ * Registers or updates a task in the active company's task pipeline
  */
 export function pushTask(bus: ContextBus, task: TaskNode): ContextBus {
-  const pipeline = [...bus.taskPipeline];
-  const idx = pipeline.findIndex(t => t.id === task.id);
+  const activeBus = getActiveBus(bus);
+  const pipeline = [...activeBus.taskPipeline];
+  const idx = pipeline.findIndex((t) => t.id === task.id);
   if (idx !== -1) {
     pipeline[idx] = task;
   } else {
     pipeline.push(task);
   }
-  return {
-    ...bus,
+  const updatedCompanyBus: CompanyBus = {
+    ...activeBus,
     taskPipeline: pipeline,
-    updatedAt: new Date().toISOString().split("T")[0]
+    updatedAt: new Date().toISOString().split("T")[0],
   };
+  return setActiveBus(bus, updatedCompanyBus);
 }
 
 /**
- * Changes active secretary and logs the transition in decisionHistory
+ * Changes active secretary in the active company's bus and logs the transition
  */
 export function switchSecretary(
   bus: ContextBus,
@@ -275,16 +218,22 @@ export function switchSecretary(
   const secretaryInfo = findSecretary(nextSecretaryId);
   const departmentId = secretaryInfo ? secretaryInfo.departmentId : "executive";
 
-  const updated = pushDecision(bus, {
-    from: bus.activeSecretary,
+  const activeBus = getActiveBus(bus);
+  const newDecision: DecisionNode = {
+    timestamp: new Date().toISOString(),
+    from: activeBus.activeSecretary,
     to: nextSecretaryId,
-    reason
-  });
-
-  return {
-    ...updated,
-    previousSecretary: bus.activeSecretary,
-    activeSecretary: nextSecretaryId,
-    activeDepartment: departmentId
+    reason,
   };
+
+  const updatedCompanyBus: CompanyBus = {
+    ...activeBus,
+    previousSecretary: activeBus.activeSecretary,
+    activeSecretary: nextSecretaryId,
+    activeDepartment: departmentId,
+    decisionHistory: [...activeBus.decisionHistory, newDecision],
+    updatedAt: new Date().toISOString().split("T")[0],
+  };
+
+  return setActiveBus(bus, updatedCompanyBus);
 }

@@ -67,14 +67,7 @@ export function findByDepartment(departmentId: string): RegistryEntry[] {
   );
 }
 
-/**
- * Find all secretaries belonging to a specific authority (coo, cso, cfo)
- */
-export function findByAuthority(authorityId: "coo" | "cso" | "cfo"): RegistryEntry[] {
-  return Object.values(SECRETARY_REGISTRY).filter(
-    entry => entry.config.authority === authorityId
-  );
-}
+
 
 /**
  * Find all secretaries belonging to a specific room

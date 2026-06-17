@@ -5,9 +5,8 @@ import OrgTree from "@/components/OrgTree";
 import Breadcrumbs from "@/components/Breadcrumbs";
 import ExecutivePanel from "@/components/ExecutivePanel";
 import FlowMap from "@/components/FlowMap";
-import { ContextBus, TaskNode, createDefaultBus } from "@/app/lib/context/bus";
+import { ContextBus, TaskNode, InboxItem, createDefaultBus, getActiveBus, CompanyType } from "@/app/lib/context/bus";
 import { findSecretary } from "@/app/lib/config/registry";
-import { InboxTask } from "@/app/lib/router/inbox";
 import { DEPARTMENTS } from "@/app/lib/config/departments";
 
 type Provider = "ollama" | "gemini" | "groq" | "auto";
@@ -64,10 +63,10 @@ export default function Home() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Inbox states
-  interface ClientInboxTask extends InboxTask {
+  interface ClientInboxItem extends InboxItem {
     checked: boolean;
   }
-  const [pendingInboxTasks, setPendingInboxTasks] = useState<ClientInboxTask[]>([]);
+  const [inboxQueueItems, setInboxQueueItems] = useState<ClientInboxItem[]>([]);
   const [inboxRawInput, setInboxRawInput] = useState("");
 
   // Note Mode sub-tab state (shown when in Note secretaries)
@@ -96,54 +95,30 @@ export default function Home() {
   const [promoteSuccess, setPromoteSuccess] = useState(false);
   const [promotedInfo, setPromotedInfo] = useState<{ draftPath?: string; draftId?: string }>({});
 
-  // Task card editing actions for Inbox
-  const handleTaskTitleChange = (id: string, newTitle: string) => {
-    setPendingInboxTasks(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
+  // Card editing action for Inbox Items
+  const handleItemChange = (id: string, updates: Partial<ClientInboxItem>) => {
+    setInboxQueueItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
   };
 
-  const handleTaskCheckedChange = (id: string, checked: boolean) => {
-    setPendingInboxTasks(prev => prev.map(t => t.id === id ? { ...t, checked } : t));
-  };
-
-  const handleTaskDeptChange = (id: string, newDept: "personal" | "company" | "finance" | "note" | "system") => {
-    setPendingInboxTasks(prev => prev.map(t => {
-      if (t.id === id) {
-        let defaultSec = "";
-        if (newDept === "personal") defaultSec = "personal-task";
-        else if (newDept === "company") defaultSec = "company-strategy";
-        else if (newDept === "finance") defaultSec = "finance-strategy";
-        else if (newDept === "note") defaultSec = "note-planning-trend";
-        else if (newDept === "system") defaultSec = "system-dev";
-
-        return { ...t, department: newDept, suggestedSecretary: defaultSec };
-      }
-      return t;
-    }));
-  };
-
-  const handleTaskSecChange = (id: string, newSec: string) => {
-    setPendingInboxTasks(prev => prev.map(t => t.id === id ? { ...t, suggestedSecretary: newSec } : t));
-  };
-
-  const getSecretariesForDept = (deptId: string) => {
-    const dept = DEPARTMENTS.find(d => d.id === deptId);
-    if (!dept) return [];
+  const getAllSecretaries = () => {
     const secs: { id: string; name: string }[] = [];
-    if (dept.secretaries) {
-      dept.secretaries.forEach(s => secs.push({ id: s.id, name: s.name }));
-    }
-    if (dept.rooms) {
-      dept.rooms.forEach(r => {
-        r.secretaries.forEach(s => secs.push({ id: s.id, name: `${r.name} / ${s.name}` }));
-      });
-    }
+    DEPARTMENTS.forEach(dept => {
+      if (dept.secretaries) {
+        dept.secretaries.forEach(s => secs.push({ id: s.id, name: s.name }));
+      }
+      if (dept.rooms) {
+        dept.rooms.forEach(r => {
+          r.secretaries.forEach(s => secs.push({ id: s.id, name: `${r.name} / ${s.name}` }));
+        });
+      }
+    });
     return secs;
   };
 
   async function handleApproveInbox() {
     setLoading(true);
-    const approvedTasks = pendingInboxTasks.filter(t => t.checked).map(({ checked, ...rest }) => rest);
-    const rejectedTasks = pendingInboxTasks.filter(t => !t.checked).map(({ checked, ...rest }) => rest);
+    const approvedItems = inboxQueueItems.filter(item => item.checked).map(({ checked, ...rest }) => rest);
+    const rejectedItems = inboxQueueItems.filter(item => !item.checked).map(({ checked, ...rest }) => rest);
 
     try {
       const res = await fetch("/api/chat", {
@@ -152,31 +127,71 @@ export default function Home() {
         body: JSON.stringify({
           action: "inbox-approve",
           payload: {
-            classification: {
-              rawInput: inboxRawInput || messages.slice(-2).find(m => m.role === "user")?.content || "",
-              tasks: pendingInboxTasks.map(({ checked, ...rest }) => rest)
-            },
-            approvedTasks,
-            rejectedTasks
+            approvedItems,
+            rejectedItems
           }
         })
       });
       const data = await res.json();
       if (data.success && data.currentBus) {
         setContextBus(data.currentBus);
-        setPendingInboxTasks([]);
+        setInboxQueueItems([]);
         setInboxRawInput("");
         setMessages(prev => [
           ...prev,
           {
             role: "assistant",
-            content: `📥 **Inboxタスクを処理しました**\n${approvedTasks.length}件のタスクを承認し、各秘書へ送信しました。${rejectedTasks.length}件を保留にしました。`
+            content: `📥 **Inbox項目を処理しました**\n${approvedItems.length}件を承認し、${rejectedItems.length}件を却下/保留にしました。`
           }
         ]);
-        setSelectedSecretaryId("executive-coo");
+        setSelectedSecretaryId("executive-assistant");
       }
     } catch (e) {
-      console.error("[DEBUG] Failed to approve inbox tasks:", e);
+      console.error("[DEBUG] Failed to approve inbox items:", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCompanyChange(company: CompanyType) {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "switch-company",
+          payload: { company }
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.currentBus) {
+        setContextBus(data.currentBus);
+        const activeBus = getActiveBus(data.currentBus);
+        setSelectedSecretaryId(data.activeSecretary || activeBus.activeSecretary || "executive-router");
+        
+        if (activeBus.inboxQueue) {
+          setInboxQueueItems(
+            activeBus.inboxQueue.map((item: InboxItem) => ({
+              ...item,
+              checked: true
+            }))
+          );
+        } else {
+          setInboxQueueItems([]);
+        }
+
+        const companyLabel = company === "personal" ? "Personal OS (個人)" : "Crestix OS (法人)";
+        setMessages(prev => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `🔄 **コンテキストを ${companyLabel} に切り替えました。**`
+          }
+        ]);
+      }
+    } catch (e) {
+      console.error("[DEBUG] Failed to switch company:", e);
     } finally {
       setLoading(false);
     }
@@ -190,12 +205,13 @@ export default function Home() {
         const data = await res.json();
         if (data.currentBus) {
           setContextBus(data.currentBus);
-          setSelectedSecretaryId(data.currentBus.activeSecretary || "executive-router");
-          if (data.currentBus.pendingInboxTasks) {
-            setPendingInboxTasks(
-              data.currentBus.pendingInboxTasks.map((t: InboxTask) => ({
-                ...t,
-                checked: t.confidence >= 0.5
+          const activeBus = getActiveBus(data.currentBus);
+          setSelectedSecretaryId(activeBus.activeSecretary || "executive-router");
+          if (activeBus.inboxQueue) {
+            setInboxQueueItems(
+              activeBus.inboxQueue.map((item: InboxItem) => ({
+                ...item,
+                checked: true
               }))
             );
           }
@@ -248,24 +264,15 @@ export default function Home() {
 
       if (data.currentBus) {
         setContextBus(data.currentBus);
-        if (data.currentBus.pendingInboxTasks) {
-          setPendingInboxTasks(
-            data.currentBus.pendingInboxTasks.map((t: InboxTask) => ({
-              ...t,
-              checked: t.confidence >= 0.5
+        const activeBus = getActiveBus(data.currentBus);
+        if (activeBus.inboxQueue) {
+          setInboxQueueItems(
+            activeBus.inboxQueue.map((item: InboxItem) => ({
+              ...item,
+              checked: true
             }))
           );
         }
-      }
-
-      if (data.classification) {
-        setPendingInboxTasks(
-          data.classification.tasks.map((t: InboxTask) => ({
-            ...t,
-            checked: t.confidence >= 0.5
-          }))
-        );
-        setInboxRawInput(data.classification.rawInput);
       }
 
       // Auto Routing Trigger (confidence >= 0.8)
@@ -452,8 +459,10 @@ export default function Home() {
     <div className="min-h-screen bg-[#0b0c10] text-slate-350 flex h-screen overflow-hidden">
       {/* 1. Left Sidebar (Organization Tree) */}
       <OrgTree
+        activeCompany={contextBus.activeCompany}
+        onChangeCompany={handleCompanyChange}
         activeSecretaryId={selectedSecretaryId}
-        taskPipeline={contextBus.taskPipeline}
+        taskPipeline={getActiveBus(contextBus).taskPipeline}
         onSelectSecretary={(id) => {
           setSelectedSecretaryId(id);
           setRecommendedNext(undefined);
@@ -501,7 +510,7 @@ export default function Home() {
 
           {/* FlowMap Tracker */}
           <FlowMap
-            decisionHistory={contextBus.decisionHistory}
+            decisionHistory={getActiveBus(contextBus).decisionHistory}
             activeSecretaryId={selectedSecretaryId}
           />
         </header>
@@ -546,7 +555,7 @@ export default function Home() {
                       <span className="text-lg">📥</span>
                       <h3 className="text-white font-bold text-sm">Inboxタスク整理・承認</h3>
                     </div>
-                    {pendingInboxTasks.length > 0 && (
+                    {inboxQueueItems.length > 0 && (
                       <button
                         onClick={handleApproveInbox}
                         disabled={loading}
@@ -557,76 +566,101 @@ export default function Home() {
                     )}
                   </div>
 
-                  {pendingInboxTasks.length === 0 ? (
+                  {inboxQueueItems.length === 0 ? (
                     <div className="text-center py-10 text-slate-500 text-xs">
                       インボックスは空です。下のチャット欄から雑多な思考やToDoを送信して解析してください。
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {pendingInboxTasks.map((task) => {
-                        const scoreColor = task.confidence >= 0.8 ? "text-emerald-400" : task.confidence >= 0.5 ? "text-amber-400" : "text-rose-400";
+                      {inboxQueueItems.map((item) => {
                         return (
-                          <div key={task.id} className={`p-4 rounded-xl border transition-all ${task.checked ? "bg-slate-850/60 border-blue-500/30" : "bg-slate-900/20 border-slate-800 opacity-60"}`}>
+                          <div key={item.id} className={`p-4 rounded-xl border transition-all ${item.checked ? "bg-slate-850/60 border-blue-500/30" : "bg-slate-900/20 border-slate-800 opacity-60"}`}>
                             <div className="flex items-start gap-3 justify-between">
                               <div className="flex items-start gap-2.5 flex-1">
                                 <input
                                   type="checkbox"
-                                  checked={task.checked}
-                                  onChange={(e) => handleTaskCheckedChange(task.id, e.target.checked)}
+                                  checked={item.checked}
+                                  onChange={(e) => handleItemChange(item.id, { checked: e.target.checked })}
                                   className="w-4 h-4 mt-0.5 accent-blue-500 rounded border-slate-700 bg-slate-850 outline-none cursor-pointer"
                                 />
                                 <div className="space-y-2.5 flex-1">
                                   {/* Title Input */}
                                   <input
                                     type="text"
-                                    value={task.title}
-                                    onChange={(e) => handleTaskTitleChange(task.id, e.target.value)}
+                                    value={item.title || ""}
+                                    onChange={(e) => handleItemChange(item.id, { title: e.target.value })}
+                                    placeholder="タイトルを入力してください..."
                                     className="bg-transparent border-b border-transparent focus:border-slate-650 hover:border-slate-800 text-slate-200 text-xs font-bold w-full outline-none py-0.5 transition-colors"
                                   />
                                   
                                   {/* Sub details */}
                                   <div className="flex flex-wrap items-center gap-4 text-xxs text-slate-500">
+                                    {/* Type Selector */}
                                     <div className="flex items-center gap-1.5">
-                                      <span>分類先:</span>
+                                      <span>分類:</span>
                                       <select
-                                        value={task.department}
-                                        onChange={(e) => handleTaskDeptChange(task.id, e.target.value as any)}
-                                        className="bg-slate-900 border border-slate-850 rounded px-1.5 py-0.5 text-slate-350 outline-none"
+                                        value={item.type || "task"}
+                                        onChange={(e) => handleItemChange(item.id, { type: e.target.value as any })}
+                                        className="bg-slate-900 border border-slate-850 rounded px-1.5 py-0.5 text-slate-350 outline-none font-semibold"
                                       >
-                                        <option value="personal">Personal</option>
-                                        <option value="company">Company</option>
-                                        <option value="finance">Finance</option>
-                                        <option value="note">Note</option>
-                                        <option value="system">System</option>
+                                        <option value="task">📝 タスク (Task)</option>
+                                        <option value="idea">💡 アイデア (Idea)</option>
+                                        <option value="decision">🎯 意思決定 (Decision)</option>
                                       </select>
                                     </div>
 
+                                    {/* Project Selector */}
+                                    <div className="flex items-center gap-1.5">
+                                      <span>プロジェクト:</span>
+                                      <select
+                                        value={item.projectId || "unclassified"}
+                                        onChange={(e) => handleItemChange(item.id, { projectId: e.target.value })}
+                                        className="bg-slate-900 border border-slate-850 rounded px-1.5 py-0.5 text-slate-350 outline-none"
+                                      >
+                                        <option value="unclassified">📂 未分類 (Unclassified)</option>
+                                        <option value="P001">P001 Note収益化</option>
+                                        <option value="P002">P002 AI Company OS</option>
+                                        <option value="P003">P003 投資</option>
+                                      </select>
+                                    </div>
+
+                                    {/* Priority Selector */}
+                                    <div className="flex items-center gap-1.5">
+                                      <span>優先度:</span>
+                                      <select
+                                        value={item.priority || "B"}
+                                        onChange={(e) => handleItemChange(item.id, { priority: e.target.value as any })}
+                                        className="bg-slate-900 border border-slate-850 rounded px-1.5 py-0.5 text-slate-350 outline-none"
+                                      >
+                                        <option value="S">S</option>
+                                        <option value="A">A</option>
+                                        <option value="B">B</option>
+                                      </select>
+                                    </div>
+
+                                    {/* Secretary Selector */}
                                     <div className="flex items-center gap-1.5">
                                       <span>担当秘書:</span>
                                       <select
-                                        value={task.suggestedSecretary || ""}
-                                        onChange={(e) => handleTaskSecChange(task.id, e.target.value)}
+                                        value={item.suggestedSecretary || ""}
+                                        onChange={(e) => handleItemChange(item.id, { suggestedSecretary: e.target.value })}
                                         className="bg-slate-900 border border-slate-850 rounded px-1.5 py-0.5 text-slate-350 outline-none"
                                       >
                                         <option value="">(未割り当て)</option>
-                                        {getSecretariesForDept(task.department).map((s) => (
+                                        {getAllSecretaries().map((s) => (
                                           <option key={s.id} value={s.id}>
                                             {s.name}
                                           </option>
                                         ))}
                                       </select>
                                     </div>
-
-                                    <div>
-                                      信頼度: <span className={`font-semibold ${scoreColor}`}>{Math.round(task.confidence * 100)}%</span>
-                                    </div>
                                   </div>
 
-                                  {task.reason && (
-                                    <p className="text-slate-500 text-xxs italic">
-                                      理由: {task.reason}
-                                    </p>
-                                  )}
+                                  {/* Raw Text display */}
+                                  <div className="mt-1 bg-slate-950/40 p-2 rounded border border-slate-850/60 text-xxs text-slate-400">
+                                    <div className="text-slate-500 font-semibold mb-0.5 uppercase tracking-wider text-xxxxs">収集原文:</div>
+                                    <p className="whitespace-pre-wrap">{item.rawText}</p>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -915,14 +949,14 @@ export default function Home() {
         </div>
 
         <div className="flex-1 p-3 space-y-2">
-          {contextBus.taskPipeline.length === 0 ? (
+          {getActiveBus(contextBus).taskPipeline.length === 0 ? (
             <div className="text-center py-8 text-slate-600 text-xxs leading-relaxed">
               登録済みのタスクはありません。
               <br />
               (会話中にAIが自動的にタスクを作成します)
             </div>
           ) : (
-            contextBus.taskPipeline.map((task) => {
+            getActiveBus(contextBus).taskPipeline.map((task: TaskNode) => {
               const statusColors: Record<string, string> = {
                 inboxed: "bg-slate-805 text-slate-400 border-slate-700/40",
                 approved: "bg-blue-900/20 text-blue-400 border-blue-500/20",
