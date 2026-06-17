@@ -17,6 +17,7 @@ import { saveChatLog } from "@/app/lib/memory/logs";
 import { saveVaultFile } from "@/app/lib/vault";
 import { classifyInbox } from "@/app/lib/router/inbox";
 import { processInboxApproval, InboxApprovePayload } from "@/app/lib/pipeline/inboxPipeline";
+import { saveCaptureEvent } from "@/app/lib/memory/capture";
 
 // ─── ルーティング判定 ──────────────────────────────────
 function shouldUseGemini(message: string): boolean {
@@ -78,6 +79,13 @@ export async function POST(req: NextRequest) {
 
   if (!message?.trim()) {
     return NextResponse.json({ error: "メッセージが空です" }, { status: 400 });
+  }
+
+  // Step 1: Capture Raw Input Event
+  try {
+    await saveCaptureEvent(message, "chat");
+  } catch (err) {
+    console.error("[DEBUG] Failed to save capture event:", err);
   }
 
   // Handle Inbox Routing & Classification
