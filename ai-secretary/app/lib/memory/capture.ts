@@ -2,7 +2,8 @@ import fs from "fs";
 import path from "path";
 import { CompanyType } from "../config/projects";
 
-const WORKSPACE_DIR = "/Users/maekawahiroyuki/Desktop/ai-company";
+// memory/ は ai-secretary/ の1つ上（ai-company/）にある
+const MEMORY_DIR = path.resolve(process.cwd(), "..", "memory");
 
 export type CaptureEvent = {
   id: string;
@@ -29,8 +30,8 @@ export async function saveCaptureEvent(
   const dateStr = `${year}${month}${day}`;
 
   const captureBase = company === "crestix"
-    ? path.join(WORKSPACE_DIR, "memory", "crestix", "capture")
-    : path.join(WORKSPACE_DIR, "memory", "personal", "capture");
+    ? path.join(MEMORY_DIR, "crestix", "capture")
+    : path.join(MEMORY_DIR, "personal", "capture");
 
   const targetDir = path.join(captureBase, year, month);
   if (!fs.existsSync(targetDir)) {

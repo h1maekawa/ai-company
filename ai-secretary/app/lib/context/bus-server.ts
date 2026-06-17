@@ -2,8 +2,9 @@ import fs from "fs";
 import path from "path";
 import { ContextBus, serializeBus, parseBus, createDefaultBus } from "./bus";
 
-const WORKSPACE_DIR = "/Users/maekawahiroyuki/Desktop/ai-company";
-const BUS_FILE_PATH = path.join(WORKSPACE_DIR, "memory", "current-bus.json");
+// current-bus.json は memory/ 直下（ai-secretary/ の1つ上）
+const MEMORY_DIR = path.resolve(process.cwd(), "..", "memory");
+const BUS_FILE_PATH = path.join(MEMORY_DIR, "current-bus.json");
 
 /**
  * Loads ContextBus state from JSON file

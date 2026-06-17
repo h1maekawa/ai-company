@@ -4,12 +4,13 @@ import { ContextBus, InboxItem, getActiveBus, setActiveBus } from "../context/bu
 import { saveBus } from "../context/bus-server";
 import { CompanyType } from "../config/projects";
 
-const WORKSPACE_DIR = "/Users/maekawahiroyuki/Desktop/ai-company";
+// memory/ は ai-secretary/ の1つ上（ai-company/）にある
+const MEMORY_DIR = path.resolve(process.cwd(), "..", "memory");
 
 function getInboxDir(company: CompanyType): string {
   return company === "crestix"
-    ? path.join(WORKSPACE_DIR, "memory", "crestix", "inbox")
-    : path.join(WORKSPACE_DIR, "memory", "personal", "inbox");
+    ? path.join(MEMORY_DIR, "crestix", "inbox")
+    : path.join(MEMORY_DIR, "personal", "inbox");
 }
 
 /**
