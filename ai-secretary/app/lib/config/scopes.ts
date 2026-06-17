@@ -19,6 +19,13 @@ export const PERSONAL_BRAIN_SCOPE = "memory/brain/personal/";
 export const COMPANY_BRAIN_SCOPE = "memory/brain/company/";
 
 export const MEMORY_SCOPES: MemoryScopes = {
+  // Inbox Secretary
+  "executive-inbox": {
+    local: ["memory/today.md"],
+    shared: ["memory/brain/personal/"],
+    global: ["memory/profile.md"]
+  },
+
   // Executive Board — always reads the full Personal Brain & Company Brain
   "executive-coo": {
     local: ["memory/today.md"],

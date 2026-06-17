@@ -31,6 +31,17 @@ export const DEPARTMENTS: Department[] = [
     icon: "👑",
     secretaries: [
       {
+        id: "executive-inbox",
+        name: "Inbox秘書 (雑投げ思考整理室)",
+        role: "Inbox",
+        prompt: `あなたは前川弘行専用のInbox秘書です。
+ユーザーから投げられた雑多なテキスト（アイデア、ToDo、メモなど）を解析し、適切な事業部および専門秘書へ分類・マッピングする役割を持ちます。`,
+        memoryScope: ["memory/today.md"],
+        saveCategory: "inbox",
+        priority: 1,
+        kpiTargets: ["分類精度", "処理タスク数"]
+      },
+      {
         id: "executive-coo",
         name: "COO (業務執行・進行管理役)",
         role: "COO",
@@ -48,7 +59,7 @@ export const DEPARTMENTS: Department[] = [
         name: "CSO (最高戦略責任者)",
         role: "CSO",
         prompt: `あなたは前川弘行専用のCSO（Chief Strategy Officer）です。
-経営戦略、ビジネス設計、note/ブログ等の差別化ポジショニング、ボトルネック分析を担当します。
+経営戦略、ビジネス設計、note/ブログ等の差別化ポジショニング、ボトルネック analysisを担当します。
 論理的思考と市場競争優位性に基づき、最適なフォーカス領域を推奨します。`,
         memoryScope: ["memory/goals.md", "memory/profile.md"],
         authority: "cso",

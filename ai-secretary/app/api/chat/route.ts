@@ -15,6 +15,8 @@ import { routeRequest } from "@/app/lib/router/executive";
 import { parseSaveSuggestion } from "@/app/lib/parser/saveSuggestion";
 import { saveChatLog } from "@/app/lib/memory/logs";
 import { saveVaultFile } from "@/app/lib/vault";
+import { classifyInbox } from "@/app/lib/router/inbox";
+import { processInboxApproval, InboxApprovePayload } from "@/app/lib/pipeline/inboxPipeline";
 
 // ─── ルーティング判定 ──────────────────────────────────
 function shouldUseGemini(message: string): boolean {
@@ -55,14 +57,47 @@ export async function GET() {
 
 // ─── メインハンドラー ──────────────────────────────────
 export async function POST(req: NextRequest) {
-  const { message, provider, secretaryId } = (await req.json()) as {
+  const body = (await req.json()) as {
     message?: string;
     provider?: "ollama" | "gemini" | "groq" | "auto";
     secretaryId?: string;
+    action?: string;
+    payload?: any;
   };
+  const { message, provider, secretaryId, action, payload } = body;
+
+  // Handle Inbox Approval Action
+  if (action === "inbox-approve") {
+    let bus = await loadBus();
+    const updatedBus = await processInboxApproval(bus, payload as InboxApprovePayload);
+    return NextResponse.json({
+      success: true,
+      currentBus: updatedBus
+    });
+  }
 
   if (!message?.trim()) {
     return NextResponse.json({ error: "メッセージが空です" }, { status: 400 });
+  }
+
+  // Handle Inbox Routing & Classification
+  if (secretaryId === "executive-inbox") {
+    let bus = await loadBus();
+    const classification = await classifyInbox(message);
+    bus.pendingInboxTasks = classification.tasks;
+    bus = switchSecretary(bus, "executive-inbox", "Inbox雑投げ解析実行");
+    await saveBus(bus);
+
+    const flow = [...bus.decisionHistory.map(d => d.to), "executive-inbox"];
+    await saveFlowMapLog(flow);
+
+    return NextResponse.json({
+      reply: `インプットを分析し、${classification.tasks.length}個のタスクに自動分類しました。内容をご確認の上、「承認して流す」をクリックしてください。必要に応じて修正・保留も可能です。`,
+      currentBus: bus,
+      flow,
+      secretaryId: "executive-inbox",
+      classification
+    });
   }
 
   // 1. Load Context Bus

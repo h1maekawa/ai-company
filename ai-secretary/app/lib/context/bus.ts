@@ -1,4 +1,5 @@
 import { findSecretary } from "../config/registry";
+import { InboxTask } from "../router/inbox";
 
 export type DecisionNode = {
   timestamp: string;
@@ -7,11 +8,21 @@ export type DecisionNode = {
   reason: string;
 };
 
+export type TaskStatus = 
+  | "inboxed"
+  | "approved"
+  | "assigned"
+  | "in_progress"
+  | "completed"
+  | "pending"
+  | "done"
+  | "blocked";
+
 export type TaskNode = {
   id: string;
   title: string;
   owner: string;
-  status: "pending" | "in_progress" | "done" | "blocked";
+  status: TaskStatus;
 };
 
 export type ContextBus = {
@@ -24,6 +35,9 @@ export type ContextBus = {
 
   decisionHistory: DecisionNode[];
   taskPipeline: TaskNode[];
+  
+  // Temporal inbox classification buffer
+  pendingInboxTasks?: InboxTask[];
 
   createdAt: string;
   updatedAt: string;
@@ -42,6 +56,7 @@ export function createDefaultBus(): ContextBus {
     previousSecretary: "",
     decisionHistory: [],
     taskPipeline: [],
+    pendingInboxTasks: [],
     createdAt: now,
     updatedAt: now
   };
@@ -80,6 +95,18 @@ export function serializeBus(bus: ContextBus): string {
     });
   }
 
+  yaml += "pendingInboxTasks:\n";
+  if (bus.pendingInboxTasks && bus.pendingInboxTasks.length > 0) {
+    bus.pendingInboxTasks.forEach(t => {
+      yaml += `  - id: "${cleanVal(t.id)}"\n`;
+      yaml += `    title: "${cleanVal(t.title)}"\n`;
+      yaml += `    department: "${cleanVal(t.department)}"\n`;
+      yaml += `    suggestedSecretary: "${cleanVal(t.suggestedSecretary)}"\n`;
+      yaml += `    confidence: ${t.confidence}\n`;
+      yaml += `    reason: "${cleanVal(t.reason)}"\n`;
+    });
+  }
+
   yaml += `createdAt: "${cleanVal(bus.createdAt)}"\n`;
   yaml += `updatedAt: "${cleanVal(bus.updatedAt)}"\n`;
   yaml += "---\n";
@@ -94,7 +121,7 @@ export function parseBus(yaml: string): ContextBus {
   const lines = yaml.split("\n");
   const bus = createDefaultBus();
 
-  let currentKey: "decisionHistory" | "taskPipeline" | "" = "";
+  let currentKey: "decisionHistory" | "taskPipeline" | "pendingInboxTasks" | "" = "";
   let currentItem: any = null;
 
   for (let line of lines) {
@@ -106,6 +133,10 @@ export function parseBus(yaml: string): ContextBus {
       if (currentItem) {
         if (currentKey === "decisionHistory") bus.decisionHistory.push(currentItem);
         if (currentKey === "taskPipeline") bus.taskPipeline.push(currentItem);
+        if (currentKey === "pendingInboxTasks") {
+          bus.pendingInboxTasks = bus.pendingInboxTasks || [];
+          bus.pendingInboxTasks.push(currentItem);
+        }
       }
       currentItem = {};
       const keyVal = trimmed.substring(2).trim();
@@ -113,7 +144,11 @@ export function parseBus(yaml: string): ContextBus {
       if (colonIdx !== -1) {
         const k = keyVal.substring(0, colonIdx).trim();
         const v = keyVal.substring(colonIdx + 1).trim().replace(/^["']|["']$/g, "").replace(/\\"/g, '"');
-        currentItem[k] = v;
+        if (k === "confidence") {
+          currentItem[k] = Number(v) || 0.5;
+        } else {
+          currentItem[k] = v;
+        }
       }
       continue;
     }
@@ -123,7 +158,11 @@ export function parseBus(yaml: string): ContextBus {
       if (colonIdx !== -1) {
         const k = trimmed.substring(0, colonIdx).trim();
         const v = trimmed.substring(colonIdx + 1).trim().replace(/^["']|["']$/g, "").replace(/\\"/g, '"');
-        currentItem[k] = v;
+        if (k === "confidence") {
+          currentItem[k] = Number(v) || 0.5;
+        } else {
+          currentItem[k] = v;
+        }
       }
       continue;
     }
@@ -134,6 +173,10 @@ export function parseBus(yaml: string): ContextBus {
       if (currentItem) {
         if (currentKey === "decisionHistory") bus.decisionHistory.push(currentItem);
         if (currentKey === "taskPipeline") bus.taskPipeline.push(currentItem);
+        if (currentKey === "pendingInboxTasks") {
+          bus.pendingInboxTasks = bus.pendingInboxTasks || [];
+          bus.pendingInboxTasks.push(currentItem);
+        }
         currentItem = null;
       }
 
@@ -146,6 +189,9 @@ export function parseBus(yaml: string): ContextBus {
       } else if (k === "taskPipeline") {
         currentKey = "taskPipeline";
         bus.taskPipeline = [];
+      } else if (k === "pendingInboxTasks") {
+        currentKey = "pendingInboxTasks";
+        bus.pendingInboxTasks = [];
       } else {
         currentKey = "";
         if (k === "currentIntent") bus.currentIntent = v;
@@ -162,6 +208,10 @@ export function parseBus(yaml: string): ContextBus {
   if (currentItem) {
     if (currentKey === "decisionHistory") bus.decisionHistory.push(currentItem);
     if (currentKey === "taskPipeline") bus.taskPipeline.push(currentItem);
+    if (currentKey === "pendingInboxTasks") {
+      bus.pendingInboxTasks = bus.pendingInboxTasks || [];
+      bus.pendingInboxTasks.push(currentItem);
+    }
   }
 
   return bus;

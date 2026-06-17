@@ -7,6 +7,8 @@ import ExecutivePanel from "@/components/ExecutivePanel";
 import FlowMap from "@/components/FlowMap";
 import { ContextBus, TaskNode, createDefaultBus } from "@/app/lib/context/bus";
 import { findSecretary } from "@/app/lib/config/registry";
+import { InboxTask } from "@/app/lib/router/inbox";
+import { DEPARTMENTS } from "@/app/lib/config/departments";
 
 type Provider = "ollama" | "gemini" | "groq" | "auto";
 type Message = {
@@ -61,6 +63,13 @@ export default function Home() {
   const [recommendedNext, setRecommendedNext] = useState<string | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Inbox states
+  interface ClientInboxTask extends InboxTask {
+    checked: boolean;
+  }
+  const [pendingInboxTasks, setPendingInboxTasks] = useState<ClientInboxTask[]>([]);
+  const [inboxRawInput, setInboxRawInput] = useState("");
+
   // Note Mode sub-tab state (shown when in Note secretaries)
   const [noteTab, setNoteTab] = useState<"chat" | "write">("chat");
   const [noteTitle, setNoteTitle] = useState("");
@@ -87,6 +96,92 @@ export default function Home() {
   const [promoteSuccess, setPromoteSuccess] = useState(false);
   const [promotedInfo, setPromotedInfo] = useState<{ draftPath?: string; draftId?: string }>({});
 
+  // Task card editing actions for Inbox
+  const handleTaskTitleChange = (id: string, newTitle: string) => {
+    setPendingInboxTasks(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
+  };
+
+  const handleTaskCheckedChange = (id: string, checked: boolean) => {
+    setPendingInboxTasks(prev => prev.map(t => t.id === id ? { ...t, checked } : t));
+  };
+
+  const handleTaskDeptChange = (id: string, newDept: "personal" | "company" | "finance" | "note" | "system") => {
+    setPendingInboxTasks(prev => prev.map(t => {
+      if (t.id === id) {
+        let defaultSec = "";
+        if (newDept === "personal") defaultSec = "personal-task";
+        else if (newDept === "company") defaultSec = "company-strategy";
+        else if (newDept === "finance") defaultSec = "finance-strategy";
+        else if (newDept === "note") defaultSec = "note-planning-trend";
+        else if (newDept === "system") defaultSec = "system-dev";
+
+        return { ...t, department: newDept, suggestedSecretary: defaultSec };
+      }
+      return t;
+    }));
+  };
+
+  const handleTaskSecChange = (id: string, newSec: string) => {
+    setPendingInboxTasks(prev => prev.map(t => t.id === id ? { ...t, suggestedSecretary: newSec } : t));
+  };
+
+  const getSecretariesForDept = (deptId: string) => {
+    const dept = DEPARTMENTS.find(d => d.id === deptId);
+    if (!dept) return [];
+    const secs: { id: string; name: string }[] = [];
+    if (dept.secretaries) {
+      dept.secretaries.forEach(s => secs.push({ id: s.id, name: s.name }));
+    }
+    if (dept.rooms) {
+      dept.rooms.forEach(r => {
+        r.secretaries.forEach(s => secs.push({ id: s.id, name: `${r.name} / ${s.name}` }));
+      });
+    }
+    return secs;
+  };
+
+  async function handleApproveInbox() {
+    setLoading(true);
+    const approvedTasks = pendingInboxTasks.filter(t => t.checked).map(({ checked, ...rest }) => rest);
+    const rejectedTasks = pendingInboxTasks.filter(t => !t.checked).map(({ checked, ...rest }) => rest);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "inbox-approve",
+          payload: {
+            classification: {
+              rawInput: inboxRawInput || messages.slice(-2).find(m => m.role === "user")?.content || "",
+              tasks: pendingInboxTasks.map(({ checked, ...rest }) => rest)
+            },
+            approvedTasks,
+            rejectedTasks
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.currentBus) {
+        setContextBus(data.currentBus);
+        setPendingInboxTasks([]);
+        setInboxRawInput("");
+        setMessages(prev => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `📥 **Inboxタスクを処理しました**\n${approvedTasks.length}件のタスクを承認し、各秘書へ送信しました。${rejectedTasks.length}件を保留にしました。`
+          }
+        ]);
+        setSelectedSecretaryId("executive-coo");
+      }
+    } catch (e) {
+      console.error("[DEBUG] Failed to approve inbox tasks:", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // Load Context Bus on mount
   useEffect(() => {
     async function loadCurrentBus() {
@@ -96,6 +191,14 @@ export default function Home() {
         if (data.currentBus) {
           setContextBus(data.currentBus);
           setSelectedSecretaryId(data.currentBus.activeSecretary || "executive-router");
+          if (data.currentBus.pendingInboxTasks) {
+            setPendingInboxTasks(
+              data.currentBus.pendingInboxTasks.map((t: InboxTask) => ({
+                ...t,
+                checked: t.confidence >= 0.5
+              }))
+            );
+          }
         }
       } catch (e) {
         console.error("[DEBUG] Failed to load initial ContextBus:", e);
@@ -145,6 +248,24 @@ export default function Home() {
 
       if (data.currentBus) {
         setContextBus(data.currentBus);
+        if (data.currentBus.pendingInboxTasks) {
+          setPendingInboxTasks(
+            data.currentBus.pendingInboxTasks.map((t: InboxTask) => ({
+              ...t,
+              checked: t.confidence >= 0.5
+            }))
+          );
+        }
+      }
+
+      if (data.classification) {
+        setPendingInboxTasks(
+          data.classification.tasks.map((t: InboxTask) => ({
+            ...t,
+            checked: t.confidence >= 0.5
+          }))
+        );
+        setInboxRawInput(data.classification.rawInput);
       }
 
       // Auto Routing Trigger (confidence >= 0.8)
@@ -416,7 +537,132 @@ export default function Home() {
         {/* Main interactive window */}
         <main className="flex-1 overflow-y-auto px-6 py-6 w-full max-w-4xl mx-auto flex flex-col justify-between">
           <div className="w-full">
-            {isNoteMode && noteTab === "write" ? (
+            {selectedSecretaryId === "executive-inbox" ? (
+              // Inbox Manager UI
+              <div className="space-y-6">
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-5 shadow-xl shadow-black/10">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">📥</span>
+                      <h3 className="text-white font-bold text-sm">Inboxタスク整理・承認</h3>
+                    </div>
+                    {pendingInboxTasks.length > 0 && (
+                      <button
+                        onClick={handleApproveInbox}
+                        disabled={loading}
+                        className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 disabled:bg-slate-800"
+                      >
+                        承認して流す
+                      </button>
+                    )}
+                  </div>
+
+                  {pendingInboxTasks.length === 0 ? (
+                    <div className="text-center py-10 text-slate-500 text-xs">
+                      インボックスは空です。下のチャット欄から雑多な思考やToDoを送信して解析してください。
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {pendingInboxTasks.map((task) => {
+                        const scoreColor = task.confidence >= 0.8 ? "text-emerald-400" : task.confidence >= 0.5 ? "text-amber-400" : "text-rose-400";
+                        return (
+                          <div key={task.id} className={`p-4 rounded-xl border transition-all ${task.checked ? "bg-slate-850/60 border-blue-500/30" : "bg-slate-900/20 border-slate-800 opacity-60"}`}>
+                            <div className="flex items-start gap-3 justify-between">
+                              <div className="flex items-start gap-2.5 flex-1">
+                                <input
+                                  type="checkbox"
+                                  checked={task.checked}
+                                  onChange={(e) => handleTaskCheckedChange(task.id, e.target.checked)}
+                                  className="w-4 h-4 mt-0.5 accent-blue-500 rounded border-slate-700 bg-slate-850 outline-none cursor-pointer"
+                                />
+                                <div className="space-y-2.5 flex-1">
+                                  {/* Title Input */}
+                                  <input
+                                    type="text"
+                                    value={task.title}
+                                    onChange={(e) => handleTaskTitleChange(task.id, e.target.value)}
+                                    className="bg-transparent border-b border-transparent focus:border-slate-650 hover:border-slate-800 text-slate-200 text-xs font-bold w-full outline-none py-0.5 transition-colors"
+                                  />
+                                  
+                                  {/* Sub details */}
+                                  <div className="flex flex-wrap items-center gap-4 text-xxs text-slate-500">
+                                    <div className="flex items-center gap-1.5">
+                                      <span>分類先:</span>
+                                      <select
+                                        value={task.department}
+                                        onChange={(e) => handleTaskDeptChange(task.id, e.target.value as any)}
+                                        className="bg-slate-900 border border-slate-850 rounded px-1.5 py-0.5 text-slate-350 outline-none"
+                                      >
+                                        <option value="personal">Personal</option>
+                                        <option value="company">Company</option>
+                                        <option value="finance">Finance</option>
+                                        <option value="note">Note</option>
+                                        <option value="system">System</option>
+                                      </select>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5">
+                                      <span>担当秘書:</span>
+                                      <select
+                                        value={task.suggestedSecretary || ""}
+                                        onChange={(e) => handleTaskSecChange(task.id, e.target.value)}
+                                        className="bg-slate-900 border border-slate-850 rounded px-1.5 py-0.5 text-slate-350 outline-none"
+                                      >
+                                        <option value="">(未割り当て)</option>
+                                        {getSecretariesForDept(task.department).map((s) => (
+                                          <option key={s.id} value={s.id}>
+                                            {s.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <div>
+                                      信頼度: <span className={`font-semibold ${scoreColor}`}>{Math.round(task.confidence * 100)}%</span>
+                                    </div>
+                                  </div>
+
+                                  {task.reason && (
+                                    <p className="text-slate-500 text-xxs italic">
+                                      理由: {task.reason}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Chat Log under Inbox Manager */}
+                {messages.length > 0 && (
+                  <div className="border-t border-slate-850 pt-4 space-y-4">
+                    <h4 className="text-xxs font-bold text-slate-500 uppercase tracking-wider text-slate-400">対話ログ</h4>
+                    {messages.map((msg, i) => (
+                      <div
+                        key={i}
+                        className={`mb-4 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      >
+                        <div className="max-w-[85%]">
+                          <div
+                            className={`rounded-xl px-4 py-2.5 text-xs leading-relaxed ${
+                              msg.role === "user"
+                                ? "bg-slate-850 text-slate-300 rounded-tr-none"
+                                : "bg-[#161821]/50 text-slate-400 rounded-tl-none border border-slate-850"
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : isNoteMode && noteTab === "write" ? (
               // Write tool
               <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-6 space-y-4 shadow-xl shadow-black/10">
                 <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
@@ -434,7 +680,7 @@ export default function Home() {
                       value={noteTitle}
                       onChange={(e) => setNoteTitle(e.target.value)}
                       className="w-full bg-slate-850 border border-slate-800 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none transition-colors"
-                      placeholder="例: 月5万円の副収入を得るための投資アプリ3選"
+                      placeholder="例: 月5万円 of 副収入を得るための投資アプリ3選"
                     />
                   </div>
 
@@ -677,16 +923,24 @@ export default function Home() {
             </div>
           ) : (
             contextBus.taskPipeline.map((task) => {
-              const statusColors = {
+              const statusColors: Record<string, string> = {
+                inboxed: "bg-slate-805 text-slate-400 border-slate-700/40",
+                approved: "bg-blue-900/20 text-blue-400 border-blue-500/20",
+                assigned: "bg-indigo-900/20 text-indigo-400 border-indigo-500/20",
                 pending: "bg-slate-800 text-slate-500 border-slate-700/60",
                 in_progress: "bg-amber-900/20 text-amber-400 border-amber-500/20",
                 done: "bg-emerald-900/20 text-emerald-400 border-emerald-500/20",
+                completed: "bg-emerald-900/20 text-emerald-400 border-emerald-500/20",
                 blocked: "bg-rose-900/20 text-rose-400 border-rose-500/20",
               };
-              const statusLabels = {
+              const statusLabels: Record<string, string> = {
+                inboxed: "収集済",
+                approved: "承認済",
+                assigned: "割当済",
                 pending: "未着手",
                 in_progress: "進行中",
                 done: "完了",
+                completed: "完了",
                 blocked: "保留",
               };
 
