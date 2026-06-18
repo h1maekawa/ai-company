@@ -1,10 +1,9 @@
 import fs from "fs";
-import path from "path";
 import { ContextBus, serializeBus, parseBus, createDefaultBus } from "./bus";
+import { getBusFilePath, getBusDir } from "../runtime/bus";
 
-// current-bus.json は memory/ 直下（ai-secretary/ の1つ上）
-const MEMORY_DIR = path.resolve(process.cwd(), "..", "memory");
-const BUS_FILE_PATH = path.join(MEMORY_DIR, "current-bus.json");
+// Resolved via runtime/bus.ts — supports local (memory/) and Vercel (/tmp) environments
+const BUS_FILE_PATH = getBusFilePath();
 
 /**
  * Loads ContextBus state from JSON file
@@ -27,7 +26,7 @@ export async function loadBus(): Promise<ContextBus> {
  * Saves ContextBus state to JSON file
  */
 export async function saveBus(bus: ContextBus): Promise<void> {
-  const dir = path.dirname(BUS_FILE_PATH);
+  const dir = getBusDir();
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
