@@ -1,0 +1,46 @@
+{
+  "activeCompany": "personal",
+  "personal": {
+    "currentIntent": "",
+    "currentGoal": "",
+    "activeDepartment": "personal",
+    "activeSecretary": "personal-fund",
+    "previousSecretary": "personal-note",
+    "decisionHistory": [
+      {
+        "timestamp": "2026-06-18T11:28:03.090Z",
+        "from": "personal-note",
+        "to": "personal-fund",
+        "reason": "手動選択による切り替え"
+      },
+      {
+        "timestamp": "2026-06-18T11:56:31.451Z",
+        "from": "personal-fund",
+        "to": "personal-note",
+        "reason": "手動選択による切り替え"
+      },
+      {
+        "timestamp": "2026-06-18T11:58:58.368Z",
+        "from": "personal-note",
+        "to": "personal-fund",
+        "reason": "手動選択による切り替え"
+      }
+    ],
+    "taskPipeline": [],
+    "inboxQueue": [],
+    "updatedAt": "2026-06-18"
+  },
+  "crestix": {
+    "currentIntent": "",
+    "currentGoal": "",
+    "activeDepartment": "executive",
+    "activeSecretary": "crestix-system",
+    "previousSecretary": "",
+    "decisionHistory": [],
+    "taskPipeline": [],
+    "inboxQueue": [],
+    "updatedAt": "2026-06-18"
+  },
+  "createdAt": "2026-06-18",
+  "updatedAt": "2026-06-18"
+}

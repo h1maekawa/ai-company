@@ -32,6 +32,48 @@ function shouldUseGemini(message: string): boolean {
   return geminiKeywords.some((kw) => message.includes(kw));
 }
 
+// ─── Fund コマンド検出 ──────────────────────────────────
+const FUND_COMMANDS = [
+  "/fund-review", "/market-scan", "/earnings-check",
+  "/rotation-check", "/buy-signal", "/sell-signal",
+  "/risk-check", "/portfolio-review", "/fund-heatmap"
+] as const;
+type FundCommand = typeof FUND_COMMANDS[number];
+
+function detectFundCommand(message: string): FundCommand | null {
+  for (const cmd of FUND_COMMANDS) {
+    if (message.startsWith(cmd) || message.includes(cmd)) return cmd;
+  }
+  return null;
+}
+
+// ─── Note コマンド検出 ──────────────────────────────────
+const NOTE_COMMANDS = [
+  "/note-research", "/note-title", "/note-outline",
+  "/note-draft", "/note-post-plan"
+] as const;
+type NoteCommand = typeof NOTE_COMMANDS[number];
+
+function detectNoteCommand(message: string): NoteCommand | null {
+  for (const cmd of NOTE_COMMANDS) {
+    if (message.startsWith(cmd) || message.includes(cmd)) return cmd;
+  }
+  return null;
+}
+
+// 投資ログ自動保存（バックグラウンド）
+async function autoSaveFundLog(ticker: string, action: string, notes: string) {
+  try {
+    await fetch("/api/fund/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker, action, notes }),
+    });
+  } catch (e) {
+    console.error("[DEBUG] Fund log auto-save failed:", e);
+  }
+}
+
 // ─── FlowMap 保存 ────────────────────────────────────
 async function saveFlowMapLog(flow: string[]) {
   const now = new Date();
@@ -100,6 +142,23 @@ export async function POST(req: NextRequest) {
 
   // 1. Load Context Bus
   let bus = await loadBus();
+
+  // Intercept /morning-report command
+  if (message.startsWith("/morning-report") || message.includes("/morning-report")) {
+    try {
+      const { generateMorningReport } = await import("@/app/lib/report/morning");
+      const reportText = await generateMorningReport();
+      return NextResponse.json({
+        reply: reportText,
+        currentBus: bus,
+        flow: ["personal-morning"],
+        secretaryId: "personal-morning"
+      });
+    } catch (e: any) {
+      console.error("[Morning API Intercept] Error:", e);
+      return NextResponse.json({ error: `モーニングレポートの生成に失敗しました: ${e.message}` }, { status: 500 });
+    }
+  }
 
   // Step 1: Capture Raw Input Event
   try {
@@ -247,6 +306,71 @@ ${memoryText}
 `;
   }
 
+  // Fund Manager 専用インジェクション
+  if (targetSecId === "personal-fund") {
+    const detectedCmd = detectFundCommand(message);
+    let fundInstruction = "";
+    if (detectedCmd === "/fund-heatmap") {
+      fundInstruction = `
+---
+## Fund Manager 追加指示 (/fund-heatmap用)
+- 必ず【保有割合】【集中リスク】【テーマ偏り】【利益偏り】【次の再配分候補】の5項目フォーマットで回答してください。
+- positions.md、themes.md 等の保有株リストをベースに、ポートフォリオの集中度やリスクを徹底分析してください。
+- 感情的表現は禁止です。価格や％等の数値を具体的に含めてください。
+---
+`;
+    } else {
+      fundInstruction = `
+---
+## Fund Manager 追加指示
+- 必ず【市場環境】【テーマ資金流入】【保有株評価】【買い候補】【押し目ライン】【利確ライン】【損切りライン】【最大リスク】【Decision Score】の9項目フォーマットで回答してください。
+- 【Decision Score】は以下の形式で各10点評価を含めてください：
+  Growth: X/10
+  Margin: X/10
+  Momentum: X/10
+  Valuation: X/10
+  Theme Strength: X/10
+  Risk: X/10
+- 価格・パーセント等の数値を具体的に含めてください。感情的表現は禁止です。
+- 買い・売りシグナルを提示した場合は回答の末尾に以下のコメントを必ず追加してください：
+<!-- FUND_LOG: { "ticker": "銘柄ティッカー", "action": "buy|sell|hold|review", "price": 数値または0, "notes": "判断根拠の要約" } -->
+${detectedCmd ? `- 検出コマンド: ${detectedCmd}` : ""}
+---
+`;
+    }
+    systemPrompt += fundInstruction;
+  }
+
+  // Note Secretary 専用インジェクション
+  if (targetSecId === "personal-note") {
+    const detectedNoteCmd = detectNoteCommand(message);
+    if (detectedNoteCmd) {
+      const noteInstruction = `
+---
+## Note Department 追加指示
+- 検出コマンド: ${detectedNoteCmd}
+- コマンド別処理方針：
+  - /note-research: テーマに沿った読者のニーズ、ペルソナ、市場競合分析を行ってください。themes.md や monetization.md の情報を活用してください。
+  - /note-title: 読者のアテンションを惹きつけるタイトル案を5つ提示してください（フックワード、対比、数字を含める）。hooks.md のテンプレートを参考にしてください。
+  - /note-outline: 記事の構成案（導入・本論1・本論2・まとめ・CTA）を提示してください。
+  - /note-draft: 構成案をベースに、導入から本文（1500〜2000字程度想定）を詳細に執筆してください。hooks.md の導入文やCTAテンプレートを活用してください。
+  - /note-post-plan: 投稿スケジュール、X(旧Twitter)での告知文章のセット、CV導線の確認計画を提示してください。
+---
+`;
+      systemPrompt += noteInstruction;
+    }
+  }
+
+  // Morning Secretary 専用インジェクション
+  if (targetSecId === "personal-morning") {
+    systemPrompt += `
+---
+## 朝会秘書（Morning Secretary）追加指示
+- モーニングレポート作成依頼（/morning-report）以外の通常の対話においても、常に今日のアクションや日次オペレーション管理の観点から簡潔にアドバイスを提示してください。
+---
+`;
+  }
+
   systemPrompt += `
 ${saveInstruction}
 ${busUpdateInstruction}
@@ -308,6 +432,38 @@ ${busUpdateInstruction}
     // Clean metadata tags from reply
     let cleanReply = parsedSuggestion.replyWithoutMetadata;
     cleanReply = cleanReply.replace(/<!-- BUS_UPDATE: [\s\S]*? -->/g, "").trim();
+
+    // Fund ログ自動解析・保存
+    if (targetSecId === "personal-fund") {
+      const fundLogMatch = rawReply.match(/<!-- FUND_LOG: (\{[\s\S]*?\}) -->/);
+      if (fundLogMatch) {
+        try {
+          const fundLog = JSON.parse(fundLogMatch[1]) as {
+            ticker: string;
+            action: string;
+            price?: number;
+            notes?: string;
+          };
+          if (fundLog.ticker && fundLog.action) {
+            // ローカル vault に直接保存（サーバーサイド）
+            const { saveVaultFile: saveFund } = await import("@/app/lib/vault");
+            const now = new Date();
+            const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+            const dateStr = `${jst.getUTCFullYear()}-${String(jst.getUTCMonth()+1).padStart(2,"0")}-${String(jst.getUTCDate()).padStart(2,"0")}`;
+            const ticker = fundLog.ticker.toUpperCase();
+            const logPath = `memory/personal/fund/investment-log/${dateStr}-${ticker}.md`;
+            const logContent = `---\nid: fund-log-${dateStr}-${ticker.toLowerCase()}\ntype: investment_log\nticker: ${ticker}\naction: ${fundLog.action}\ndate: ${dateStr}\n---\n\n# 投資判断ログ — ${ticker} ${fundLog.action} ${dateStr}\n\n## AI判断メモ\n\n${fundLog.notes ?? message}\n\n## 入力メッセージ\n\n${message}\n`;
+            saveFund(logPath, logContent).catch((e: Error) =>
+              console.error("[DEBUG] Fund log save failed:", e)
+            );
+          }
+        } catch (e) {
+          console.error("[DEBUG] Fund log parse error:", e);
+        }
+      }
+      // Fund ログタグを本文から除去
+      cleanReply = cleanReply.replace(/<!-- FUND_LOG: [\s\S]*? -->/g, "").trim();
+    }
 
     // 8. Background logging
     saveChatLog(targetSecId, message, cleanReply).catch((err) => {

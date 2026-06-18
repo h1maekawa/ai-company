@@ -62,6 +62,9 @@ export default function Home() {
   const [recommendedNext, setRecommendedNext] = useState<string | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Mobile sidebar state (Phase 1)
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   // Inbox states
   interface ClientInboxItem extends InboxItem {
     checked: boolean;
@@ -227,6 +230,18 @@ export default function Home() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  // Phase 4: Drawer閉じ時にスクロールロック解除
+  useEffect(() => {
+    if (sidebarOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [sidebarOpen]);
+
   const activeSecretary = findSecretary(selectedSecretaryId);
   const isNoteMode = selectedSecretaryId.startsWith("note-");
 
@@ -237,7 +252,7 @@ export default function Home() {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInput("");
     setLoading(true);
-    setRecommendedNext(undefined); // Reset recommendation
+    setRecommendedNext(undefined);
 
     try {
       const res = await fetch("/api/chat", {
@@ -456,23 +471,91 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0c10] text-slate-350 flex h-screen overflow-hidden">
-      {/* 1. Left Sidebar (Organization Tree) */}
-      <OrgTree
-        activeCompany={contextBus.activeCompany}
-        onChangeCompany={handleCompanyChange}
-        activeSecretaryId={selectedSecretaryId}
-        taskPipeline={getActiveBus(contextBus).taskPipeline}
-        onSelectSecretary={(id) => {
-          setSelectedSecretaryId(id);
-          setRecommendedNext(undefined);
-        }}
-      />
+    /* Phase 4: h-screen → min-h-dvh */
+    <div className="min-h-dvh bg-[#0b0c10] text-slate-350 flex flex-col md:flex-row overflow-hidden" style={{ height: "100dvh" }}>
+
+      {/* =============================================
+          Phase 1: Mobile Drawer Overlay
+          ============================================= */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Mobile Drawer (fixed overlay) */}
+      <div
+        className={`fixed inset-y-0 left-0 z-50 md:hidden transform transition-transform duration-300 ease-in-out ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <OrgTree
+          activeCompany={contextBus.activeCompany}
+          onChangeCompany={(c) => {
+            handleCompanyChange(c);
+            setSidebarOpen(false);
+          }}
+          activeSecretaryId={selectedSecretaryId}
+          taskPipeline={getActiveBus(contextBus).taskPipeline}
+          onSelectSecretary={(id) => {
+            setSelectedSecretaryId(id);
+            setRecommendedNext(undefined);
+            setSidebarOpen(false);
+          }}
+          onClose={() => setSidebarOpen(false)}
+        />
+      </div>
+
+      {/* Desktop Sidebar (always visible on md+) */}
+      <div className="hidden md:flex">
+        <OrgTree
+          activeCompany={contextBus.activeCompany}
+          onChangeCompany={handleCompanyChange}
+          activeSecretaryId={selectedSecretaryId}
+          taskPipeline={getActiveBus(contextBus).taskPipeline}
+          onSelectSecretary={(id) => {
+            setSelectedSecretaryId(id);
+            setRecommendedNext(undefined);
+          }}
+        />
+      </div>
 
       {/* Main Workspace Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0e1017]">
-        {/* Header Block */}
-        <header className="border-b border-slate-900 bg-[#12141c]/60 backdrop-blur-md px-6 py-4 flex flex-col gap-3 shrink-0">
+      <div className="flex-1 flex flex-col overflow-hidden bg-[#0e1017] min-w-0">
+
+        {/* =============================================
+            Phase 2: Mobile Header (hamburger + context)
+            ============================================= */}
+        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-slate-900 bg-[#12141c]/80 backdrop-blur-md shrink-0 gap-2">
+          <button
+            id="mobile-menu-btn"
+            onClick={() => setSidebarOpen(true)}
+            className="text-slate-400 hover:text-slate-200 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-slate-800 transition-colors shrink-0"
+            aria-label="メニューを開く"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div className="flex-1 min-w-0 text-center">
+            <div className="text-xs font-bold text-slate-200 truncate">
+              {contextBus.activeCompany === "personal" ? "👤 Personal" : "🏢 Crestix"}
+              <span className="text-slate-500 mx-1.5">|</span>
+              <span className="text-blue-400 truncate">
+                {activeSecretary?.config.name?.replace(/\s*\(.*\)/, "") || "副代表AI"}
+              </span>
+            </div>
+          </div>
+          {/* LLM quick badge */}
+          <div className="text-xxs text-slate-500 shrink-0 hidden xs:block">
+            {provider === "groq" ? "⚡" : provider === "gemini" ? "✨" : provider === "ollama" ? "🖥️" : "🤖"}
+          </div>
+        </header>
+
+        {/* Desktop Header Block */}
+        <header className="hidden md:block border-b border-slate-900 bg-[#12141c]/60 backdrop-blur-md px-6 py-4 shrink-0">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <Breadcrumbs activeSecretaryId={selectedSecretaryId} />
@@ -506,7 +589,9 @@ export default function Home() {
           </div>
 
           {/* Executive metrics Panel */}
-          <ExecutivePanel contextBus={contextBus} recommendedNext={recommendedNext} />
+          <div className="mt-3">
+            <ExecutivePanel contextBus={contextBus} recommendedNext={recommendedNext} />
+          </div>
 
           {/* FlowMap Tracker */}
           <FlowMap
@@ -515,13 +600,13 @@ export default function Home() {
           />
         </header>
 
-        {/* Note Mode Subtabs (Planning/Writing/Monetize Room subtabs) */}
+        {/* Note Mode Subtabs */}
         {isNoteMode && (
-          <div className="bg-[#12141c]/30 border-b border-slate-900/60 px-6 py-2 shrink-0">
+          <div className="bg-[#12141c]/30 border-b border-slate-900/60 px-4 md:px-6 py-2 shrink-0">
             <div className="flex gap-2">
               <button
                 onClick={() => setNoteTab("chat")}
-                className={`px-3 py-1 rounded text-xxs font-bold border transition-colors ${
+                className={`px-3 py-1 rounded text-xxs font-bold border transition-colors min-h-[44px] ${
                   noteTab === "chat"
                     ? "bg-blue-900/20 text-blue-400 border-blue-500/30"
                     : "bg-slate-800/40 text-slate-400 border-slate-700/50 hover:text-slate-300"
@@ -531,7 +616,7 @@ export default function Home() {
               </button>
               <button
                 onClick={() => setNoteTab("write")}
-                className={`px-3 py-1 rounded text-xxs font-bold border transition-colors ${
+                className={`px-3 py-1 rounded text-xxs font-bold border transition-colors min-h-[44px] ${
                   noteTab === "write"
                     ? "bg-blue-900/20 text-blue-400 border-blue-500/30"
                     : "bg-slate-800/40 text-slate-400 border-slate-700/50 hover:text-slate-300"
@@ -543,13 +628,19 @@ export default function Home() {
           </div>
         )}
 
-        {/* Main interactive window */}
-        <main className="flex-1 overflow-y-auto px-6 py-6 w-full max-w-4xl mx-auto flex flex-col justify-between">
-          <div className="w-full">
+        {/* =============================================
+            Main content area (scrollable)
+            ============================================= */}
+        {/* Phase 6: input固定のためpb追加 */}
+        <main
+          className="flex-1 overflow-y-auto px-3 md:px-6 py-4 md:py-6 w-full max-w-4xl mx-auto flex flex-col"
+          style={{ paddingBottom: !(isNoteMode && noteTab === "write") ? "5rem" : undefined }}
+        >
+          <div className="w-full flex-1">
             {selectedSecretaryId === "executive-inbox" ? (
               // Inbox Manager UI
               <div className="space-y-6">
-                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-5 shadow-xl shadow-black/10">
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 md:p-5 shadow-xl shadow-black/10">
                   <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
                     <div className="flex items-center gap-2">
                       <span className="text-lg">📥</span>
@@ -559,7 +650,7 @@ export default function Home() {
                       <button
                         onClick={handleApproveInbox}
                         disabled={loading}
-                        className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 disabled:bg-slate-800"
+                        className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 disabled:bg-slate-800 min-h-[44px]"
                       >
                         承認して流す
                       </button>
@@ -575,8 +666,8 @@ export default function Home() {
                       {inboxQueueItems.map((item) => {
                         return (
                           <div key={item.id} className={`p-4 rounded-xl border transition-all ${item.checked ? "bg-slate-850/60 border-blue-500/30" : "bg-slate-900/20 border-slate-800 opacity-60"}`}>
-                            <div className="flex items-start gap-3 justify-between">
-                              <div className="flex items-start gap-2.5 flex-1">
+                            <div className="flex items-start gap-3 justify-between flex-col md:flex-row">
+                              <div className="flex items-start gap-2.5 flex-1 w-full">
                                 <input
                                   type="checkbox"
                                   checked={item.checked}
@@ -594,7 +685,7 @@ export default function Home() {
                                   />
                                   
                                   {/* Sub details */}
-                                  <div className="flex flex-wrap items-center gap-4 text-xxs text-slate-500">
+                                  <div className="flex flex-wrap items-center gap-3 text-xxs text-slate-500">
                                     {/* Type Selector */}
                                     <div className="flex items-center gap-1.5">
                                       <span>分類:</span>
@@ -698,7 +789,7 @@ export default function Home() {
               </div>
             ) : isNoteMode && noteTab === "write" ? (
               // Write tool
-              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-6 space-y-4 shadow-xl shadow-black/10">
+              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 md:p-6 space-y-4 shadow-xl shadow-black/10">
                 <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
                   <span className="text-lg">✍️</span>
                   <h3 className="text-white font-bold text-sm">Note下書き生成ツール</h3>
@@ -730,7 +821,7 @@ export default function Home() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-slate-500 text-xxs font-semibold mb-1">
                         想定ターゲット
@@ -757,7 +848,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-slate-500 text-xxs font-semibold mb-1">
                         CTA (行動喚起)
@@ -792,7 +883,7 @@ export default function Home() {
                   <button
                     onClick={handleGenerateNote}
                     disabled={generatingNote}
-                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-6 py-2.5 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:bg-slate-700"
+                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-6 py-2.5 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:bg-slate-700 min-h-[44px]"
                   >
                     {generatingNote ? (
                       <>
@@ -886,61 +977,95 @@ export default function Home() {
                 )}
               </>
             )}
-          </div>
 
-          {/* Recommended transition suggestion banner */}
-          {recommendedNext && !loading && (
-            <div className="my-4 p-3 bg-blue-900/10 border border-blue-500/20 rounded-xl flex items-center justify-between gap-3 shadow-md shadow-blue-500/5">
-              <div className="text-xxs text-slate-400">
-                💡 COO推薦: この話題は{" "}
-                <strong className="text-blue-400">
-                  {findSecretary(recommendedNext)?.config.name || recommendedNext}
-                </strong>{" "}
-                が最適です。切り替えますか？
-              </div>
-              <button
-                onClick={handleAcceptRecommendation}
-                className="bg-blue-600 hover:bg-blue-500 text-white text-xxs font-bold px-3 py-1.5 rounded-lg transition-colors"
-              >
-                切り替える
-              </button>
-            </div>
-          )}
-
-          {/* Input Box */}
-          {!(isNoteMode && noteTab === "write") && (
-            <div className="mt-6 border-t border-slate-900 pt-4 bg-[#0e1017]">
-              <div className="flex gap-3 items-end">
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={`${
-                    activeSecretary?.config.name || "副代表AI"
-                  } にメッセージを送る... (Enterで送信 / Shift+Enterで改行)`}
-                  rows={1}
-                  className="flex-1 bg-slate-900 text-slate-200 placeholder-slate-650 rounded-xl px-4 py-3 text-xs resize-none outline-none border border-slate-800 focus:border-blue-500 min-h-[42px] max-h-36 transition-colors"
-                  onInput={(e) => {
-                    const t = e.currentTarget;
-                    t.style.height = "auto";
-                    t.style.height = Math.min(t.scrollHeight, 140) + "px";
-                  }}
-                />
+            {/* Recommended transition suggestion banner */}
+            {recommendedNext && !loading && (
+              <div className="my-4 p-3 bg-blue-900/10 border border-blue-500/20 rounded-xl flex items-center justify-between gap-3 shadow-md shadow-blue-500/5">
+                <div className="text-xxs text-slate-400">
+                  💡 COO推薦: この話題は{" "}
+                  <strong className="text-blue-400">
+                    {findSecretary(recommendedNext)?.config.name || recommendedNext}
+                  </strong>{" "}
+                  が最適です。切り替えますか？
+                </div>
                 <button
-                  onClick={handleSubmit}
-                  disabled={loading || !input.trim()}
-                  className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-xl px-5 py-3 text-xs font-bold shrink-0 h-[42px] transition-colors"
+                  onClick={handleAcceptRecommendation}
+                  className="bg-blue-600 hover:bg-blue-500 text-white text-xxs font-bold px-3 py-1.5 rounded-lg transition-colors min-h-[44px]"
                 >
-                  送信
+                  切り替える
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
+          <div ref={bottomRef} />
         </main>
+
+        {/* =============================================
+            Phase 3 & 6: Input Bar
+            - モバイル: fixed bottom
+            - デスクトップ: relative (通常フロー)
+            ============================================= */}
+        {!(isNoteMode && noteTab === "write") && (
+          <div
+            className="fixed bottom-0 left-0 right-0 md:relative md:bottom-auto md:left-auto md:right-auto border-t border-slate-900 bg-[#0e1017] px-3 md:px-6 pt-3 pb-3"
+            style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+          >
+            {/* Phase 2 (mobile): LLM selector in input area */}
+            <div className="md:hidden flex gap-1 mb-2 overflow-x-auto pb-1">
+              {(["ollama", "groq", "gemini", "auto"] as Provider[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setProvider(p)}
+                  className={`px-2.5 py-1 rounded text-xxs font-semibold transition-colors shrink-0 min-h-[32px] ${
+                    provider === p
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-500/10"
+                      : "text-slate-500 bg-slate-900 border border-slate-800 hover:text-slate-300"
+                  }`}
+                >
+                  {p === "ollama"
+                    ? "🖥️ Ollama"
+                    : p === "gemini"
+                    ? "✨ Gemini"
+                    : p === "groq"
+                    ? "⚡ Groq"
+                    : "🤖 Auto"}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-3 items-end w-full max-w-4xl mx-auto">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={`${
+                  activeSecretary?.config.name || "副代表AI"
+                } にメッセージを送る... (Enterで送信 / Shift+Enterで改行)`}
+                rows={1}
+                className="flex-1 bg-slate-900 text-slate-200 placeholder-slate-650 rounded-xl px-4 py-3 text-xs md:text-sm resize-none outline-none border border-slate-800 focus:border-blue-500 min-h-[44px] max-h-36 transition-colors"
+                onInput={(e) => {
+                  const t = e.currentTarget;
+                  t.style.height = "auto";
+                  t.style.height = Math.min(t.scrollHeight, 140) + "px";
+                }}
+              />
+              <button
+                onClick={handleSubmit}
+                disabled={loading || !input.trim()}
+                className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-xl px-5 py-3 text-xs font-bold shrink-0 min-h-[44px] transition-colors"
+              >
+                送信
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 2. Right Sidebar (Task Pipeline View) */}
-      <aside className="w-60 bg-slate-900 border-l border-slate-800 flex flex-col h-full overflow-y-auto">
+      {/* =============================================
+          Right Sidebar (Task Pipeline) — desktop only
+          ============================================= */}
+      <aside className="hidden md:flex w-60 bg-slate-900 border-l border-slate-800 flex-col h-full overflow-y-auto">
         <div className="p-4 border-b border-slate-800">
           <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
             📋 タスクパイプライン
@@ -1090,14 +1215,14 @@ export default function Home() {
                 <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-850">
                   <button
                     onClick={closeSaveModal}
-                    className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-900 text-xxs font-semibold transition-colors"
+                    className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-900 text-xxs font-semibold transition-colors min-h-[44px]"
                   >
                     スキップ
                   </button>
                   <button
                     onClick={handleSaveKnowledge}
                     disabled={savingKnowledge}
-                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-5 py-2 text-xxs font-semibold transition-colors disabled:bg-slate-800"
+                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-5 py-2 text-xxs font-semibold transition-colors disabled:bg-slate-800 min-h-[44px]"
                   >
                     {savingKnowledge ? "保存中..." : "保存する"}
                   </button>
@@ -1118,14 +1243,14 @@ export default function Home() {
                 <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-850">
                   <button
                     onClick={closeSaveModal}
-                    className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-900 text-xxs font-semibold transition-colors"
+                    className="px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-900 text-xxs font-semibold transition-colors min-h-[44px]"
                   >
                     閉じる
                   </button>
                   <button
                     onClick={handlePromoteKnowledge}
                     disabled={promoting}
-                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-5 py-2 text-xxs font-semibold transition-colors"
+                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-5 py-2 text-xxs font-semibold transition-colors min-h-[44px]"
                   >
                     {promoting ? "昇格中..." : "昇格する"}
                   </button>
@@ -1155,7 +1280,7 @@ export default function Home() {
                 <div className="flex items-center justify-end pt-4 border-t border-slate-850">
                   <button
                     onClick={closeSaveModal}
-                    className="bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg px-6 py-2 text-xxs font-semibold transition-colors"
+                    className="bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg px-6 py-2 text-xxs font-semibold transition-colors min-h-[44px]"
                   >
                     閉じる
                   </button>
