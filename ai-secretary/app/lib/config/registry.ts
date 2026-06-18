@@ -12,6 +12,12 @@ export const SECRETARY_REGISTRY: Record<string, RegistryEntry> = {};
 
 /**
  * Dynamically builds the flat lookup registry of all secretaries
+ *
+ * TODO(phase7-split): When physical repos are separated, replace this single
+ * buildRegistry() with two independent builders:
+ *   buildPersonalRegistry()  → reads from personal-os/vault/ DEPARTMENTS
+ *   buildCompanyRegistry()   → reads from company-os/vault/ DEPARTMENTS
+ * Each ai-secretary/ instance will call only its own builder.
  */
 export function buildRegistry(): Record<string, RegistryEntry> {
   // Clear registry first to allow re-builds if needed
@@ -20,6 +26,8 @@ export function buildRegistry(): Record<string, RegistryEntry> {
   }
 
   DEPARTMENTS.forEach(dept => {
+    // TODO(phase7-split): Filter by dept.company === 'personal' or 'crestix'
+    // to build separate registries for each OS.
     if (dept.secretaries) {
       dept.secretaries.forEach(sec => {
         SECRETARY_REGISTRY[sec.id] = {
