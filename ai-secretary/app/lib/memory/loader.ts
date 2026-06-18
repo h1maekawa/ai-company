@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { MEMORY_SCOPES, DEFAULT_GLOBAL_SCOPE } from "../config/scopes";
 import { getVaultFile } from "../vault";
+import { resolveRawPath } from "../runtime/paths";
 
 export type LoadedMemory = {
   files: {
@@ -14,7 +15,7 @@ export type LoadedMemory = {
  * Recursively scans a directory on the local filesystem and finds all .md files.
  */
 function scanDirectoryRecursive(dirPath: string): string[] {
-  const absolutePath = path.resolve(process.cwd(), "..", dirPath);
+  const absolutePath = resolveRawPath(dirPath);
   const results: string[] = [];
 
   if (!fs.existsSync(absolutePath)) {
@@ -74,7 +75,7 @@ export async function loadScopedMemory(secretaryId: string): Promise<LoadedMemor
       if (processedPaths.has(cleanPath)) continue;
       processedPaths.add(cleanPath);
 
-      const absolutePath = path.resolve(process.cwd(), "..", cleanPath);
+      const absolutePath = resolveRawPath(cleanPath);
       if (!fs.existsSync(absolutePath)) {
         continue;
       }

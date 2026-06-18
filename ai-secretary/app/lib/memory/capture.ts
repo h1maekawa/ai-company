@@ -1,9 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { CompanyType } from "../config/projects";
+import { VAULT_ROOT } from "../runtime/paths";
 
-// memory/ は ai-secretary/ の1つ上（ai-company/）にある
-const MEMORY_DIR = path.resolve(process.cwd(), "..", "memory");
+// Vault root resolved via runtime/paths.ts (single source of truth)
+const MEMORY_DIR = VAULT_ROOT;
 
 export type CaptureEvent = {
   id: string;

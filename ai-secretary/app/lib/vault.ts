@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { resolveRawPath } from './runtime/paths';
 
 const GITHUB_OWNER = process.env.GITHUB_OWNER || '';
 const GITHUB_REPO = process.env.GITHUB_REPO || '';
@@ -57,7 +58,7 @@ export async function getVaultFile(filePath: string): Promise<VaultFile> {
   } else {
     // Local filesystem fallback
     try {
-      const localPath = path.resolve(process.cwd(), '..', filePath);
+      const localPath = resolveRawPath(filePath);
       if (fs.existsSync(localPath)) {
         const content = fs.readFileSync(localPath, 'utf-8');
         return { content, sha: undefined };
@@ -119,7 +120,7 @@ export async function saveVaultFile(
   } else {
     // Local filesystem write
     try {
-      const localPath = path.resolve(process.cwd(), '..', filePath);
+      const localPath = resolveRawPath(filePath);
       const dir = path.dirname(localPath);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -170,7 +171,7 @@ export async function listVaultDirectory(dirPath: string): Promise<string[]> {
   } else {
     // Local filesystem fallback
     try {
-      const localPath = path.resolve(process.cwd(), '..', dirPath);
+      const localPath = resolveRawPath(dirPath);
       if (fs.existsSync(localPath) && fs.statSync(localPath).isDirectory()) {
         return fs.readdirSync(localPath).filter(name => {
           const full = path.join(localPath, name);
