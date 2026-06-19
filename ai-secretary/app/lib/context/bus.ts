@@ -60,9 +60,13 @@ export type CompanyBus = {
 export type ContextBus = {
   activeCompany: CompanyType;
   personal: CompanyBus;
-  crestix: CompanyBus;
+  crestix?: CompanyBus; // For backward compatibility
+  company: CompanyBus;
   createdAt: string;
   updatedAt: string;
+  meta?: {
+    schemaVersion: number;
+  };
 };
 
 /**
@@ -88,12 +92,17 @@ export function createDefaultCompanyBus(defaultSecretary: string = "executive-as
  */
 export function createDefaultBus(): ContextBus {
   const now = new Date().toISOString().split("T")[0];
+  const companyBus = createDefaultCompanyBus("company-system");
   return {
     activeCompany: "personal",
     personal: createDefaultCompanyBus("personal-note"),
-    crestix: createDefaultCompanyBus("crestix-system"),
+    company: companyBus,
+    crestix: companyBus,
     createdAt: now,
     updatedAt: now,
+    meta: {
+      schemaVersion: 2
+    }
   };
 }
 
@@ -110,26 +119,47 @@ export function serializeBus(bus: ContextBus): string {
 export function parseBus(json: string): ContextBus {
   try {
     const parsed = JSON.parse(json);
-    // Ensure all required fields exist (migration safety)
     const defaultBus = createDefaultBus();
+
+    // Auto-migration check: schemaVersion missing or < 2
+    if (!parsed.meta?.schemaVersion || parsed.meta.schemaVersion < 2) {
+      if (parsed.crestix && !parsed.company) {
+        parsed.company = parsed.crestix;
+      }
+      parsed.meta = {
+        ...parsed.meta,
+        schemaVersion: 2
+      };
+      if (parsed.activeCompany === "crestix") {
+        parsed.activeCompany = "company";
+      }
+    }
+
+    const personalData = parsed.personal;
+    const companyData = parsed.company ?? parsed.crestix;
+
+    const mergedCompany = {
+      ...defaultBus.company,
+      ...companyData,
+      decisionHistory: companyData?.decisionHistory ?? [],
+      taskPipeline: companyData?.taskPipeline ?? [],
+      inboxQueue: companyData?.inboxQueue ?? [],
+    };
+
     return {
       activeCompany: parsed.activeCompany ?? defaultBus.activeCompany,
       personal: {
         ...defaultBus.personal,
-        ...parsed.personal,
-        decisionHistory: parsed.personal?.decisionHistory ?? [],
-        taskPipeline: parsed.personal?.taskPipeline ?? [],
-        inboxQueue: parsed.personal?.inboxQueue ?? [],
+        ...personalData,
+        decisionHistory: personalData?.decisionHistory ?? [],
+        taskPipeline: personalData?.taskPipeline ?? [],
+        inboxQueue: personalData?.inboxQueue ?? [],
       },
-      crestix: {
-        ...defaultBus.crestix,
-        ...parsed.crestix,
-        decisionHistory: parsed.crestix?.decisionHistory ?? [],
-        taskPipeline: parsed.crestix?.taskPipeline ?? [],
-        inboxQueue: parsed.crestix?.inboxQueue ?? [],
-      },
+      company: mergedCompany,
+      crestix: mergedCompany, // Keep crestix synchronized
       createdAt: parsed.createdAt ?? defaultBus.createdAt,
       updatedAt: parsed.updatedAt ?? defaultBus.updatedAt,
+      meta: parsed.meta ?? defaultBus.meta,
     };
   } catch (e) {
     console.error("[bus] Failed to parse ContextBus JSON, using default:", e);
@@ -141,7 +171,9 @@ export function parseBus(json: string): ContextBus {
  * Get the active CompanyBus based on activeCompany
  */
 export function getActiveBus(bus: ContextBus): CompanyBus {
-  return bus.activeCompany === "crestix" ? bus.crestix : bus.personal;
+  return bus.activeCompany === "company" || bus.activeCompany === "crestix"
+    ? (bus.company ?? bus.crestix ?? createDefaultCompanyBus("company-system"))
+    : bus.personal;
 }
 
 /**
@@ -149,9 +181,12 @@ export function getActiveBus(bus: ContextBus): CompanyBus {
  */
 export function setActiveBus(bus: ContextBus, companyBus: CompanyBus): ContextBus {
   const now = new Date().toISOString().split("T")[0];
+  const isCompany = bus.activeCompany === "company" || bus.activeCompany === "crestix";
   return {
     ...bus,
-    [bus.activeCompany]: companyBus,
+    company: isCompany ? companyBus : bus.company,
+    crestix: isCompany ? companyBus : bus.crestix,
+    personal: !isCompany ? companyBus : bus.personal,
     updatedAt: now,
   };
 }

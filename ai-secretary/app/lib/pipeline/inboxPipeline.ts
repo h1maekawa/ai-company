@@ -1,17 +1,12 @@
-import fs from "fs";
-import path from "path";
 import { ContextBus, TaskNode, InboxItem, pushTask } from "../context/bus";
 import { saveBus } from "../context/bus-server";
 import { CompanyType } from "../config/projects";
-import { VAULT_ROOT } from "../runtime/paths";
+import { getVaultFile, saveVaultFile } from "../vault";
 
-// Vault root resolved via runtime/paths.ts (single source of truth)
-const MEMORY_DIR = VAULT_ROOT;
-
-function getInboxDir(company: CompanyType): string {
-  return company === "crestix"
-    ? path.join(MEMORY_DIR, "crestix", "inbox")
-    : path.join(MEMORY_DIR, "personal", "inbox");
+function getInboxVaultPath(company: CompanyType, dateStr: string): string {
+  const tenant =
+    company === "company" || company === "crestix" ? "company" : "personal";
+  return `memory/${tenant}/inbox/${dateStr}.md`;
 }
 
 export interface InboxApprovePayload {
@@ -22,7 +17,8 @@ export interface InboxApprovePayload {
 
 /**
  * Pipeline to handle task approval from the Inbox.
- * Persists history and adds tasks to the correct company's ContextBus pipeline.
+ * Persists history via saveVaultFile (EROFS-safe) and adds tasks to the
+ * correct company's ContextBus pipeline.
  */
 export async function processInboxApproval(
   bus: ContextBus,
@@ -34,49 +30,48 @@ export async function processInboxApproval(
   const timeStr = now.toTimeString().split(" ")[0].replace(/:/g, "");
   const fileId = `ib-${dateStr}-${timeStr}`;
 
-  const inboxDir = getInboxDir(company);
-  if (!fs.existsSync(inboxDir)) {
-    fs.mkdirSync(inboxDir, { recursive: true });
-  }
-
   // Construct archive Markdown
-  let content = `---\n`;
-  content += `id: "${fileId}"\n`;
-  content += `type: "inbox_dump"\n`;
-  content += `company: "${company}"\n`;
-  content += `status: "processed"\n`;
-  content += `date: "${dateStr}"\n`;
-  content += `---\n\n`;
+  let archiveContent = `---\n`;
+  archiveContent += `id: "${fileId}"\n`;
+  archiveContent += `type: "inbox_dump"\n`;
+  archiveContent += `company: "${company}"\n`;
+  archiveContent += `status: "processed"\n`;
+  archiveContent += `date: "${dateStr}"\n`;
+  archiveContent += `---\n\n`;
 
-  content += `### Approved Items\n`;
+  archiveContent += `### Approved Items\n`;
   if (approvedItems.length > 0) {
     approvedItems.forEach(item => {
-      content += `- [${(item.type || "task").toUpperCase()}] ${item.title || item.rawText}`;
-      if (item.projectId) content += ` (Project: ${item.projectId})`;
-      if (item.priority) content += ` (Priority: ${item.priority})`;
-      if (item.suggestedSecretary) content += ` (Secretary: ${item.suggestedSecretary})`;
-      content += `\n`;
+      archiveContent += `- [${(item.type || "task").toUpperCase()}] ${item.title || item.rawText}`;
+      if (item.projectId) archiveContent += ` (Project: ${item.projectId})`;
+      if (item.priority) archiveContent += ` (Priority: ${item.priority})`;
+      if (item.suggestedSecretary) archiveContent += ` (Secretary: ${item.suggestedSecretary})`;
+      archiveContent += `\n`;
     });
   } else {
-    content += `(None)\n`;
+    archiveContent += `(None)\n`;
   }
-  content += `\n### Rejected Items\n`;
+  archiveContent += `\n### Rejected Items\n`;
   if (rejectedItems.length > 0) {
     rejectedItems.forEach(item => {
-      content += `- ${item.title || item.rawText}\n`;
+      archiveContent += `- ${item.title || item.rawText}\n`;
     });
   } else {
-    content += `(None)\n`;
+    archiveContent += `(None)\n`;
   }
 
-  const filePath = path.join(inboxDir, `${dateStr}.md`);
-  let fileContent = "";
-  if (fs.existsSync(filePath)) {
-    fileContent = fs.readFileSync(filePath, "utf-8") + "\n\n---\n\n" + content;
-  } else {
-    fileContent = content;
+  // Persist archive via Vault (EROFS-safe)
+  const vaultPath = getInboxVaultPath(company, dateStr);
+  try {
+    const existing = await getVaultFile(vaultPath);
+    const fileContent = existing.content
+      ? existing.content + "\n\n---\n\n" + archiveContent
+      : archiveContent;
+    await saveVaultFile(vaultPath, fileContent, existing.sha);
+  } catch (err) {
+    // Vault write failure should not block pipeline (fail-open)
+    console.warn(`[inboxPipeline] Vault write failed for ${vaultPath}`, err);
   }
-  fs.writeFileSync(filePath, fileContent, "utf-8");
 
   // Temporarily switch active company to target so pushTask works on correct bus
   const originalCompany = bus.activeCompany;
@@ -102,7 +97,11 @@ export async function processInboxApproval(
   });
 
   // Remove processed items from the company's inboxQueue
-  const targetCompanyBus = company === "crestix" ? updatedBus.crestix : updatedBus.personal;
+  const targetCompanyBus =
+    company === "company" ? (updatedBus.company ?? updatedBus.crestix) :
+    company === "crestix" ? updatedBus.crestix :
+    updatedBus.personal;
+  if (!targetCompanyBus) throw new Error(`Bus segment not found for: ${company}`);
   const cleanedQueue = (targetCompanyBus.inboxQueue ?? []).filter(
     item => !processedIds.has(item.id)
   );

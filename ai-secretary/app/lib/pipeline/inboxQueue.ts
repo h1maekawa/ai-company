@@ -1,22 +1,18 @@
-import fs from "fs";
-import path from "path";
 import { ContextBus, InboxItem, getActiveBus, setActiveBus } from "../context/bus";
 import { saveBus } from "../context/bus-server";
 import { CompanyType } from "../config/projects";
-import { VAULT_ROOT } from "../runtime/paths";
+import { getVaultFile, saveVaultFile } from "../vault";
 
-// Vault root resolved via runtime/paths.ts (single source of truth)
-const MEMORY_DIR = VAULT_ROOT;
-
-function getInboxDir(company: CompanyType): string {
-  return company === "crestix"
-    ? path.join(MEMORY_DIR, "crestix", "inbox")
-    : path.join(MEMORY_DIR, "personal", "inbox");
+function getInboxVaultPath(company: CompanyType, dateStr: string): string {
+  const tenant =
+    company === "company" || company === "crestix" ? "company" : "personal";
+  return `memory/${tenant}/inbox/${dateStr}.md`;
 }
 
 /**
  * Adds a raw capture text into the active company's InboxQueue.
- * Also persists/syncs the queue into memory/{company}/inbox/YYYY-MM-DD.md.
+ * Also persists/syncs the queue into memory/{company}/inbox/YYYY-MM-DD.md
+ * via saveVaultFile (EROFS-safe, works on Vercel and local).
  */
 export async function addToInboxQueue(
   bus: ContextBus,
@@ -37,8 +33,12 @@ export async function addToInboxQueue(
     company: targetCompany,
   };
 
-  // Target the correct company's bus
-  const targetCompanyBus = targetCompany === "crestix" ? bus.crestix : bus.personal;
+  // Target the correct company's bus (company > crestix > personal)
+  const targetCompanyBus =
+    targetCompany === "company" ? (bus.company ?? bus.crestix) :
+    targetCompany === "crestix" ? bus.crestix :
+    bus.personal;
+  if (!targetCompanyBus) throw new Error(`Bus segment not found for: ${targetCompany}`);
   const currentQueue = targetCompanyBus.inboxQueue ?? [];
   const updatedQueue = [...currentQueue, newItem];
 
@@ -54,13 +54,8 @@ export async function addToInboxQueue(
     updatedAt: dateStr,
   };
 
-  // Sync to memory/{company}/inbox/YYYY-MM-DD.md
-  const inboxDir = getInboxDir(targetCompany);
-  if (!fs.existsSync(inboxDir)) {
-    fs.mkdirSync(inboxDir, { recursive: true });
-  }
-  const filePath = path.join(inboxDir, `${dateStr}.md`);
-
+  // Sync to memory/{company}/inbox/YYYY-MM-DD.md via Vault (EROFS-safe)
+  const vaultPath = getInboxVaultPath(targetCompany, dateStr);
   let mdContent = `---\ntype: inbox_queue\ncompany: "${targetCompany}"\ndate: "${dateStr}"\n---\n\n`;
   updatedQueue.forEach((item) => {
     mdContent += `### Item: ${item.id}\n`;
@@ -74,8 +69,14 @@ export async function addToInboxQueue(
     mdContent += `- Text:\n\`\`\`txt\n${item.rawText}\n\`\`\`\n\n`;
   });
 
-  fs.writeFileSync(filePath, mdContent, "utf-8");
-  await saveBus(updatedBus);
+  try {
+    const existing = await getVaultFile(vaultPath);
+    await saveVaultFile(vaultPath, mdContent, existing.sha);
+  } catch (err) {
+    // Vault write failure should not block inbox queue save (fail-open)
+    console.warn(`[inboxQueue] Vault write failed for ${vaultPath}`, err);
+  }
 
+  await saveBus(updatedBus);
   return updatedBus;
 }

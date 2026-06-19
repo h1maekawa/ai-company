@@ -1,4 +1,4 @@
-export type CompanyType = "personal" | "crestix";
+export type CompanyType = "personal" | "company" | "crestix";
 
 export type Project = {
   id: string;
@@ -26,7 +26,7 @@ export const PROJECTS: Project[] = [
   {
     id: "C001",
     name: "AI Company OS",
-    company: "crestix",
+    company: "company",
     priority: "S",
     description: "AI秘書OSの開発・運用・改善"
   }

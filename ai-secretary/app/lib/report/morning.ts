@@ -12,9 +12,9 @@ export async function generateMorningReport(): Promise<string> {
   // 1. Load Context Bus
   const bus = await loadBus();
   const personalInbox = bus.personal?.inboxQueue || [];
-  const crestixInbox = bus.crestix?.inboxQueue || [];
   const personalTasks = bus.personal?.taskPipeline || [];
-  const crestixTasks = bus.crestix?.taskPipeline || [];
+  const companyInbox = (bus.company?.inboxQueue || bus.crestix?.inboxQueue) || [];
+  const companyTasks = (bus.company?.taskPipeline || bus.crestix?.taskPipeline) || [];
 
   // 2. Load Fund positions
   let positionsContent = "";
@@ -69,11 +69,11 @@ export async function generateMorningReport(): Promise<string> {
   }
 
   // Compile inputs
-  const inboxText = [...personalInbox, ...crestixInbox]
+  const inboxText = [...personalInbox, ...companyInbox]
     .map(item => `- [${item.approvalStatus}] ${item.rawText} (Company: ${item.company || "personal"})`)
     .join("\n") || "なし";
 
-  const tasksText = [...personalTasks, ...crestixTasks]
+  const tasksText = [...personalTasks, ...companyTasks]
     .map(t => `- [${t.status}] ${t.title} (担当: ${t.owner})`)
     .join("\n") || "なし";
 

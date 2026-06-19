@@ -90,6 +90,19 @@ export default function Home() {
   }, [messages, loading]);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("activeCompany");
+        if (stored === "crestix") {
+          localStorage.setItem("activeCompany", "company");
+        }
+      } catch (e) {
+        console.error("Failed to migrate activeCompany in localStorage:", e);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     if (mode === "company") {
       const fetchMemory = async () => {
         setLoadingMemory(true);

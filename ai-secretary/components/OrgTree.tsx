@@ -24,6 +24,7 @@ export default function OrgTree({
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({
     executive: true,
     personal: true,
+    company: true,
     crestix: true,
   });
 
@@ -112,9 +113,9 @@ export default function OrgTree({
             <span>👤</span> Personal
           </button>
           <button
-            onClick={() => onChangeCompany("crestix")}
+            onClick={() => onChangeCompany("company")}
             className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xxs font-bold transition-all duration-200 min-h-[44px] ${
-              activeCompany === "crestix"
+              activeCompany === "company" || activeCompany === "crestix"
                 ? "bg-slate-900 text-teal-400 shadow-sm border border-slate-800"
                 : "text-slate-500 hover:text-slate-300"
             }`}

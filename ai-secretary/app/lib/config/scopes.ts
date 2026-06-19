@@ -6,7 +6,7 @@ export type SecretaryScope = {
 
 export const DEFAULT_GLOBAL_SCOPE = [
   "memory/personal/profile.md",
-  "memory/crestix/profile.md"
+  "memory/company/profile.md"
 ];
 
 
@@ -18,12 +18,12 @@ export const MEMORY_SCOPES: MemoryScopes = {
   // ─── Shared / Executive ───────────────────────────────
   "executive-assistant": {
     local: [],
-    shared: ["memory/personal/profile.md", "memory/crestix/profile.md"],
+    shared: ["memory/personal/profile.md", "memory/company/profile.md"],
     global: ["memory/personal/goals.md"]
   },
   "executive-inbox": {
     local: [],
-    shared: ["memory/personal/profile.md", "memory/crestix/profile.md"],
+    shared: ["memory/personal/profile.md", "memory/company/profile.md"],
     global: []
   },
 
@@ -75,16 +75,27 @@ export const MEMORY_SCOPES: MemoryScopes = {
     global: ["memory/personal/profile.md"]
   },
 
-  // ─── Crestix OS ───────────────────────────────────────
+  // ─── Company OS ───────────────────────────────────────
+  "company-ceo": {
+    local: ["memory/company/strategy/index.md"],
+    shared: [],
+    global: ["memory/company/profile.md"]
+  },
+  "company-system": {
+    local: ["memory/company/strategy.md"],
+    shared: [],
+    global: ["memory/company/profile.md"]
+  },
+  // Backward compatibility fallbacks
   "crestix-ceo": {
     local: ["memory/company/strategy/index.md"],
     shared: [],
-    global: ["memory/crestix/profile.md"]
+    global: ["memory/company/profile.md"]
   },
   "crestix-system": {
-    local: ["memory/crestix/strategy.md"],
+    local: ["memory/company/strategy.md"],
     shared: [],
-    global: ["memory/crestix/profile.md"]
+    global: ["memory/company/profile.md"]
   },
 
   // ─── HD Business Department ────────────────────────────
@@ -94,7 +105,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
       "memory/company/strategy/index.md"
     ],
     shared: [],
-    global: ["memory/crestix/profile.md"]
+    global: ["memory/company/profile.md"]
   },
   "hd-kpi-manager": {
     local: [
@@ -104,7 +115,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
       "memory/company/hd-business/weekly.md"
     ],
     shared: [],
-    global: ["memory/crestix/profile.md"]
+    global: ["memory/company/profile.md"]
   },
   "hd-pipeline-manager": {
     local: [
@@ -113,7 +124,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
       "memory/company/hd-business/targets.md"
     ],
     shared: [],
-    global: ["memory/crestix/profile.md"]
+    global: ["memory/company/profile.md"]
   },
   "hd-closing-manager": {
     local: [
@@ -123,7 +134,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
       "memory/company/hd-business/lead-times.md"
     ],
     shared: [],
-    global: ["memory/crestix/profile.md"]
+    global: ["memory/company/profile.md"]
   },
   "hd-improvement-manager": {
     local: [
@@ -134,7 +145,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
       "memory/company/hd-business/rules.md"
     ],
     shared: [],
-    global: ["memory/crestix/profile.md"]
+    global: ["memory/company/profile.md"]
   }
 };
 

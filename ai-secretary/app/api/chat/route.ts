@@ -42,7 +42,6 @@ const TASKS_DEFAULT_TEMPLATE = `# やるべきこと
 function resolveCompanyContext(mode: string | undefined | null) {
   const isCompanyMode = mode === "business" || mode === "company";
   return {
-    busCompany: (isCompanyMode ? "crestix" : "personal") as "crestix" | "personal",
     activeCompany: (isCompanyMode ? "company" : "personal") as "personal" | "company",
   } as const;
 }
@@ -68,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Resolve company contexts from mode
-    const { busCompany, activeCompany } = resolveCompanyContext(mode);
+    const { activeCompany } = resolveCompanyContext(mode);
 
     // 2. Perform intent routing
     const routeResult = await routeRequest(message, activeCompany);
@@ -174,7 +173,7 @@ export async function POST(req: NextRequest) {
     // 8. Update Bus after successful response generation
     try {
       let bus = await loadBus();
-      bus.activeCompany = busCompany;
+      bus.activeCompany = activeCompany;
       bus = switchSecretary(bus, targetSecretaryId, `User request: ${message.substring(0, 30)}...`);
       await saveBus(bus);
     } catch (busErr) {
