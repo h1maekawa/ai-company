@@ -27,8 +27,22 @@ export async function loadBus(): Promise<ContextBus> {
  */
 export async function saveBus(bus: ContextBus): Promise<void> {
   const dir = getBusDir();
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(BUS_FILE_PATH, serializeBus(bus), "utf-8");
+  } catch (err: any) {
+    if (err.code === "EROFS" && BUS_FILE_PATH !== "/tmp/current-bus.json") {
+      console.warn(`[bus-server] EROFS detected on save to ${BUS_FILE_PATH}, falling back to /tmp/current-bus.json`);
+      try {
+        fs.writeFileSync("/tmp/current-bus.json", serializeBus(bus), "utf-8");
+      } catch (innerErr) {
+        console.error("[bus-server] Failed to write to /tmp fallback", innerErr);
+        throw innerErr;
+      }
+    } else {
+      throw err;
+    }
   }
-  fs.writeFileSync(BUS_FILE_PATH, serializeBus(bus), "utf-8");
 }
