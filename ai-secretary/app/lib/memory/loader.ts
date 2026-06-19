@@ -53,7 +53,10 @@ function scanDirectoryRecursive(dirPath: string): string[] {
  * Loads memory files dynamically based on Local, Shared, and Global scopes.
  * Follows the priority: local > shared > global.
  */
-export async function loadScopedMemory(secretaryId: string): Promise<LoadedMemory> {
+export async function loadScopedMemory(
+  secretaryId: string,
+  activeCompany?: "personal" | "company"
+): Promise<LoadedMemory> {
   const scope = MEMORY_SCOPES[secretaryId];
   const loadedFiles: { path: string; content: string }[] = [];
   const processedPaths = new Set<string>();
@@ -68,12 +71,31 @@ export async function loadScopedMemory(secretaryId: string): Promise<LoadedMemor
     { type: "global", paths: globalPaths }
   ];
 
+  const filterPath = (rawPath: string): boolean => {
+    if (!activeCompany) return true;
+    const clean = rawPath.replace(/^memory\//, "").replace(/^vault\//, "");
+    if (activeCompany === "personal") {
+      if (clean.startsWith("company/") || clean.startsWith("crestix/")) {
+        return false;
+      }
+    } else if (activeCompany === "company") {
+      if (clean.startsWith("personal/")) {
+        return false;
+      }
+    }
+    return true;
+  };
+
   for (const group of allScopeGroups) {
     for (const rawPath of group.paths) {
       // Normalize path (remove trailing slash for fs checks)
       const cleanPath = rawPath.replace(/\/$/, "");
       if (processedPaths.has(cleanPath)) continue;
       processedPaths.add(cleanPath);
+
+      if (!filterPath(cleanPath)) {
+        continue;
+      }
 
       const absolutePath = resolveRawPath(cleanPath);
       if (!fs.existsSync(absolutePath)) {
@@ -95,6 +117,9 @@ export async function loadScopedMemory(secretaryId: string): Promise<LoadedMemor
       } else if (stat.isDirectory()) {
         const mdFiles = scanDirectoryRecursive(cleanPath);
         for (const mdFile of mdFiles) {
+          if (!filterPath(mdFile)) {
+            continue;
+          }
           try {
             const { content } = await getVaultFile(mdFile);
             if (content && content.trim()) {
@@ -107,6 +132,7 @@ export async function loadScopedMemory(secretaryId: string): Promise<LoadedMemor
       }
     }
   }
+
 
   return { files: loadedFiles };
 }

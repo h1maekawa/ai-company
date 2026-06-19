@@ -13,8 +13,13 @@ export type RoutingResult = {
  * Parses a user request and determines the optimal secretary to handle the message.
  * Assigns a confidence score to determine if routing should trigger automatically.
  */
-export async function routeRequest(message: string): Promise<RoutingResult> {
-  const registryList = Object.values(SECRETARY_REGISTRY).map(sec => {
+export async function routeRequest(message: string, activeCompany: "personal" | "company"): Promise<RoutingResult> {
+  const dbCompany = activeCompany === "company" ? "crestix" : "personal";
+  const filteredSecretaries = Object.values(SECRETARY_REGISTRY).filter(sec => {
+    return sec.config.company === "shared" || sec.config.company === dbCompany;
+  });
+
+  const registryList = filteredSecretaries.map(sec => {
     return {
       id: sec.config.id,
       name: sec.config.name,
@@ -31,8 +36,9 @@ export async function routeRequest(message: string): Promise<RoutingResult> {
 ${JSON.stringify(registryList, null, 2)}
 
 ## ルーティング判定ルール
-1. 曖昧な質問や、特定の部署に当てはまらない一般的な壁打ちは "executive-coo" に割り当ててください。
+1. 曖昧な質問や、特定の部署に当てはまらない一般的な壁打ちは "executive-assistant" に割り当ててください。
 2. 投資やアセットアロケーション、ポートフォリオ、決算、保有ポジションは "personal-finance" または "personal-fund" 関連の秘書に割り当ててください。
+
 3. 習慣・健康・個人的なToDo管理は "personal" 関連の秘書に割り当ててください。
 4. noteの記事企画、キーワードリサーチ、構成、執筆、マーケティング、販売導線、下書き作成は "personal-note" 秘書に割り当ててください。
 5. Crestixの営業、DMM営業、採用、顧客CRMは "crestix-system" または "crestix-ceo" に割り当ててください。
@@ -105,11 +111,12 @@ ${JSON.stringify(registryList, null, 2)}
     console.error("[DEBUG] Executive router failed to resolve:", e);
   }
 
-  // Fallback to COO
+  // Fallback to assistant
   return {
     intent: "一般的な壁打ち・タスク整理",
     department: "executive",
-    secretary: "executive-coo",
+    secretary: "executive-assistant",
     confidence: 0.3
   };
 }
+

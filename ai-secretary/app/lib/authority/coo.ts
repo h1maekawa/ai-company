@@ -27,7 +27,7 @@ ${registryInfo}
   } catch (e) {
     console.error("[DEBUG] COO assignSecretary failed:", e);
   }
-  return "executive-coo"; // default fallback
+  return "executive-assistant"; // default fallback
 }
 
 /**
@@ -58,5 +58,6 @@ ${registryInfo}
   } catch (e) {
     console.error("[DEBUG] COO assignPipeline failed:", e);
   }
-  return ["executive-coo"];
+  return ["executive-assistant"];
 }
+

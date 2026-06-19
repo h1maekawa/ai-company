@@ -1,4 +1,5 @@
 import { SecretaryMode } from "./config/modes";
+export type { SecretaryMode };
 
 export const SECRETARY_LABELS: Record<SecretaryMode, string> = {
   personal: "Personal 秘書",

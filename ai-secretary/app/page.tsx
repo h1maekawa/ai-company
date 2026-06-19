@@ -39,7 +39,8 @@ const PROVIDER_BADGE: Record<string, string> = {
 
 const MODE_ICON: Record<SecretaryMode, string> = {
   personal: "👤",
-  business: "💼",
+  company: "💼",
+  finance: "📈",
   note: "📝",
 };
 
@@ -49,10 +50,15 @@ const MODE_EXAMPLES: Record<SecretaryMode, string[]> = {
     "今週の振り返りをしたい",
     "睡眠リズムを整えたい",
   ],
-  business: [
+  company: [
     "今期のKPIを整理して",
     "新規事業の論点を洗い出して",
     "意思決定の壁打ちをしたい",
+  ],
+  finance: [
+    "ポートフォリオの現状を分析して",
+    "ARM株の決算チェックをして",
+    "投資戦略の壁打ちをしたい",
   ],
   note: [
     "今日の記事を企画して",
@@ -61,6 +67,7 @@ const MODE_EXAMPLES: Record<SecretaryMode, string[]> = {
     "今月の投稿計画を立てて",
   ],
 };
+
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -83,7 +90,7 @@ export default function Home() {
   }, [messages, loading]);
 
   useEffect(() => {
-    if (mode === "business") {
+    if (mode === "company") {
       const fetchMemory = async () => {
         setLoadingMemory(true);
         try {
@@ -102,6 +109,7 @@ export default function Home() {
       fetchMemory();
     }
   }, [mode]);
+
 
   async function handleSaveRole() {
     setSaveStateRole("saving");
@@ -236,7 +244,7 @@ export default function Home() {
       <div className="border-b border-slate-800 px-6 py-3 bg-slate-900/40">
         <div className="max-w-3xl mx-auto flex flex-wrap gap-2 items-center">
           <span className="text-slate-500 text-xs mr-1">秘書モード:</span>
-          {(["personal", "business", "note"] as SecretaryMode[]).map((m) => (
+          {(["personal", "company", "finance", "note"] as SecretaryMode[]).map((m) => (
             <button
               key={m}
               onClick={() => handleModeChange(m)}
@@ -264,7 +272,7 @@ export default function Home() {
       </div>
 
       {/* Role/Task Editing Panel */}
-      {mode === "business" && (
+      {mode === "company" && (
         <div className="border-b border-slate-800 bg-slate-900/20 max-w-3xl w-full mx-auto px-4 pt-4 pb-2">
           <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl overflow-hidden shadow-lg">
             {/* Panel Header */}
@@ -279,6 +287,7 @@ export default function Home() {
                 {isPanelOpen ? "▲ 閉じる" : "▼ 開く"}
               </span>
             </button>
+
 
             {/* Panel Body */}
             {isPanelOpen && (
