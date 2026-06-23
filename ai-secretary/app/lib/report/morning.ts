@@ -38,6 +38,17 @@ export async function generateMorningReport(): Promise<string> {
     console.error("[Morning Engine] Failed to read note drafts:", e);
   }
 
+  // 3c. Load Note KPI
+  let noteKpiContent = "";
+  try {
+    const kpiPath = resolveVaultPath("personal/note/kpi.md");
+    if (fs.existsSync(kpiPath)) {
+      noteKpiContent = fs.readFileSync(kpiPath, "utf-8");
+    }
+  } catch (e) {
+    console.error("[Morning Engine] Failed to read note kpi.md:", e);
+  }
+
   // 3b. Load HD Business KPI + Pipeline
   let hdKpiContent = "";
   let hdPipelineContent = "";
@@ -123,7 +134,9 @@ ${hdPipelineContent || "なし"}
 （保有ポジション（positions.md）の株価推移や決算予定を踏まえ、本日注視すべきアラートや情報）
 
 【note注目】
-（下書きの進行状況を踏まえ、今日執筆・改善すべきnoteテーマやドラフト進捗計画）
+- 下書き一覧: ${draftsText}
+- KPI状況: ${noteKpiContent ? noteKpiContent.split("\n").slice(0, 10).join("\n") : "未設定"}
+（本日執筆すべきnoteのテーマ、投稿本数ペース評価、今週の優先アクション）
 
 【HD営業進捗】
 （HD BusinessのKPI進捗を踏まえ、今日の架電目標・アポ目標・着地予測の簡潔なサマリー。ボトルネックがある場合は最優先改善項目も記載）

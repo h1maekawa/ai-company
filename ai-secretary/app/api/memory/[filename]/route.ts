@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFileContent, updateFileContent } from "@/app/lib/github";
+import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 
 const ALLOWED_FILENAMES = ["role.md", "tasks.md", "profile.md", "goals.md", "today.md"];
 
@@ -40,6 +41,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { filename: string } }
 ) {
+  const authError = verifyApiSecret(request);
+  if (authError) return authError;
+
   const { filename } = params;
 
   if (!ALLOWED_FILENAMES.includes(filename)) {
@@ -66,6 +70,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { filename: string } }
 ) {
+  const authError = verifyApiSecret(request);
+  if (authError) return authError;
+
   const { filename } = params;
 
   if (!ALLOWED_FILENAMES.includes(filename)) {

@@ -49,7 +49,7 @@ ${JSON.stringify(registryList, null, 2)}
    - 特定銘柄（NVDA, MU, AMD, AVGO, TSM, ASML, VRT, ETN, PWR, KO 等）の売買判断・分析を求めている
    - 「ポートフォリオレビュー」「資産配分」「コア資産」「サテライト」「ヒートマップ」の話題
 8. 以下のいずれかに該当する場合は "personal-note" に割り当ててください（confidence: 0.95）：
-   - /note-research, /note-title, /note-outline, /note-draft, /note-post-plan のいずれかのコマンドが含まれる
+   - /note-research, /note-title, /note-outline, /note-draft, /note-post-plan, /note-kpi, /note-affili, /note-paid のいずれかのコマンドが含まれる
    - 「note執筆」「note構成」「note下書き」「noteネタ」「バズり導入文」「CTAテンプレート」等の話題
 9. 以下のいずれかに該当する場合は "personal-ceo" に割り当ててください（confidence: 0.95）：
    - 個人事業全体の統括、リソース配分、アテンション管理、優先順位決定、集中事業の決定に関する話題

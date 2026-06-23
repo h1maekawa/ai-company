@@ -27,11 +27,14 @@ This guide outlines common development commands and the available slash commands
 - `/fund-heatmap` - ポートフォリオ保有割合・テーマ偏りヒートマップ分析
 
 ### 3. Note Department (`personal-note`)
-- `/note-research` - テーマや市場、読者ペルソナのリサーチと競合分析
-- `/note-title` - 読者を惹きつけるタイトル案を5つ提示
-- `/note-outline` - 記事の構成案（導入・本論・まとめ・CTA）を計画
-- `/note-draft` - 構成案をベースに記事の下書きを詳細に執筆
-- `/note-post-plan` - 投稿計画、X告知文の作成、CV導線チェック
+- `/note-research` - トレンド＋競合＋アフィリ案件の3点調査
+- `/note-title` - バズりタイトル5案（アフィリ連動度スコア付き）
+- `/note-outline` - 構成案（有料パート境界線＋CTA設計込み）
+- `/note-draft` - 下書き全文自動生成（フック＋アフィリ文脈＋CTA埋め込み済み）
+- `/note-post-plan` - 投稿スケジュール＋X告知文3パターン
+- `/note-kpi` - 月次KPI確認と次週の優先アクション提案
+- `/note-affili [テーマ]` - テーマから最適アフィリ案件を自動選定
+- `/note-paid [タイトル]` - 有料コンテンツの切り出し設計
 
 ---
 

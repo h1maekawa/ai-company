@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAndSaveNote } from "@/app/lib/memory/notes";
+import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 
 export async function POST(req: NextRequest) {
+  const authError = verifyApiSecret(req);
+  if (authError) return authError;
+
   try {
     const body = await req.json();
     const { title, theme, target, purpose, cta, template } = body;

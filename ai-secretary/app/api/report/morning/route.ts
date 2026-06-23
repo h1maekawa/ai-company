@@ -1,7 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { generateMorningReport } from "@/app/lib/report/morning";
+import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authError = verifyApiSecret(req);
+  if (authError) return authError;
+
   try {
     const report = await generateMorningReport();
     return NextResponse.json({ success: true, report });

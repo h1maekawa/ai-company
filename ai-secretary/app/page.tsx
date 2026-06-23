@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import {
   SECRETARY_LABELS,
   SECRETARY_DESCRIPTIONS,
@@ -15,15 +17,32 @@ type Message = {
   mode?: SecretaryMode;
 };
 
+const renderer = new marked.Renderer();
+renderer.heading = ({ text, depth }: { text: string; depth: number }) => {
+  const classes: Record<number, string> = {
+    2: "text-lg font-bold text-blue-400 mt-5 mb-2",
+    3: "text-base font-semibold text-slate-300 mt-3 mb-1",
+  };
+  const cls = classes[depth] ?? "font-semibold mt-2 mb-1";
+  return `<h${depth} class="${cls}">${text}</h${depth}>`;
+};
+renderer.listitem = ({ text }: { text: string }) =>
+  `<li class="ml-4 list-disc text-slate-300">${text}</li>`;
+renderer.code = ({ text }: { text: string }) =>
+  `<pre class="bg-slate-900 rounded p-2 text-xs overflow-x-auto my-2"><code>${text}</code></pre>`;
+
+marked.setOptions({ renderer });
+
 function renderMarkdown(text: string): string {
-  return text
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold text-blue-400 mt-5 mb-2">$1</h2>')
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold text-slate-300 mt-3 mb-1">$1</h3>')
-    .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal text-slate-300">$1</li>')
-    .replace(/^[-•] (.+)$/gm, '<li class="ml-4 list-disc text-slate-300">$1</li>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-white">$1</strong>')
-    .replace(/\n{2,}/g, '</p><p class="mt-2">')
-    .replace(/\n/g, "<br/>");
+  const rawHtml = marked.parse(text) as string;
+  if (typeof window === "undefined") return rawHtml;
+  return DOMPurify.sanitize(rawHtml, {
+    ALLOWED_TAGS: [
+      "p", "br", "strong", "em", "ul", "ol", "li", "h1", "h2", "h3", "h4",
+      "blockquote", "code", "pre", "hr", "a", "table", "thead", "tbody", "tr", "th", "td",
+    ],
+    ALLOWED_ATTR: ["href", "class", "target", "rel"],
+  });
 }
 
 const PROVIDER_LABELS: Record<Provider, string> = {
@@ -107,9 +126,12 @@ export default function Home() {
       const fetchMemory = async () => {
         setLoadingMemory(true);
         try {
+          const apiHeaders = {
+            "x-api-secret": process.env.NEXT_PUBLIC_API_SECRET ?? "",
+          };
           const [roleRes, tasksRes] = await Promise.all([
-            fetch("/api/memory/role.md").then((r) => r.json()),
-            fetch("/api/memory/tasks.md").then((r) => r.json()),
+            fetch("/api/memory/role.md", { headers: apiHeaders }).then((r) => r.json()),
+            fetch("/api/memory/tasks.md", { headers: apiHeaders }).then((r) => r.json()),
           ]);
           if (roleRes.content !== undefined) setRoleText(roleRes.content);
           if (tasksRes.content !== undefined) setTasksText(tasksRes.content);
@@ -129,7 +151,10 @@ export default function Home() {
     try {
       const res = await fetch("/api/memory/role.md", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-secret": process.env.NEXT_PUBLIC_API_SECRET ?? "",
+        },
         body: JSON.stringify({ content: roleText }),
       });
       if (res.ok) {
@@ -149,7 +174,10 @@ export default function Home() {
     try {
       const res = await fetch("/api/memory/tasks.md", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-secret": process.env.NEXT_PUBLIC_API_SECRET ?? "",
+        },
         body: JSON.stringify({ content: textToSave }),
       });
       if (res.ok) {
@@ -177,8 +205,18 @@ export default function Home() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, provider, mode }),
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-secret": process.env.NEXT_PUBLIC_API_SECRET ?? "",
+        },
+        body: JSON.stringify({
+          message: text,
+          provider,
+          mode,
+          history: messages
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .map((m) => ({ role: m.role, content: m.content })),
+        }),
       });
       const data = await res.json();
       let reply = data.reply ?? data.error ?? "エラーが発生しました。";

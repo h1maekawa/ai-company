@@ -1,11 +1,23 @@
+import { ChatMessage } from "./types";
+
 const GROQ_API_KEY = process.env.GROQ_API_KEY ?? "";
 const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
-export async function callGroq(message: string, systemPrompt: string): Promise<string> {
+export async function callGroq(
+  message: string,
+  systemPrompt: string,
+  history: ChatMessage[] = []
+): Promise<string> {
   if (!GROQ_API_KEY) {
     throw new Error("GROQ_API_KEYが設定されていません。.env.localを確認してください。");
   }
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history,
+    { role: "user", content: message },
+  ];
 
   const res = await fetch(GROQ_URL, {
     method: "POST",
@@ -15,10 +27,7 @@ export async function callGroq(message: string, systemPrompt: string): Promise<s
     },
     body: JSON.stringify({
       model: GROQ_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message },
-      ],
+      messages,
       temperature: 0.7,
     }),
   });

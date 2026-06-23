@@ -1,9 +1,21 @@
+import { ChatMessage } from "./types";
+
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3:8b";
 
-export async function callOllama(message: string, systemPrompt: string): Promise<string> {
+export async function callOllama(
+  message: string,
+  systemPrompt: string,
+  history: ChatMessage[] = []
+): Promise<string> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history,
+    { role: "user", content: message },
+  ];
 
   try {
     const res = await fetch(`${OLLAMA_URL}/api/chat`, {
@@ -12,10 +24,7 @@ export async function callOllama(message: string, systemPrompt: string): Promise
       signal: controller.signal,
       body: JSON.stringify({
         model: OLLAMA_MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: message },
-        ],
+        messages,
         stream: false,
       }),
     });

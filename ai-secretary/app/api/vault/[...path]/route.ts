@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getVaultFile, saveVaultFile } from '@/app/lib/vault';
+import { verifyApiSecret } from '@/app/lib/auth/verifyApiSecret';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { path: string[] } }
 ): Promise<NextResponse> {
+  const authError = verifyApiSecret(request);
+  if (authError) return authError;
+
   try {
     const filePath = params.path.join('/');
 
@@ -31,6 +35,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { path: string[] } }
 ): Promise<NextResponse> {
+  const authError = verifyApiSecret(request);
+  if (authError) return authError;
+
   try {
     const filePath = params.path.join('/');
 

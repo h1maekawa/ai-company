@@ -11,6 +11,8 @@ import { callGemini } from "@/app/lib/ai/gemini";
 import { callGroq } from "@/app/lib/ai/groq";
 import { callOllama } from "@/app/lib/ai/ollama";
 import { SecretaryMode } from "@/app/lib/prompts";
+import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
+import { ChatMessage } from "@/app/lib/ai/types";
 
 const ROLE_DEFAULT_TEMPLATE = `# 現在の役割
 
@@ -55,12 +57,18 @@ function shouldUseGemini(message: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  const authError = verifyApiSecret(req);
+  if (authError) return authError;
+
   try {
-    const { message, provider, mode } = (await req.json()) as {
+    const { message, provider, mode, history } = (await req.json()) as {
       message?: string;
       provider?: "ollama" | "gemini" | "auto";
       mode?: SecretaryMode;
+      history?: ChatMessage[];
     };
+
+    const chatHistory: ChatMessage[] = Array.isArray(history) ? history.slice(-10) : [];
 
     if (!message?.trim()) {
       return NextResponse.json({ error: "メッセージが空です" }, { status: 400 });
@@ -162,11 +170,11 @@ export async function POST(req: NextRequest) {
 
     let reply: string;
     if (effectiveProvider === "gemini") {
-      reply = await callGemini(message, systemPrompt);
+      reply = await callGemini(message, systemPrompt, chatHistory);
     } else if (effectiveProvider === "groq") {
-      reply = await callGroq(message, systemPrompt);
+      reply = await callGroq(message, systemPrompt, chatHistory);
     } else {
-      reply = await callOllama(message, systemPrompt);
+      reply = await callOllama(message, systemPrompt, chatHistory);
     }
     const usedProvider = effectiveProvider;
 

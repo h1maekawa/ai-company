@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveKnowledge } from "@/app/lib/memory/knowledge";
 import { KnowledgeCategory } from "@/app/lib/parser/saveSuggestion";
+import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 
 export async function POST(req: NextRequest) {
+  const authError = verifyApiSecret(req);
+  if (authError) return authError;
+
   try {
     const body = await req.json();
     const { title, slug, category, importance, content } = body;

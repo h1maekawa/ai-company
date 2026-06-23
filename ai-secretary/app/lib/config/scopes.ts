@@ -50,7 +50,10 @@ export const MEMORY_SCOPES: MemoryScopes = {
   "personal-note": {
     local: [
       "memory/personal/note/",
-      "memory/personal/note/ideas/index.md"
+      "memory/personal/note/ideas/index.md",
+      "memory/personal/note/affiliates/index.md",
+      "memory/personal/note/kpi.md",
+      "memory/brain/personal/note-business.md"
     ],
     shared: ["memory/personal/goals.md"],
     global: ["memory/personal/profile.md"]
