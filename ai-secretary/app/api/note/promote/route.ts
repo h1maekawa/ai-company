@@ -3,9 +3,7 @@ import { listVaultDirectory, getVaultFile, saveVaultFile } from "@/app/lib/vault
 import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 import { generateUniqueId } from "@/app/lib/utils/id";
 import { toSlug } from "@/app/lib/utils/slug";
-import { callGroq } from "@/app/lib/ai/groq";
-import { callGemini } from "@/app/lib/ai/gemini";
-import { callOllama } from "@/app/lib/ai/ollama";
+import { callAI } from "@/app/lib/ai/client";
 import { saveKnowledge } from "@/app/lib/memory/knowledge";
 import { KnowledgeCategory } from "@/app/lib/parser/saveSuggestion";
 
@@ -19,16 +17,6 @@ const KNOWLEDGE_CATEGORIES = [
   "strategy",
   "misc",
 ];
-
-async function callLLM(message: string, systemPrompt: string): Promise<string> {
-  if (process.env.GROQ_API_KEY) {
-    return callGroq(message, systemPrompt);
-  } else if (process.env.GEMINI_API_KEY) {
-    return callGemini(message, systemPrompt);
-  } else {
-    return callOllama(message, systemPrompt);
-  }
-}
 
 // Scans all category directories to find a file matching the knowledgeId, returning SHA as well
 async function findKnowledgeFile(knowledgeId: string): Promise<{ path: string; content: string; sha?: string } | null> {
@@ -191,7 +179,7 @@ ${contentBody}
 ${contentBody}
 `;
 
-    const generatedDraft = await callLLM(userMsg, systemPrompt);
+    const generatedDraft = await callAI(userMsg, systemPrompt);
 
     // 5. Save Note Draft File
     const draftId = await generateUniqueId("nt");

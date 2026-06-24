@@ -1,8 +1,6 @@
 import { generateUniqueId } from "../utils/id";
 import { saveVaultFile, listVaultDirectory, getVaultFile } from "../vault";
-import { callGroq } from "../ai/groq";
-import { callGemini } from "../ai/gemini";
-import { callOllama } from "../ai/ollama";
+import { callAI } from "../ai/client";
 import { toSlug } from "../utils/slug";
 import { applyWikiLinks } from "../parser/wikilink";
 
@@ -14,16 +12,6 @@ export interface GenerateNoteInput {
   cta: string;
   template?: string; // e.g. sales-template
   sourceRef?: string[];
-}
-
-async function callLLM(message: string, systemPrompt: string): Promise<string> {
-  if (process.env.GROQ_API_KEY) {
-    return callGroq(message, systemPrompt);
-  } else if (process.env.GEMINI_API_KEY) {
-    return callGemini(message, systemPrompt);
-  } else {
-    return callOllama(message, systemPrompt);
-  }
 }
 
 /**
@@ -82,7 +70,7 @@ ${templateContent ? `\n## テンプレート構成（必ず準拠する）\n${te
 応答はマークダウン形式で記事本文のみを出力してください。タイトル、見出し、本文をすべて含めてください。余計な解説文や会話文（例：「はい、承知しました」など）は含めないでください。`;
 
   // 3. Generate article with LLM
-  const generatedArticle = await callLLM(userMessage, systemPrompt);
+  const generatedArticle = await callAI(userMessage, systemPrompt);
 
   // Apply WikiLinks to body content
   const linkedArticle = applyWikiLinks(generatedArticle);

@@ -7,9 +7,7 @@ import { loadScopedMemory } from "@/app/lib/memory/loader";
 import { saveChatLog } from "@/app/lib/memory/logs";
 import { getVaultFile } from "@/app/lib/vault";
 import { getFileContent } from "@/app/lib/github";
-import { callGemini } from "@/app/lib/ai/gemini";
-import { callGroq } from "@/app/lib/ai/groq";
-import { callOllama } from "@/app/lib/ai/ollama";
+import { callAI } from "@/app/lib/ai/client";
 import { SecretaryMode } from "@/app/lib/prompts";
 import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 import { ChatMessage } from "@/app/lib/ai/types";
@@ -46,14 +44,6 @@ function resolveCompanyContext(mode: string | undefined | null) {
   return {
     activeCompany: (isCompanyMode ? "company" : "personal") as "personal" | "company",
   } as const;
-}
-
-function shouldUseGemini(message: string): boolean {
-  const geminiKeywords = [
-    "最新", "ニュース", "今日の", "現在", "リアルタイム",
-    "調査", "検索", "トレンド", "流行", "今週", "最近",
-  ];
-  return geminiKeywords.some((kw) => message.includes(kw));
 }
 
 export async function POST(req: NextRequest) {
@@ -133,50 +123,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 7. Determine effective provider and call LLM
-    // Vercel serverless 環境では Ollama（localhost）に接続できないため Gemini を優先する。
-    // GEMINI_API_KEY が無い場合は Groq へ自動フォールバック。
-    // ローカル開発時はクライアント側の provider 指定を尊重する。
-    const isServerless = !!process.env.VERCEL;
-    const hasGeminiKey = !!process.env.GEMINI_API_KEY;
-    const hasGroqKey = !!process.env.GROQ_API_KEY;
-
-    type EffectiveProvider = "gemini" | "groq" | "ollama";
-    let effectiveProvider: EffectiveProvider;
-
-    if (isServerless) {
-      // Vercel: Gemini 優先、キーが無ければ Groq にフォールバック
-      if (hasGeminiKey) {
-        effectiveProvider = "gemini";
-      } else if (hasGroqKey) {
-        console.warn("[WARNING] GEMINI_API_KEY missing on Vercel. Falling back to Groq.");
-        effectiveProvider = "groq";
-      } else {
-        throw new Error("Vercel 環境に GEMINI_API_KEY も GROQ_API_KEY も設定されていません。");
-      }
-    } else {
-      // ローカル: クライアント指定を尊重
-      if (provider === "gemini" && hasGeminiKey) {
-        effectiveProvider = "gemini";
-      } else if (provider === "gemini" && !hasGeminiKey) {
-        console.warn("[WARNING] GEMINI_API_KEY missing locally. Falling back to Groq.");
-        effectiveProvider = hasGroqKey ? "groq" : "ollama";
-      } else if (provider === "auto") {
-        effectiveProvider = shouldUseGemini(message) && hasGeminiKey ? "gemini" : (hasGroqKey ? "groq" : "ollama");
-      } else {
-        effectiveProvider = "ollama"; // default local
-      }
-    }
-
-    let reply: string;
-    if (effectiveProvider === "gemini") {
-      reply = await callGemini(message, systemPrompt, chatHistory);
-    } else if (effectiveProvider === "groq") {
-      reply = await callGroq(message, systemPrompt, chatHistory);
-    } else {
-      reply = await callOllama(message, systemPrompt, chatHistory);
-    }
-    const usedProvider = effectiveProvider;
+    // 7. Call LLM (Gemini優先、Groq→Ollamaへ自動フォールバック)
+    const reply = await callAI(message, systemPrompt, {
+      history: chatHistory,
+      provider: (provider as "gemini" | "groq" | "ollama" | "auto") ?? "auto",
+    });
+    const usedProvider = process.env.GEMINI_API_KEY ? "gemini" : (process.env.GROQ_API_KEY ? "groq" : "ollama");
 
     // 8. Update Bus after successful response generation
     try {

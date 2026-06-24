@@ -7,3 +7,8 @@ build/
 .next/
 .vercel
 .env*
+
+# Obsidian
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/plugins/obsidian-git/data.json

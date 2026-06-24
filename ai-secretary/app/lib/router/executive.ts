@@ -1,4 +1,4 @@
-import { callGroq } from "../ai/groq";
+import { callAI } from "../ai/client";
 import { SECRETARY_REGISTRY } from "../config/registry";
 
 export type RoutingResult = {
@@ -93,7 +93,7 @@ ${JSON.stringify(registryList, null, 2)}
 `;
 
   try {
-    const response = await callGroq(message, prompt);
+    const response = await callAI(message, prompt);
     const jsonMatch = response.match(/\{[\s\S]*?\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]) as RoutingResult;
