@@ -6,7 +6,7 @@ export type SecretaryScope = {
 
 export const DEFAULT_GLOBAL_SCOPE = [
   "memory/personal/profile.md",
-  "memory/company/profile.md"
+  "memory/shared/ai-development-rules.md"
 ];
 
 
@@ -30,41 +30,57 @@ export const MEMORY_SCOPES: MemoryScopes = {
   // ─── Personal OS ──────────────────────────────────────
   "personal-ceo": {
     local: [
+      "memory/personal/rules.md",
       "memory/personal/thinking/index.md",
       "memory/personal/goals.md",
+      "memory/personal/investment/",
+      "memory/personal/finance/",
       "memory/personal/fund/",
       "memory/personal/note/"
     ],
-    shared: [],
+    shared: ["memory/shared/ai-development-rules.md"],
     global: ["memory/personal/profile.md"]
   },
   "personal-morning": {
     local: [
+      "memory/personal/rules.md",
       "memory/personal/goals.md",
+      "memory/personal/tasks/",
+      "memory/personal/logs/",
+      "memory/personal/finance/",
+      "memory/personal/investment/",
       "memory/personal/fund/positions.md",
       "memory/personal/note/"
     ],
-    shared: [],
+    shared: ["memory/shared/ai-development-rules.md"],
     global: ["memory/personal/profile.md"]
   },
   "personal-note": {
     local: [
+      "memory/personal/rules.md",
       "memory/personal/note/",
       "memory/personal/note/ideas/index.md",
       "memory/personal/note/affiliates/index.md",
       "memory/personal/note/kpi.md",
-      "memory/brain/personal/note-business.md"
+      "memory/personal/note/business-strategy.md"
     ],
-    shared: ["memory/personal/goals.md"],
+    shared: ["memory/personal/goals.md", "memory/shared/ai-development-rules.md"],
     global: ["memory/personal/profile.md"]
   },
   "personal-finance": {
-    local: ["memory/personal/finance/"],
-    shared: ["memory/personal/goals.md"],
+    local: [
+      "memory/personal/rules.md",
+      "memory/personal/finance/",
+      "memory/personal/investment/",
+      "memory/personal/fund/"
+    ],
+    shared: ["memory/personal/goals.md", "memory/shared/ai-development-rules.md"],
     global: ["memory/personal/profile.md"]
   },
   "personal-fund": {
     local: [
+      "memory/personal/rules.md",
+      "memory/personal/investment/rules.md",
       "memory/personal/fund/fund.md",
       "memory/personal/fund/rules.md",
       "memory/personal/fund/watchlist.md",
@@ -74,7 +90,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
       "memory/personal/fund/earnings.md",
       "memory/personal/fund/investment-log/"
     ],
-    shared: ["memory/personal/goals.md"],
+    shared: ["memory/personal/goals.md", "memory/shared/ai-development-rules.md"],
     global: ["memory/personal/profile.md"]
   },
 

@@ -12,9 +12,7 @@ const overwrite = process.argv.includes("--overwrite");
 
 const copyPlan = [
   ["memory/personal", "memory/personal"],
-  ["memory/company", "memory/company"],
-  ["memory/brain", "memory/brain"],
-  ["memory/note/templates", "memory/personal/note/templates"],
+  ["memory/shared", "memory/shared"],
 ];
 
 function copyMissingFiles(sourceDir, targetDir) {
