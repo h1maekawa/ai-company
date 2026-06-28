@@ -4,13 +4,15 @@ export function verifyApiSecret(req: NextRequest): NextResponse | null {
   const secret = process.env.API_SECRET;
 
   if (!secret) {
-    if (process.env.VERCEL) {
-      return NextResponse.json(
-        { error: "サーバー設定エラー: API_SECRET が未設定です" },
-        { status: 500 }
-      );
-    }
-    return null; // 開発環境はスルー
+    const message = [
+      "サーバー設定エラー: API_SECRET が未設定です。",
+      ".env.local に API_SECRET を設定してください。",
+      "設定後に npm run dev を再起動してください。",
+      "ローカル検証では NEXT_PUBLIC_API_SECRET も同じ値にしてください。",
+    ].join("\n");
+
+    console.error(message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 
   const authHeader = req.headers.get("x-api-secret");

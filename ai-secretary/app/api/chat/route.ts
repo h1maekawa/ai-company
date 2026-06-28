@@ -68,7 +68,8 @@ export async function POST(req: NextRequest) {
     const { activeCompany } = resolveCompanyContext(mode);
 
     // 2. Perform intent routing
-    const routeResult = await routeRequest(message, activeCompany);
+    const requestedProvider = (provider as "gemini" | "groq" | "ollama" | "auto") ?? "auto";
+    const routeResult = await routeRequest(message, activeCompany, requestedProvider);
     const targetSecretaryId = routeResult.secretary;
 
     // 3. Find secretary config
@@ -126,9 +127,14 @@ export async function POST(req: NextRequest) {
     // 7. Call LLM (Gemini優先、Groq→Ollamaへ自動フォールバック)
     const reply = await callAI(message, systemPrompt, {
       history: chatHistory,
-      provider: (provider as "gemini" | "groq" | "ollama" | "auto") ?? "auto",
+      provider: requestedProvider,
     });
-    const usedProvider = process.env.GEMINI_API_KEY ? "gemini" : (process.env.GROQ_API_KEY ? "groq" : "ollama");
+    const usedProvider =
+      requestedProvider !== "auto"
+        ? requestedProvider
+        : process.env.GEMINI_API_KEY
+          ? "gemini"
+          : (process.env.GROQ_API_KEY ? "groq" : "ollama");
 
     // 8. Update Bus after successful response generation
     try {

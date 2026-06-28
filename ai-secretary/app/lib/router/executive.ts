@@ -1,4 +1,5 @@
 import { callAI } from "../ai/client";
+import { AIProvider } from "../ai/client";
 import { SECRETARY_REGISTRY } from "../config/registry";
 
 export type RoutingResult = {
@@ -13,7 +14,83 @@ export type RoutingResult = {
  * Parses a user request and determines the optimal secretary to handle the message.
  * Assigns a confidence score to determine if routing should trigger automatically.
  */
-export async function routeRequest(message: string, activeCompany: "personal" | "company"): Promise<RoutingResult> {
+export async function routeRequest(
+  message: string,
+  activeCompany: "personal" | "company",
+  provider: AIProvider = "auto"
+): Promise<RoutingResult> {
+  const normalized = message.toLowerCase();
+
+  if (activeCompany === "personal") {
+    if (
+      normalized.includes("note") ||
+      normalized.includes("sns") ||
+      normalized.includes("記事") ||
+      normalized.includes("タイトル") ||
+      normalized.includes("下書き") ||
+      normalized.includes("/note-")
+    ) {
+      return {
+        intent: "note/SNS自動化・記事作成",
+        department: "personal",
+        room: undefined,
+        secretary: "personal-note",
+        confidence: 0.95,
+      };
+    }
+
+    if (
+      normalized.includes("投資") ||
+      normalized.includes("銘柄") ||
+      normalized.includes("ポートフォリオ") ||
+      normalized.includes("買い") ||
+      normalized.includes("売り") ||
+      normalized.includes("nvda") ||
+      normalized.includes("mu") ||
+      normalized.includes("/fund-")
+    ) {
+      return {
+        intent: "投資メモ整理・リスク確認",
+        department: "personal",
+        room: "personal-fund-room",
+        secretary: "personal-fund",
+        confidence: 0.95,
+      };
+    }
+
+    if (
+      normalized.includes("家計") ||
+      normalized.includes("収支") ||
+      normalized.includes("支出") ||
+      normalized.includes("収入") ||
+      normalized.includes("予算")
+    ) {
+      return {
+        intent: "家計簿・収支管理",
+        department: "personal",
+        room: undefined,
+        secretary: "personal-finance",
+        confidence: 0.9,
+      };
+    }
+
+    if (
+      normalized.includes("個人用ai会社") ||
+      normalized.includes("個人用ai") ||
+      normalized.includes("今日") ||
+      normalized.includes("タスク") ||
+      normalized.includes("やること")
+    ) {
+      return {
+        intent: "個人用AI会社の運用確認",
+        department: "personal",
+        room: undefined,
+        secretary: "personal-ceo",
+        confidence: 0.9,
+      };
+    }
+  }
+
   const dbCompany = activeCompany === "company" ? "crestix" : "personal";
   const filteredSecretaries = Object.values(SECRETARY_REGISTRY).filter(sec => {
     return sec.config.company === "shared" || sec.config.company === dbCompany;
@@ -93,7 +170,7 @@ ${JSON.stringify(registryList, null, 2)}
 `;
 
   try {
-    const response = await callAI(message, prompt);
+    const response = await callAI(message, prompt, { provider });
     const jsonMatch = response.match(/\{[\s\S]*?\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]) as RoutingResult;
@@ -119,4 +196,3 @@ ${JSON.stringify(registryList, null, 2)}
     confidence: 0.3
   };
 }
-
