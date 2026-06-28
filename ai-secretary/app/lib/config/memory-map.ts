@@ -17,12 +17,12 @@ export const MEMORY_MAP: Record<SecretaryMode, MemoryFileDef[]> = {
     { name: "tasks.md", path: "memory/company/tasks.md" },
   ],
   finance: [
-    { name: "portfolio.md", path: "memory/finance/portfolio.md" },
-    { name: "watchlist.md", path: "memory/finance/watchlist.md" },
-    { name: "strategy.md", path: "memory/finance/strategy.md" },
+    { name: "portfolio.md", path: "memory/personal/fund/portfolio.md" },
+    { name: "watchlist.md", path: "memory/personal/fund/watchlist.md" },
+    { name: "strategy.md", path: "memory/personal/fund/fund.md" },
   ],
   note: [
-    { name: "ideas.md", path: "memory/note/ideas.md" },
-    { name: "drafts.md", path: "memory/note/drafts.md" },
+    { name: "ideas.md", path: "memory/personal/note/ideas/index.md" },
+    { name: "drafts.md", path: "memory/personal/note/drafts" },
   ],
 };

@@ -148,7 +148,7 @@ related: []
 ${contentBody}
 `;
 
-    const researchDir = "memory/note/research";
+    const researchDir = "memory/personal/note/research";
     let researchFileName = `${dateHyphen}-${slug}.md`;
     try {
       const files = await listVaultDirectory(researchDir);
@@ -197,7 +197,7 @@ related: []
 ${generatedDraft.trim()}
 `;
 
-    const draftDir = "memory/note/drafts";
+    const draftDir = "memory/personal/note/drafts";
     let draftFileName = `${dateHyphen}-${slug}.md`;
     try {
       const files = await listVaultDirectory(draftDir);

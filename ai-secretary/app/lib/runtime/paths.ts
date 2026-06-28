@@ -1,10 +1,10 @@
 import path from "path";
 
+export const DEFAULT_VAULT_ROOT =
+  "/Users/maekawahiroyuki/Library/CloudStorage/Dropbox/maehiro/個人用/AI会社";
+
 export const VAULT_ROOT: string = (() => {
-  return (
-    process.env.VAULT_ROOT ||
-    "/Users/maekawahiroyuki/Library/CloudStorage/Dropbox/maehiro/個人用"
-  );
+  return process.env.VAULT_ROOT || DEFAULT_VAULT_ROOT;
 })();
 
 export function resolveVaultPath(relativePath: string) {

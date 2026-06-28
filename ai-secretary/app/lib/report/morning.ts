@@ -19,7 +19,7 @@ export async function generateMorningReport(): Promise<string> {
   // 2. Load Fund positions
   let positionsContent = "";
   try {
-    const pPath = resolveVaultPath("personal/fund/positions.md");
+    const pPath = resolveVaultPath("memory/personal/fund/positions.md");
     if (fs.existsSync(pPath)) {
       positionsContent = fs.readFileSync(pPath, "utf-8");
     }
@@ -30,7 +30,7 @@ export async function generateMorningReport(): Promise<string> {
   // 3. Load Note drafts
   let draftsList: string[] = [];
   try {
-    const dPath = resolveVaultPath("personal/note/drafts");
+    const dPath = resolveVaultPath("memory/personal/note/drafts");
     if (fs.existsSync(dPath)) {
       draftsList = fs.readdirSync(dPath).filter(f => f.endsWith(".md") && f !== "README.md");
     }
@@ -41,7 +41,7 @@ export async function generateMorningReport(): Promise<string> {
   // 3c. Load Note KPI
   let noteKpiContent = "";
   try {
-    const kpiPath = resolveVaultPath("personal/note/kpi.md");
+    const kpiPath = resolveVaultPath("memory/personal/note/kpi.md");
     if (fs.existsSync(kpiPath)) {
       noteKpiContent = fs.readFileSync(kpiPath, "utf-8");
     }
@@ -53,11 +53,11 @@ export async function generateMorningReport(): Promise<string> {
   let hdKpiContent = "";
   let hdPipelineContent = "";
   try {
-    const kpiPath = resolveVaultPath("company/hd-business/kpi.md");
+    const kpiPath = resolveVaultPath("memory/company/hd-business/kpi.md");
     if (fs.existsSync(kpiPath)) {
       hdKpiContent = fs.readFileSync(kpiPath, "utf-8");
     }
-    const pipePath = resolveVaultPath("company/hd-business/pipeline.md");
+    const pipePath = resolveVaultPath("memory/company/hd-business/pipeline.md");
     if (fs.existsSync(pipePath)) {
       hdPipelineContent = fs.readFileSync(pipePath, "utf-8");
     }
@@ -68,8 +68,8 @@ export async function generateMorningReport(): Promise<string> {
   // 4. Load Current goals
   let goalsContent = "";
   try {
-    const gPath = resolveVaultPath("personal/goals.md");
-    const rootGPath = resolveVaultPath("goals.md");
+    const gPath = resolveVaultPath("memory/personal/goals.md");
+    const rootGPath = resolveVaultPath("memory/goals.md");
     if (fs.existsSync(gPath)) {
       goalsContent = fs.readFileSync(gPath, "utf-8");
     } else if (fs.existsSync(rootGPath)) {

@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import { resolveRawPath } from "./paths";
 
 let cachedBusFilePath: string | null = null;
 
@@ -12,8 +13,7 @@ let cachedBusFilePath: string | null = null;
  *     For production use with persistent inboxQueue/taskPipeline, migrate to Upstash Redis.
  *
  * - Local (default):
- *     Uses ../memory/current-bus.json relative to the ai-secretary/ working directory.
- *     This is the standard path for local Obsidian/Dropbox vault usage.
+ *     Uses memory/current-bus.json inside the configured Obsidian vault.
  */
 export function getBusFilePath(): string {
   if (cachedBusFilePath) {
@@ -25,7 +25,7 @@ export function getBusFilePath(): string {
     return cachedBusFilePath;
   }
 
-  const primaryPath = path.resolve(process.cwd(), "..", "memory", "current-bus.json");
+  const primaryPath = resolveRawPath("memory/current-bus.json");
   const dir = path.dirname(primaryPath);
 
   try {

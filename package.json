@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "sync:obsidian-memory": "node scripts/sync-obsidian-memory.mjs"
+  },
   "devDependencies": {
     "typescript": "^6.0.3"
   }

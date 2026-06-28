@@ -35,7 +35,7 @@ export async function generateUniqueId(prefix: IdPrefix): Promise<string> {
   if (prefix === "kn") {
     directoriesToScan = KNOWLEDGE_CATEGORIES.map(cat => `memory/knowledge/${cat}`);
   } else if (prefix === "nt") {
-    directoriesToScan = NOTE_SUBFOLDERS.map(sub => `memory/note/${sub}`);
+    directoriesToScan = NOTE_SUBFOLDERS.map(sub => `memory/personal/note/${sub}`);
   } else if (prefix === "lg") {
     directoriesToScan = LOG_MODES.map(mode => `memory/chat-log/${mode}`);
   }

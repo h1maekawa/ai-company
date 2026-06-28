@@ -1,10 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { CompanyType } from "../config/projects";
-import { VAULT_ROOT } from "../runtime/paths";
-
-// Vault root resolved via runtime/paths.ts (single source of truth)
-const MEMORY_DIR = VAULT_ROOT;
+import { resolveRawPath } from "../runtime/paths";
 
 export type CaptureEvent = {
   id: string;
@@ -17,7 +14,7 @@ export type CaptureEvent = {
 /**
  * Saves a raw user input as a capture event markdown file.
  * Personal: memory/personal/capture/YYYY/MM/CAP-YYYYMMDD-XXX.md
- * Crestix:  memory/crestix/capture/YYYY/MM/CAP-YYYYMMDD-XXX.md
+ * Company:  memory/company/capture/YYYY/MM/CAP-YYYYMMDD-XXX.md
  */
 export async function saveCaptureEvent(
   text: string,
@@ -30,9 +27,9 @@ export async function saveCaptureEvent(
   const day = String(now.getDate()).padStart(2, "0");
   const dateStr = `${year}${month}${day}`;
 
-  const captureBase = company === "crestix"
-    ? path.join(MEMORY_DIR, "crestix", "capture")
-    : path.join(MEMORY_DIR, "personal", "capture");
+  const captureBase = company === "crestix" || company === "company"
+    ? resolveRawPath("memory/company/capture")
+    : resolveRawPath("memory/personal/capture");
 
   const targetDir = path.join(captureBase, year, month);
   if (!fs.existsSync(targetDir)) {

@@ -15,7 +15,7 @@ export interface GenerateNoteInput {
 }
 
 /**
- * Generates an article draft using LLM and templating, then saves it in memory/note/drafts/.
+ * Generates an article draft using LLM and templating, then saves it in memory/personal/note/drafts/.
  */
 export async function generateAndSaveNote(input: GenerateNoteInput): Promise<{ success: boolean; path: string; id: string }> {
   const { title, theme, target, purpose, cta, template = "", sourceRef = [] } = input;
@@ -30,7 +30,7 @@ export async function generateAndSaveNote(input: GenerateNoteInput): Promise<{ s
   let templateContent = "";
   if (template) {
     try {
-      const templatePath = `memory/note/templates/${template}.md`;
+      const templatePath = `memory/personal/note/templates/${template}.md`;
       const file = await getVaultFile(templatePath);
       if (file.content) {
         templateContent = file.content;
@@ -95,7 +95,7 @@ ${linkedArticle.trim()}
 
   // 6. Resolve naming conflict and save
   const slug = toSlug(title) || "note-draft";
-  const targetDir = "memory/note/drafts";
+  const targetDir = "memory/personal/note/drafts";
   let finalFileName = `${dateHyphen}-${slug}.md`;
 
   try {
