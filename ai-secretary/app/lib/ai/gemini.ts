@@ -1,7 +1,7 @@
 import { ChatMessage } from "./types";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 
 export async function callGemini(
   message: string,
@@ -9,7 +9,7 @@ export async function callGemini(
   history: ChatMessage[] = []
 ): Promise<string> {
   if (!GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEYが設定されていません。.env.localを確認してください。");
+    throw new Error("GeminiのAPIキーが未設定です。GEMINI_API_KEY を .env.local または Vercel Environment Variables に設定してください。");
   }
 
   const contents = [
@@ -33,8 +33,24 @@ export async function callGemini(
   );
 
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err?.error?.message ?? `Gemini error: ${res.status}`);
+    let detail = `Gemini error: ${res.status}`;
+    try {
+      const err = await res.json();
+      detail = err?.error?.message ?? detail;
+    } catch {}
+
+    const normalized = detail.toLowerCase();
+    if (
+      res.status === 400 &&
+      (normalized.includes("token") ||
+        normalized.includes("too long") ||
+        normalized.includes("input") ||
+        normalized.includes("context"))
+    ) {
+      throw new Error("Geminiへの入力が長すぎます。読み込むmemory量を減らしてください。");
+    }
+
+    throw new Error(`Gemini APIでエラーが発生しました。APIキー、モデル名、利用制限を確認してください。詳細: ${detail}`);
   }
 
   const data = await res.json();

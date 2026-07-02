@@ -6,7 +6,7 @@ import { ChatMessage } from "./types";
 export type AIProvider = "gemini" | "groq" | "ollama" | "auto";
 
 /**
- * 全ファイル共通のLLM呼び出し関数。Gemini優先、Groq→Ollamaの順でフォールバック。
+ * 全ファイル共通のLLM呼び出し関数。デフォルトはGemini。
  */
 export async function callAI(
   message: string,
@@ -16,7 +16,7 @@ export async function callAI(
     provider?: AIProvider;
   } = {}
 ): Promise<string> {
-  const { history = [], provider = "auto" } = options;
+  const { history = [], provider = (process.env.DEFAULT_PROVIDER as AIProvider | undefined) ?? "gemini" } = options;
 
   const isVercel = !!process.env.VERCEL;
   const hasGemini = !!process.env.GEMINI_API_KEY;
@@ -25,28 +25,35 @@ export async function callAI(
   if (provider === "gemini" && hasGemini) {
     return callGemini(message, systemPrompt, history);
   }
+  if (provider === "gemini" && !hasGemini) {
+    throw new Error("GeminiのAPIキーが未設定です。GEMINI_API_KEY を .env.local または Vercel Environment Variables に設定してください。");
+  }
   if (provider === "groq" && hasGroq) {
     return callGroq(message, systemPrompt, history);
+  }
+  if (provider === "groq" && !hasGroq) {
+    throw new Error("Groqの設定に問題があります。GROQ_API_KEY が設定されているか確認してください。");
   }
   if (provider === "ollama" && !isVercel) {
     return callOllama(message, systemPrompt, history);
   }
+  if (provider === "ollama" && isVercel) {
+    throw new Error("VercelではOllamaを使用できません。DEFAULT_PROVIDER=gemini を設定してください。");
+  }
 
-  // auto: Gemini優先で自動選択
+  // auto: Geminiを最優先。明示providerでは他プロバイダーへ自動fallbackしない。
   if (hasGemini) {
     return callGemini(message, systemPrompt, history);
   }
   if (hasGroq) {
-    console.warn("[callAI] GEMINI_API_KEY未設定。Groqにフォールバック。");
     return callGroq(message, systemPrompt, history);
   }
   if (!isVercel) {
-    console.warn("[callAI] APIキー未設定。Ollamaにフォールバック（ローカルのみ）。");
+    console.warn("[callAI] Groq/Gemini未設定。auto指定のためOllamaにフォールバック（ローカルのみ）。");
     return callOllama(message, systemPrompt, history);
   }
 
   throw new Error(
-    "[callAI] GEMINI_API_KEY も GROQ_API_KEY も設定されていません。" +
-    "Vercelの環境変数を確認してください。"
+    "GeminiのAPIキーが未設定です。GEMINI_API_KEY を .env.local または Vercel Environment Variables に設定してください。"
   );
 }

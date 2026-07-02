@@ -8,6 +8,7 @@ import { saveChatLog } from "@/app/lib/memory/logs";
 import { getVaultFile } from "@/app/lib/vault";
 import { getFileContent } from "@/app/lib/github";
 import { callAI } from "@/app/lib/ai/client";
+import { AIProvider } from "@/app/lib/ai/client";
 import { SecretaryMode } from "@/app/lib/prompts";
 import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 import { ChatMessage } from "@/app/lib/ai/types";
@@ -39,6 +40,16 @@ const TASKS_DEFAULT_TEMPLATE = `# やるべきこと
 最終更新: (自動更新)
 `;
 
+function resolveProvider(provider: unknown): AIProvider {
+  const requested = typeof provider === "string" ? provider : undefined;
+  const fallback = process.env.DEFAULT_PROVIDER || "gemini";
+  const resolved = requested || fallback;
+  if (resolved === "gemini" || resolved === "groq" || resolved === "ollama" || resolved === "auto") {
+    return resolved;
+  }
+  return "gemini";
+}
+
 function resolveCompanyContext(mode: string | undefined | null) {
   const isCompanyMode = mode === "business" || mode === "company";
   return {
@@ -53,7 +64,7 @@ export async function POST(req: NextRequest) {
   try {
     const { message, provider, mode, history } = (await req.json()) as {
       message?: string;
-      provider?: "ollama" | "gemini" | "auto";
+      provider?: AIProvider;
       mode?: SecretaryMode;
       history?: ChatMessage[];
     };
@@ -68,7 +79,7 @@ export async function POST(req: NextRequest) {
     const { activeCompany } = resolveCompanyContext(mode);
 
     // 2. Perform intent routing
-    const requestedProvider = (provider as "gemini" | "groq" | "ollama" | "auto") ?? "auto";
+    const requestedProvider = resolveProvider(provider);
     const routeResult = await routeRequest(message, activeCompany, requestedProvider);
     const targetSecretaryId = routeResult.secretary;
 
@@ -124,7 +135,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 7. Call LLM (Gemini優先、Groq→Ollamaへ自動フォールバック)
+    // 7. Call LLM
     const reply = await callAI(message, systemPrompt, {
       history: chatHistory,
       provider: requestedProvider,

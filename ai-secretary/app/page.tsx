@@ -9,11 +9,11 @@ import {
   SecretaryMode,
 } from "@/app/lib/prompts";
 
-type Provider = "ollama" | "gemini" | "auto";
+type Provider = "groq" | "ollama" | "gemini" | "auto";
 type Message = {
   role: "user" | "assistant";
   content: string;
-  provider?: "ollama" | "gemini";
+  provider?: Provider;
   mode?: SecretaryMode;
 };
 
@@ -46,15 +46,26 @@ function renderMarkdown(text: string): string {
 }
 
 const PROVIDER_LABELS: Record<Provider, string> = {
-  ollama: "🖥️ Ollama（ローカル）",
-  gemini: "✨ Gemini（クラウド）",
+  gemini: "✨ Gemini（メイン）",
+  groq: "⚡ Groq（予備）",
+  ollama: "🖥️ Ollama（非推奨）",
   auto:   "🤖 Auto（自動判定）",
 };
 
 const PROVIDER_BADGE: Record<string, string> = {
+  groq: "bg-emerald-900 text-emerald-300",
   ollama: "bg-slate-700 text-slate-300",
   gemini: "bg-blue-900 text-blue-300",
+  auto: "bg-purple-900 text-purple-300",
 };
+
+function resolveDefaultProvider(): Provider {
+  const value = process.env.NEXT_PUBLIC_DEFAULT_PROVIDER;
+  if (value === "groq" || value === "ollama" || value === "gemini" || value === "auto") {
+    return value;
+  }
+  return "gemini";
+}
 
 const MODE_ICON: Record<SecretaryMode, string> = {
   personal: "👤",
@@ -92,7 +103,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [provider, setProvider] = useState<Provider>("ollama");
+  const [provider, setProvider] = useState<Provider>(resolveDefaultProvider);
   const [mode, setMode] = useState<SecretaryMode>("note");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -268,14 +279,14 @@ export default function Home() {
           <div>
             <h1 className="text-white font-semibold text-base leading-none">AI秘書</h1>
             <p className="text-slate-500 text-xs mt-0.5">
-              {MODE_ICON[mode]} {SECRETARY_LABELS[mode]} · Ollama + Gemini
+              {MODE_ICON[mode]} {SECRETARY_LABELS[mode]} · Gemini
             </p>
           </div>
         </div>
 
         {/* Provider selector */}
         <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
-          {(["ollama", "auto", "gemini"] as Provider[]).map((p) => (
+          {(["gemini", "groq", "ollama", "auto"] as Provider[]).map((p) => (
             <button
               key={p}
               onClick={() => setProvider(p)}
@@ -285,7 +296,7 @@ export default function Home() {
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              {p === "ollama" ? "🖥️ Ollama" : p === "gemini" ? "✨ Gemini" : "🤖 Auto"}
+              {p === "groq" ? "⚡ Groq" : p === "ollama" ? "🖥️ Ollama" : p === "gemini" ? "✨ Gemini" : "🤖 Auto"}
             </button>
           ))}
         </div>
@@ -316,9 +327,10 @@ export default function Home() {
       <div className="border-b border-slate-800/50 px-6 py-2 bg-slate-900/30">
         <p className="text-slate-500 text-xs text-center">
           {SECRETARY_DESCRIPTIONS[mode]} ・{" "}
-          {provider === "ollama" && "ローカルLLM（プライベート・オフライン動作）"}
-          {provider === "gemini" && "Google Gemini 2.0 Flash（高性能・最新情報対応）"}
-          {provider === "auto" && "キーワードで自動判定：「最新」「ニュース」「トレンド」→ Gemini、それ以外 → Ollama"}
+          {provider === "gemini" && "Google Gemini（メインAI・ローカル/スマホ共通）"}
+          {provider === "groq" && "Groq（予備AI・入力制限に注意）"}
+          {provider === "ollama" && "Ollama（ローカル専用・Vercelでは非推奨）"}
+          {provider === "auto" && "自動判定：Gemini優先、必要に応じてGroq/Ollama"}
         </p>
       </div>
 
@@ -453,7 +465,7 @@ export default function Home() {
                   )}
                   {msg.provider && (
                     <span className={`text-xs px-2 py-0.5 rounded-full ${PROVIDER_BADGE[msg.provider]}`}>
-                      {msg.provider === "ollama" ? "🖥️ Ollama" : "✨ Gemini"}
+                      {msg.provider === "groq" ? "⚡ Groq" : msg.provider === "ollama" ? "🖥️ Ollama" : msg.provider === "gemini" ? "✨ Gemini" : "🤖 Auto"}
                     </span>
                   )}
                 </div>
