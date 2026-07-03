@@ -123,8 +123,8 @@ export async function POST(req: NextRequest) {
     // 6. Role / Tasks update prompt append for company context
     if (activeCompany === "company") {
       try {
-        const roleRes = await getFileContent("ai-company/memory/role.md");
-        const tasksRes = await getFileContent("ai-company/memory/tasks.md");
+        const roleRes = await getFileContent("memory/role.md");
+        const tasksRes = await getFileContent("memory/tasks.md");
 
         const roleContent = roleRes.sha ? roleRes.content : ROLE_DEFAULT_TEMPLATE;
         const tasksContent = tasksRes.sha ? tasksRes.content : TASKS_DEFAULT_TEMPLATE;

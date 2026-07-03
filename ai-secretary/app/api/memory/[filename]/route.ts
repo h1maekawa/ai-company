@@ -51,7 +51,7 @@ export async function GET(
   }
 
   try {
-    const gitPath = `ai-company/memory/${filename}`;
+    const gitPath = `memory/${filename}`;
     let { content, sha } = await getFileContent(gitPath);
 
     // role.md または tasks.md が存在しない場合は初期テンプレートを返す
@@ -87,7 +87,7 @@ export async function PUT(
       return NextResponse.json({ error: "Content must be a string" }, { status: 400 });
     }
 
-    const gitPath = `ai-company/memory/${filename}`;
+    const gitPath = `memory/${filename}`;
 
     // 現在のshaを取得してからupdateFileContentでコミット
     const { sha } = await getFileContent(gitPath);
