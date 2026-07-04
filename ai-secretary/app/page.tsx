@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import {
@@ -333,6 +334,18 @@ export default function Home() {
           {provider === "auto" && "自動判定：Gemini優先、必要に応じてGroq/Ollama"}
         </p>
       </div>
+
+      {/* Fund report link */}
+      {mode === "finance" && (
+        <div className="border-b border-slate-800/50 px-4 py-2 bg-slate-900/20 text-center">
+          <Link
+            href="/report"
+            className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 border border-blue-900/50 hover:border-blue-700 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            📊 投資レポートを見る
+          </Link>
+        </div>
+      )}
 
       {/* Role/Task Editing Panel */}
       {mode === "company" && (
