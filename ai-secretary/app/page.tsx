@@ -272,60 +272,51 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#0f1117] flex flex-col">
       {/* Header */}
-      <header className="border-b border-slate-800 px-6 py-3 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold">
-            AI
+      <header className="border-b border-slate-800 px-4 sm:px-6 py-3">
+        <div className="flex items-center justify-between gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 shrink-0 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold">
+              AI
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-white font-semibold text-base leading-none">AI秘書</h1>
+              <p className="text-slate-500 text-xs mt-0.5 truncate">
+                {MODE_ICON[mode]} {SECRETARY_LABELS[mode]}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-white font-semibold text-base leading-none">AI秘書</h1>
-            <p className="text-slate-500 text-xs mt-0.5">
-              {MODE_ICON[mode]} {SECRETARY_LABELS[mode]} · Gemini
-            </p>
-          </div>
-        </div>
 
-        {/* Provider selector */}
-        <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
-          {(["gemini", "groq", "ollama", "auto"] as Provider[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setProvider(p)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                provider === p
-                  ? "bg-blue-600 text-white"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
+          {/* Compact dropdown selectors */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <select
+              value={mode}
+              onChange={(e) => handleModeChange(e.target.value as SecretaryMode)}
+              aria-label="秘書モード"
+              className="bg-slate-800 text-slate-200 text-xs sm:text-sm rounded-lg pl-2 pr-1 py-1.5 border border-slate-700 focus:border-blue-500 outline-none max-w-[7.5rem] sm:max-w-none"
             >
-              {p === "groq" ? "⚡ Groq" : p === "ollama" ? "🖥️ Ollama" : p === "gemini" ? "✨ Gemini" : "🤖 Auto"}
-            </button>
-          ))}
+              {(["personal", "company", "finance", "note"] as SecretaryMode[]).map((m) => (
+                <option key={m} value={m}>
+                  {MODE_ICON[m]} {SECRETARY_LABELS[m]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as Provider)}
+              aria-label="AIプロバイダー"
+              className="bg-slate-800 text-slate-200 text-xs sm:text-sm rounded-lg pl-2 pr-1 py-1.5 border border-slate-700 focus:border-blue-500 outline-none max-w-[6rem] sm:max-w-none"
+            >
+              <option value="gemini">✨ Gemini</option>
+              <option value="groq">⚡ Groq</option>
+              <option value="ollama">🖥️ Ollama</option>
+              <option value="auto">🤖 Auto</option>
+            </select>
+          </div>
         </div>
       </header>
 
-      {/* Secretary mode selector */}
-      <div className="border-b border-slate-800 px-6 py-3 bg-slate-900/40">
-        <div className="max-w-3xl mx-auto flex flex-wrap gap-2 items-center">
-          <span className="text-slate-500 text-xs mr-1">秘書モード:</span>
-          {(["personal", "company", "finance", "note"] as SecretaryMode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => handleModeChange(m)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                mode === m
-                  ? "bg-blue-600 text-white border-blue-500"
-                  : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500"
-              }`}
-              title={SECRETARY_DESCRIPTIONS[m]}
-            >
-              {MODE_ICON[m]} {SECRETARY_LABELS[m]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Provider description */}
-      <div className="border-b border-slate-800/50 px-6 py-2 bg-slate-900/30">
+      {/* Mode / provider description */}
+      <div className="border-b border-slate-800/50 px-4 sm:px-6 py-2 bg-slate-900/30">
         <p className="text-slate-500 text-xs text-center">
           {SECRETARY_DESCRIPTIONS[mode]} ・{" "}
           {provider === "gemini" && "Google Gemini（メインAI・ローカル/スマホ共通）"}
