@@ -1,8 +1,5 @@
-import fs from "fs";
-import path from "path";
 import { MEMORY_SCOPES, DEFAULT_GLOBAL_SCOPE } from "../config/scopes";
-import { getVaultFile } from "../vault";
-import { resolveRawPath } from "../runtime/paths";
+import { getVaultFile, listVaultEntries, VaultEntry } from "../vault";
 
 export type LoadedMemory = {
   files: {
@@ -12,40 +9,32 @@ export type LoadedMemory = {
 };
 
 /**
- * Recursively scans a directory on the local filesystem and finds all .md files.
+ * Recursively scans a directory via the Vault abstraction (GitHub on Vercel, local
+ * filesystem in dev) and finds all .md files. Must not touch the local filesystem
+ * directly, since on Vercel the Vault only exists on GitHub.
  */
-function scanDirectoryRecursive(dirPath: string): string[] {
-  const absolutePath = resolveRawPath(dirPath);
+async function scanDirectoryRecursive(dirPath: string): Promise<string[]> {
   const results: string[] = [];
-
-  if (!fs.existsSync(absolutePath)) {
-    return [];
+  let entries: VaultEntry[];
+  try {
+    entries = await listVaultEntries(dirPath);
+  } catch (e) {
+    console.error(`[DEBUG] Failed to scan directory ${dirPath}:`, e);
+    return results;
   }
 
-  const stat = fs.statSync(absolutePath);
-  if (!stat.isDirectory()) {
-    return [];
-  }
+  const cleanDirPath = dirPath.replace(/\/$/, "");
 
-  const recurse = (currentAbsPath: string, relativePathPrefix: string) => {
-    try {
-      const items = fs.readdirSync(currentAbsPath, { withFileTypes: true });
-      for (const item of items) {
-        const itemRelPath = path.join(relativePathPrefix, item.name);
-        const itemAbsPath = path.join(currentAbsPath, item.name);
-
-        if (item.isDirectory()) {
-          recurse(itemAbsPath, itemRelPath);
-        } else if (item.isFile() && item.name.endsWith(".md")) {
-          results.push(itemRelPath);
-        }
-      }
-    } catch (e) {
-      console.error(`[DEBUG] Failed to scan directory ${currentAbsPath}:`, e);
+  for (const entry of entries) {
+    const itemRelPath = `${cleanDirPath}/${entry.name}`;
+    if (entry.type === "dir") {
+      const nested = await scanDirectoryRecursive(itemRelPath);
+      results.push(...nested);
+    } else if (entry.name.endsWith(".md")) {
+      results.push(itemRelPath);
     }
-  };
+  }
 
-  recurse(absolutePath, dirPath);
   return results;
 }
 
@@ -88,7 +77,8 @@ export async function loadScopedMemory(
 
   for (const group of allScopeGroups) {
     for (const rawPath of group.paths) {
-      // Normalize path (remove trailing slash for fs checks)
+      // A scope entry ending in "/" is a directory to scan recursively; otherwise it's a single file.
+      const isDirectoryScope = rawPath.endsWith("/");
       const cleanPath = rawPath.replace(/\/$/, "");
       if (processedPaths.has(cleanPath)) continue;
       processedPaths.add(cleanPath);
@@ -97,25 +87,8 @@ export async function loadScopedMemory(
         continue;
       }
 
-      const absolutePath = resolveRawPath(cleanPath);
-      if (!fs.existsSync(absolutePath)) {
-        continue;
-      }
-
-      const stat = fs.statSync(absolutePath);
-      if (stat.isFile()) {
-        if (cleanPath.endsWith(".md")) {
-          try {
-            const { content } = await getVaultFile(cleanPath);
-            if (content && content.trim()) {
-              loadedFiles.push({ path: cleanPath, content });
-            }
-          } catch (e) {
-            console.error(`Failed to load file ${cleanPath}:`, e);
-          }
-        }
-      } else if (stat.isDirectory()) {
-        const mdFiles = scanDirectoryRecursive(cleanPath);
+      if (isDirectoryScope) {
+        const mdFiles = await scanDirectoryRecursive(cleanPath);
         for (const mdFile of mdFiles) {
           if (!filterPath(mdFile)) {
             continue;
@@ -128,6 +101,15 @@ export async function loadScopedMemory(
           } catch (e) {
             console.error(`Failed to load directory file ${mdFile}:`, e);
           }
+        }
+      } else if (cleanPath.endsWith(".md")) {
+        try {
+          const { content } = await getVaultFile(cleanPath);
+          if (content && content.trim()) {
+            loadedFiles.push({ path: cleanPath, content });
+          }
+        } catch (e) {
+          console.error(`Failed to load file ${cleanPath}:`, e);
         }
       }
     }

@@ -133,6 +133,63 @@ export async function saveVaultFile(
   }
 }
 
+export interface VaultEntry {
+  name: string;
+  type: 'file' | 'dir';
+}
+
+/**
+ * Lists entries (files AND subdirectories) in a directory on GitHub Vault (production)
+ * or Local Filesystem (development). Used for recursive memory scope scanning so that
+ * it works correctly on Vercel (where the local filesystem does not contain the Vault).
+ */
+export async function listVaultEntries(dirPath: string): Promise<VaultEntry[]> {
+  if (GITHUB_OWNER && GITHUB_REPO && GITHUB_TOKEN) {
+    const githubPath = getGitHubPath(dirPath);
+    const url = `${API_BASE}/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}?ref=${GITHUB_BRANCH}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Vault-API',
+      },
+      cache: 'no-store',
+    });
+
+    if (response.status === 404) {
+      return [];
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = (await response.json()) as Array<{ name: string; type: string }>;
+    if (!Array.isArray(data)) {
+      return [];
+    }
+
+    return data.map(item => ({ name: item.name, type: item.type === 'dir' ? 'dir' as const : 'file' as const }));
+  } else {
+    // Local filesystem fallback
+    try {
+      const localPath = resolveRawPath(dirPath);
+      if (fs.existsSync(localPath) && fs.statSync(localPath).isDirectory()) {
+        return fs.readdirSync(localPath).map(name => {
+          const full = path.join(localPath, name);
+          return { name, type: (fs.statSync(full).isDirectory() ? 'dir' : 'file') as 'dir' | 'file' };
+        });
+      }
+    } catch (e) {
+      console.error(`[DEBUG] Local directory entries list failed for ${dirPath}:`, e);
+    }
+    return [];
+  }
+}
+
 /**
  * Lists filenames in a directory on GitHub Vault (production) or Local Filesystem (development)
  */
