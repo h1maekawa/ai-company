@@ -41,3 +41,5 @@ This guide outlines common development commands and the available slash commands
 ### Command Flow & Auto-Logging
 When you execute fund entry/exit commands, the system routes the request to the **Fund Manager AI**.
 If the AI issues an investment decision, it outputs a hidden metadata block (`<!-- FUND_LOG: {...} -->`) which the server automatically parses and saves as a Markdown log under `memory/personal/fund/investment-log/YYYY-MM-DD-TICKER.md`.
+
+## Imported Claude Cowork project instructions
