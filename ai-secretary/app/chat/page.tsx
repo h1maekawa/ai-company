@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { CENTER_NODE, findHubNode, HubNode } from "@/app/lib/config/hub";
+import { CENTER_NODE, GROUP_LABELS, findHubNode, HubNode } from "@/app/lib/config/hub";
 
 type Provider = "groq" | "ollama" | "gemini" | "auto";
 type Message = {
@@ -237,7 +237,18 @@ function ChatView() {
               {node.icon}
             </div>
             <div className="min-w-0">
-              <h1 className="text-white font-semibold text-base leading-none">{node.name}</h1>
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-white font-semibold text-base leading-none">{node.name}</h1>
+                <span
+                  className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                  style={{
+                    color: GROUP_LABELS[node.group].color,
+                    backgroundColor: GROUP_LABELS[node.group].color + "1a",
+                  }}
+                >
+                  {GROUP_LABELS[node.group].icon} {GROUP_LABELS[node.group].name}
+                </span>
+              </div>
               <p className="text-slate-500 text-xs mt-0.5 truncate">{node.tagline}</p>
             </div>
           </div>

@@ -7,6 +7,8 @@ import { SecretaryMode } from "./modes";
  *
  * secretaryId は app/lib/config/departments.ts のレジストリIDと一致させること。
  */
+export type HubGroup = "personal" | "company" | "shared";
+
 export type HubNode = {
   id: string;
   secretaryId: string;
@@ -18,10 +20,19 @@ export type HubNode = {
   /** ノードのアクセントカラー (Tailwindではなく生CSS値。SVG線と共有するため) */
   color: string;
   examples: string[];
+  /** マップ上の大別: 個人事業部 / 会社事業部 / 共通 */
+  group: HubGroup;
+};
+
+export const GROUP_LABELS: Record<HubGroup, { icon: string; name: string; color: string }> = {
+  personal: { icon: "👤", name: "個人事業部", color: "#10b981" },
+  company: { icon: "🏢", name: "会社事業部", color: "#8b5cf6" },
+  shared: { icon: "🤝", name: "共通", color: "#64748b" },
 };
 
 export const CENTER_NODE: HubNode = {
   id: "assistant",
+  group: "shared",
   secretaryId: "executive-assistant",
   icon: "🤖",
   name: "AI秘書",
@@ -38,6 +49,7 @@ export const CENTER_NODE: HubNode = {
 export const HUB_NODES: HubNode[] = [
   {
     id: "morning",
+    group: "personal",
     secretaryId: "personal-morning",
     icon: "🌅",
     name: "朝会",
@@ -48,6 +60,7 @@ export const HUB_NODES: HubNode[] = [
   },
   {
     id: "note",
+    group: "personal",
     secretaryId: "personal-note",
     icon: "📝",
     name: "Note事業",
@@ -62,6 +75,7 @@ export const HUB_NODES: HubNode[] = [
   },
   {
     id: "fund",
+    group: "personal",
     secretaryId: "personal-fund",
     icon: "📈",
     name: "投資・Fund",
@@ -76,6 +90,7 @@ export const HUB_NODES: HubNode[] = [
   },
   {
     id: "kakei",
+    group: "personal",
     secretaryId: "personal-finance",
     icon: "💰",
     name: "家計",
@@ -86,6 +101,7 @@ export const HUB_NODES: HubNode[] = [
   },
   {
     id: "company",
+    group: "company",
     secretaryId: "company-ceo",
     icon: "🏢",
     name: "経営戦略",
@@ -100,6 +116,7 @@ export const HUB_NODES: HubNode[] = [
   },
   {
     id: "dev",
+    group: "company",
     secretaryId: "company-system",
     icon: "🛠️",
     name: "AI開発",
@@ -114,6 +131,7 @@ export const HUB_NODES: HubNode[] = [
   },
   {
     id: "hd",
+    group: "company",
     secretaryId: "hd-ceo",
     icon: "📊",
     name: "HD事業",
@@ -124,6 +142,7 @@ export const HUB_NODES: HubNode[] = [
   },
   {
     id: "kaizen",
+    group: "shared",
     secretaryId: "executive-kaizen",
     icon: "💡",
     name: "改善",
