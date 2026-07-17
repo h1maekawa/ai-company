@@ -58,11 +58,12 @@ function resolveCompanyContext(mode: string | undefined | null) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, provider, mode, history } = (await req.json()) as {
+    const { message, provider, mode, history, secretaryId } = (await req.json()) as {
       message?: string;
       provider?: AIProvider;
       mode?: SecretaryMode;
       history?: ChatMessage[];
+      secretaryId?: string;
     };
 
     const chatHistory: ChatMessage[] = Array.isArray(history) ? history.slice(-10) : [];
@@ -74,10 +75,16 @@ export async function POST(req: NextRequest) {
     // 1. Resolve company contexts from mode
     const { activeCompany } = resolveCompanyContext(mode);
 
-    // 2. Perform intent routing
+    // 2. Resolve target secretary: an explicit secretaryId (hub node) pins the
+    //    department; otherwise fall back to keyword intent routing
     const requestedProvider = resolveProvider(provider);
-    const routeResult = await routeRequest(message, activeCompany, requestedProvider);
-    const targetSecretaryId = routeResult.secretary;
+    let targetSecretaryId: string;
+    if (secretaryId && findSecretary(secretaryId)) {
+      targetSecretaryId = secretaryId;
+    } else {
+      const routeResult = await routeRequest(message, activeCompany, requestedProvider);
+      targetSecretaryId = routeResult.secretary;
+    }
 
     // 3. Find secretary config
     const secretaryEntry = findSecretary(targetSecretaryId);
