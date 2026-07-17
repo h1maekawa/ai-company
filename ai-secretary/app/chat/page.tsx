@@ -83,10 +83,18 @@ function ChatView() {
   const [saveStateRole, setSaveStateRole] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [saveStateTasks, setSaveStateTasks] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [pendingTasksUpdate, setPendingTasksUpdate] = useState<string | null>(null);
+  const [kaizenProposal, setKaizenProposal] = useState<string | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  // ?node= が変わったら（改善秘書へ相談リンク等）会話をリセットして別部署として開始
+  useEffect(() => {
+    setMessages([]);
+    setKaizenProposal(null);
+    setPendingTasksUpdate(null);
+  }, [node.id]);
 
   useEffect(() => {
     if (node.mode === "company") {
@@ -189,6 +197,9 @@ function ChatView() {
         ...prev,
         { role: "assistant", content: reply, provider: data.provider },
       ]);
+      if (data.kaizen) {
+        setKaizenProposal(data.kaizen);
+      }
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -424,6 +435,34 @@ function ChatView() {
               </span>
               <span className="text-slate-400 text-sm animate-pulse">...</span>
             </div>
+          </div>
+        )}
+
+        {/* Kaizen Proposal Card */}
+        {kaizenProposal && (
+          <div className="bg-slate-800/95 border border-lime-500/30 rounded-xl p-4 my-4 shrink-0 backdrop-blur">
+            <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
+              <h4 className="text-lime-400 font-semibold text-xs flex items-center gap-2">
+                <span>💡</span> AI会社の改善提案があります（自動で記録済み）
+              </h4>
+              <div className="flex gap-2">
+                <Link
+                  href="/chat?node=kaizen"
+                  className="bg-lime-600 hover:bg-lime-500 text-white text-[10px] font-semibold px-2.5 py-1 rounded transition-colors"
+                >
+                  改善秘書と相談
+                </Link>
+                <button
+                  onClick={() => setKaizenProposal(null)}
+                  className="text-slate-400 hover:text-slate-200 text-[10px] px-2.5 py-1 rounded bg-slate-800 border border-slate-700/60 hover:bg-slate-700 transition-colors"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+            <pre className="text-slate-300 text-[11px] bg-slate-900/60 p-3 rounded-lg max-h-32 overflow-y-auto whitespace-pre-wrap font-mono leading-relaxed border border-slate-800">
+              {kaizenProposal}
+            </pre>
           </div>
         )}
 

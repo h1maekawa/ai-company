@@ -26,6 +26,11 @@ export const MEMORY_SCOPES: MemoryScopes = {
     shared: ["memory/personal/profile.md", "memory/company/profile.md"],
     global: []
   },
+  "executive-kaizen": {
+    local: ["memory/kaizen/"],
+    shared: ["memory/personal/profile.md", "memory/company/profile.md"],
+    global: []
+  },
 
   // ─── Personal OS ──────────────────────────────────────
   "personal-ceo": {

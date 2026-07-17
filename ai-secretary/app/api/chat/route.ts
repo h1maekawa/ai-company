@@ -11,6 +11,7 @@ import { callAI } from "@/app/lib/ai/client";
 import { AIProvider } from "@/app/lib/ai/client";
 import { SecretaryMode } from "@/app/lib/prompts";
 import { ChatMessage } from "@/app/lib/ai/types";
+import { KAIZEN_PROMPT_INSTRUCTION, extractKaizen, saveKaizenLog } from "@/app/lib/memory/kaizen";
 
 const ROLE_DEFAULT_TEMPLATE = `# 現在の役割
 
@@ -138,11 +139,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 6.5 改善提案ルールを注入（改善秘書自身には不要 — 提案の集約が本業のため）
+    if (targetSecretaryId !== "executive-kaizen") {
+      systemPrompt += KAIZEN_PROMPT_INSTRUCTION;
+    }
+
     // 7. Call LLM
-    const reply = await callAI(message, systemPrompt, {
+    const rawReply = await callAI(message, systemPrompt, {
       history: chatHistory,
       provider: requestedProvider,
     });
+
+    // 7.5 [KAIZEN]ブロックを抽出し、Vaultに蓄積（失敗しても応答は返す）
+    const { reply, kaizen } = extractKaizen(rawReply);
+    if (kaizen) {
+      try {
+        await saveKaizenLog(targetSecretaryId, kaizen, message);
+      } catch (kaizenErr) {
+        console.error("Failed to save kaizen log (non-fatal):", kaizenErr);
+      }
+    }
     const usedProvider =
       requestedProvider !== "auto"
         ? requestedProvider
@@ -172,6 +188,7 @@ export async function POST(req: NextRequest) {
       provider: usedProvider,
       mode: mode ?? "note",
       secretary: targetSecretaryId,
+      kaizen,
     });
   } catch (error: any) {
     const msg = error instanceof Error ? error.message : "不明なエラー";

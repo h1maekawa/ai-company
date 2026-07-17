@@ -122,6 +122,20 @@ export const HUB_NODES: HubNode[] = [
     color: "#ec4899",
     examples: ["KPIの進捗を確認したい", "パイプラインの状況は？", "クロージングの相談"],
   },
+  {
+    id: "kaizen",
+    secretaryId: "executive-kaizen",
+    icon: "💡",
+    name: "改善",
+    tagline: "AI Company自体の継続的改善",
+    mode: "personal",
+    color: "#84cc16",
+    examples: [
+      "溜まっている改善提案をレビューして",
+      "今週の改善トップ3は？",
+      "このAI会社に足りない機能は？",
+    ],
+  },
 ];
 
 export function findHubNode(id: string | null): HubNode | undefined {
