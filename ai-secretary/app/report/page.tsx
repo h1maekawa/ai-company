@@ -84,9 +84,7 @@ export default function ReportPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/fund/report", {
-          headers: { "x-api-secret": process.env.NEXT_PUBLIC_API_SECRET ?? "" },
-        });
+        const res = await fetch("/api/fund/report");
         const json = await res.json();
         if (!res.ok) {
           setError(json.error ?? "読み込みに失敗しました");

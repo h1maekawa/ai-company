@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getVaultFile, listVaultDirectory } from "@/app/lib/vault";
-import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 
 type TableRow = Record<string, string>;
 type ParsedTable = { heading: string; rows: TableRow[] };
@@ -71,9 +70,6 @@ function extractBullets(md: string, sectionHeadingContains: string): string[] {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const authError = verifyApiSecret(req);
-  if (authError) return authError;
-
   try {
     const [positionsFile, portfolioFile] = await Promise.all([
       getVaultFile("memory/personal/fund/positions.md"),

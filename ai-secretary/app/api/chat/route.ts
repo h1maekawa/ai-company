@@ -10,7 +10,6 @@ import { getFileContent } from "@/app/lib/github";
 import { callAI } from "@/app/lib/ai/client";
 import { AIProvider } from "@/app/lib/ai/client";
 import { SecretaryMode } from "@/app/lib/prompts";
-import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 import { ChatMessage } from "@/app/lib/ai/types";
 
 const ROLE_DEFAULT_TEMPLATE = `# 現在の役割
@@ -58,9 +57,6 @@ function resolveCompanyContext(mode: string | undefined | null) {
 }
 
 export async function POST(req: NextRequest) {
-  const authError = verifyApiSecret(req);
-  if (authError) return authError;
-
   try {
     const { message, provider, mode, history } = (await req.json()) as {
       message?: string;

@@ -138,12 +138,9 @@ export default function Home() {
       const fetchMemory = async () => {
         setLoadingMemory(true);
         try {
-          const apiHeaders = {
-            "x-api-secret": process.env.NEXT_PUBLIC_API_SECRET ?? "",
-          };
           const [roleRes, tasksRes] = await Promise.all([
-            fetch("/api/memory/role.md", { headers: apiHeaders }).then((r) => r.json()),
-            fetch("/api/memory/tasks.md", { headers: apiHeaders }).then((r) => r.json()),
+            fetch("/api/memory/role.md").then((r) => r.json()),
+            fetch("/api/memory/tasks.md").then((r) => r.json()),
           ]);
           if (roleRes.content !== undefined) setRoleText(roleRes.content);
           if (tasksRes.content !== undefined) setTasksText(tasksRes.content);
@@ -163,10 +160,7 @@ export default function Home() {
     try {
       const res = await fetch("/api/memory/role.md", {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-secret": process.env.NEXT_PUBLIC_API_SECRET ?? "",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: roleText }),
       });
       if (res.ok) {
@@ -186,10 +180,7 @@ export default function Home() {
     try {
       const res = await fetch("/api/memory/tasks.md", {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-secret": process.env.NEXT_PUBLIC_API_SECRET ?? "",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: textToSave }),
       });
       if (res.ok) {
@@ -217,10 +208,7 @@ export default function Home() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-secret": process.env.NEXT_PUBLIC_API_SECRET ?? "",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
           provider,

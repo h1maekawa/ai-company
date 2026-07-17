@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listSkills } from "@/app/lib/skills";
-import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 
 /**
  * GET /api/skills
@@ -13,9 +12,6 @@ import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
  * original id/name/category/allowedSecretaries fields (additive change, nothing removed).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const authError = verifyApiSecret(req);
-  if (authError) return authError;
-
   try {
     const skills = listSkills().map((s) => ({
       id: s.id,

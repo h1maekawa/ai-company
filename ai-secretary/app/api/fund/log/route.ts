@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveVaultFile, getVaultFile } from "@/app/lib/vault";
-import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 
 interface FundLogRequest {
   ticker: string;
@@ -21,9 +20,6 @@ interface FundLogRequest {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const authError = verifyApiSecret(request);
-  if (authError) return authError;
-
   try {
     const body = (await request.json()) as FundLogRequest;
 
@@ -170,9 +166,6 @@ ${body.learnings ? `**学習点**: ${body.learnings}` : "（売却後に記録�
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const authError = verifyApiSecret(request);
-  if (authError) return authError;
-
   try {
     const { searchParams } = new URL(request.url);
     const ticker = searchParams.get("ticker")?.toUpperCase();

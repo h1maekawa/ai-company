@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listVaultDirectory, getVaultFile, saveVaultFile } from "@/app/lib/vault";
-import { verifyApiSecret } from "@/app/lib/auth/verifyApiSecret";
 import { generateUniqueId } from "@/app/lib/utils/id";
 import { toSlug } from "@/app/lib/utils/slug";
 import { callAI } from "@/app/lib/ai/client";
@@ -82,9 +81,6 @@ function parseArray(valStr: string | undefined): string[] {
 }
 
 export async function POST(req: NextRequest) {
-  const authError = verifyApiSecret(req);
-  if (authError) return authError;
-
   try {
     const { knowledgeId } = await req.json();
     if (!knowledgeId) {
