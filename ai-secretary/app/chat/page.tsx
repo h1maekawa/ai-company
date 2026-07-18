@@ -14,21 +14,10 @@ type Message = {
   provider?: Provider;
 };
 
-const renderer = new marked.Renderer();
-renderer.heading = ({ text, depth }: { text: string; depth: number }) => {
-  const classes: Record<number, string> = {
-    2: "text-lg font-bold text-blue-400 mt-5 mb-2",
-    3: "text-base font-semibold text-slate-300 mt-3 mb-1",
-  };
-  const cls = classes[depth] ?? "font-semibold mt-2 mb-1";
-  return `<h${depth} class="${cls}">${text}</h${depth}>`;
-};
-renderer.listitem = ({ text }: { text: string }) =>
-  `<li class="ml-4 list-disc text-slate-300">${text}</li>`;
-renderer.code = ({ text }: { text: string }) =>
-  `<pre class="bg-slate-900 rounded p-2 text-xs overflow-x-auto my-2"><code>${text}</code></pre>`;
-
-marked.setOptions({ renderer });
+// marked v18: カスタムレンダラーで token.text を使うとインライン記法が未変換の
+// 生Markdownのまま出力される（**太字** 等がそのまま見える）ため、レンダラーは
+// 差し替えず素のHTMLに変換し、見た目は globals.css の .chat-md で整える。
+marked.setOptions({ gfm: true, breaks: true });
 
 function renderMarkdown(text: string): string {
   const rawHtml = marked.parse(text) as string;
@@ -423,7 +412,7 @@ function ChatView() {
                 }`}
               >
                 {msg.role === "assistant" ? (
-                  <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                  <div className="chat-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
                 ) : (
                   <p className="whitespace-pre-wrap">{msg.content}</p>
                 )}
