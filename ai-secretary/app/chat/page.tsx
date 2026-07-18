@@ -53,6 +53,37 @@ function resolveDefaultProvider(): Provider {
   return "gemini";
 }
 
+/** 送信時（ユーザー操作中）に一度だけ通知許可を求める */
+function ensureNotificationPermission() {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
+
+/**
+ * ウィンドウを見ていないとき（別アプリ作業中・最小化中）だけ
+ * macOS/OSの通知センターに完了通知を出す。
+ */
+function notifyIfBackground(title: string, body: string) {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  if (!document.hidden && document.hasFocus()) return;
+  try {
+    const n = new Notification(title, {
+      body,
+      tag: "ai-secretary-reply",
+      icon: "/icon-192.png",
+    });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
+  } catch {
+    // 通知が出せない環境では静かに無視
+  }
+}
+
 function ChatView() {
   const searchParams = useSearchParams();
   const node: HubNode = findHubNode(searchParams.get("node")) ?? CENTER_NODE;
@@ -152,6 +183,7 @@ function ChatView() {
     const text = input.trim();
     if (!text || loading) return;
 
+    ensureNotificationPermission();
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInput("");
     setLoading(true);
@@ -189,11 +221,16 @@ function ChatView() {
       if (data.kaizen) {
         setKaizenProposal(data.kaizen);
       }
+      notifyIfBackground(
+        `${node.icon} ${node.name}の回答が届きました`,
+        reply.replace(/[#*`>\-|]/g, "").slice(0, 120)
+      );
     } catch {
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: "⚠️ 接続エラー。サーバーを確認してください。" },
       ]);
+      notifyIfBackground(`${node.icon} ${node.name}`, "⚠️ 接続エラーが発生しました");
     } finally {
       setLoading(false);
     }
