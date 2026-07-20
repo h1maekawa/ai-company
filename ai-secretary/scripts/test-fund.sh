@@ -8,7 +8,7 @@ DIST="$(mktemp -d /tmp/fund-dist.XXXXXX)"
 export FUND_DIST="$DIST"
 
 # 1) エンジン・ポリシー・市場データ計算
-npx tsc app/lib/fund/policy.ts app/lib/fund/engine.ts app/lib/fund/rakutenCsv.ts app/lib/fund/marketData/calc.ts \
+npx tsc app/lib/fund/policy.ts app/lib/fund/engine.ts app/lib/fund/rakutenCsv.ts app/lib/fund/marketData/calc.ts app/lib/fund/analyst.ts \
   --outDir "$DIST" --module commonjs --target es2020 --esModuleInterop --skipLibCheck
 
 # 2) middleware（実物）＋session を認証テスト用にコンパイル

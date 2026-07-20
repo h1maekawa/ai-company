@@ -84,6 +84,15 @@ updated: 2026-07-19
     "minimumDays": 30,
     "minimumClosedSignals": 20,
     "assumedRoundTripCostPct": 0.4
+  },
+  "analyst": {
+    "universeExtra": ["VRT", "ETN", "PWR", "COST", "V", "UNH"],
+    "topN": 8,
+    "weights": { "trend": 35, "rvol": 25, "momentum": 25, "liquidity": 15 },
+    "momentumDays": 5,
+    "momentumFullPct": 8
   }
 }
 ```
+
+補足: `analyst` はFund Analyst（自動巡回・一次抽出）の設定。未設定でもDEFAULT_POLICYで動作する。監視銘柄を増やす場合は `universeExtra` に追加する。

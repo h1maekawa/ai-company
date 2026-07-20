@@ -42,6 +42,12 @@ This guide outlines common development commands and the available slash commands
 - テスト: `npm run test:fund`（ai-secretary内。§20受入条件をカバー）
 - 短期はpaper mode（30日 or 20件決着まで実資金移行しない）
 
+#### Fund Analyst Phase A (2026-07-20)
+- `GET /api/fund/scan` — 保有＋テーマ＋監視銘柄（policy.analyst.universeExtra）を巡回し、
+  トレンド/RVOL/モメンタム/流動性の決定論的スコアで「今日見るべき銘柄」を一次抽出（`app/lib/fund/analyst.ts`）
+- /fund 画面上部の「市場スキャン実行」から利用。一次抽出のみで購入判断はしない（詳細はPolicy Engineへ）
+- Phase B（決算・ニュース・企業情報のAI自動調査）は未実装
+
 ### 3. Note Department (`personal-note`)
 - `/note-research` - トレンド＋競合＋アフィリ案件の3点調査
 - `/note-title` - バズりタイトル5案（アフィリ連動度スコア付き）

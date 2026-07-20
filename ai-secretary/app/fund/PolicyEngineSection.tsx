@@ -61,6 +61,36 @@ type Review = {
   recommendation: Recommendation | null;
 };
 
+type ScanResult = {
+  ticker: string;
+  theme: string | null;
+  isHeld: boolean;
+  priceUsd: number | null;
+  rvol20: number | null;
+  adtv20Usd: number | null;
+  changePct: number | null;
+  momentumPct: number | null;
+  trend: string;
+  screenScore: number;
+  flags: string[];
+};
+
+const SCAN_FLAG_LABELS: Record<string, string> = {
+  overheated: "過熱",
+  low_liquidity: "低流動性",
+  theme_over_limit: "テーマ上限超過",
+  theme_warning: "テーマ集中注意",
+  insufficient_history: "履歴不足",
+  no_data: "データなし",
+};
+
+const TREND_LABELS: Record<string, string> = {
+  up: "上昇",
+  weak_up: "弱い上昇",
+  down: "下落",
+  unknown: "不明",
+};
+
 const jpy = (n: number | null | undefined) =>
   n == null ? "-" : `${n.toLocaleString("ja-JP")}円`;
 
@@ -139,6 +169,10 @@ export default function PolicyEngineSection() {
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [policyVersion, setPolicyVersion] = useState<number | null>(null);
+  const [scanResults, setScanResults] = useState<ScanResult[] | null>(null);
+  const [scanTopN, setScanTopN] = useState(8);
+  const [scanning, setScanning] = useState(false);
+  const [scannedAt, setScannedAt] = useState<string | null>(null);
 
   // 評価フォーム
   const [ticker, setTicker] = useState("");
@@ -176,6 +210,29 @@ export default function PolicyEngineSection() {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  const runScan = async () => {
+    setScanning(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/fund/scan");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "スキャンに失敗しました");
+      setScanResults(json.results ?? []);
+      setScanTopN(json.topN ?? 8);
+      setScannedAt(json.scannedAt ?? null);
+      // 完了をMac通知（バックグラウンド時）
+      if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.hidden) {
+        new Notification("Fund Analyst スキャン完了", {
+          body: `${json.universeSize}銘柄を巡回しました`,
+        });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "スキャンに失敗しました");
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const submitEvaluate = async () => {
     setEvaluating(true);
@@ -258,6 +315,83 @@ export default function PolicyEngineSection() {
           <span className="text-slate-400">policyVersion: {policyVersion ?? "-"}</span>
           <span className="text-amber-300">短期はpaper mode（検証中・実資金移行前）</span>
         </div>
+      </section>
+
+      {/* Fund Analyst: 今日見るべき銘柄 */}
+      <section className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-semibold">今日見るべき銘柄（Fund Analyst 一次抽出）</h2>
+          <button
+            onClick={runScan}
+            disabled={scanning}
+            className="rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-3 py-1.5 text-xs font-semibold"
+          >
+            {scanning ? "巡回中..." : "市場スキャン実行"}
+          </button>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">
+          保有株＋テーマ銘柄＋監視銘柄を巡回し、トレンド・RVOL・モメンタム・流動性で一次抽出。
+          購入判断ではありません。気になる銘柄は下の評価フォームで詳細判定してください。
+          {scannedAt && `｜最終スキャン ${new Date(scannedAt).toLocaleString("ja-JP")}`}
+        </p>
+        {scanResults === null ? (
+          <p className="text-xs text-slate-500">「市場スキャン実行」を押すと巡回を開始します（30秒程度）。</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs whitespace-nowrap">
+              <thead>
+                <tr className="text-slate-400 border-b border-slate-800">
+                  <th className="text-left py-1.5">銘柄</th>
+                  <th className="text-right py-1.5">スコア</th>
+                  <th className="text-left py-1.5">トレンド</th>
+                  <th className="text-right py-1.5">RVOL20</th>
+                  <th className="text-right py-1.5">5日騰落</th>
+                  <th className="text-left py-1.5">フラグ</th>
+                  <th className="py-1.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {scanResults.slice(0, scanTopN).map((r) => (
+                  <tr key={r.ticker} className="border-b border-slate-800/60">
+                    <td className="py-1.5 font-semibold">
+                      {r.ticker}
+                      {r.isHeld && <span className="ml-1 text-[9px] text-emerald-400">保有</span>}
+                      {r.theme && <span className="ml-1 text-[9px] text-slate-500">{r.theme}</span>}
+                    </td>
+                    <td className="text-right py-1.5 font-semibold">
+                      <span className={r.screenScore >= 70 ? "text-emerald-300" : r.screenScore >= 50 ? "text-slate-200" : "text-slate-500"}>
+                        {r.screenScore}
+                      </span>
+                    </td>
+                    <td className="py-1.5 text-slate-300">{TREND_LABELS[r.trend] ?? r.trend}</td>
+                    <td className="text-right py-1.5">{r.rvol20 ?? "-"}</td>
+                    <td className={`text-right py-1.5 ${(r.momentumPct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      {r.momentumPct == null ? "-" : `${r.momentumPct}%`}
+                    </td>
+                    <td className="py-1.5">
+                      {r.flags.map((f) => (
+                        <span key={f} className="mr-1 text-[9px] px-1 py-0.5 rounded bg-amber-900/40 text-amber-300">
+                          {SCAN_FLAG_LABELS[f] ?? f}
+                        </span>
+                      ))}
+                    </td>
+                    <td className="py-1.5 text-right">
+                      <button
+                        onClick={() => {
+                          setTicker(r.ticker);
+                          window.scrollTo({ top: document.body.scrollHeight / 2, behavior: "smooth" });
+                        }}
+                        className="text-[10px] rounded border border-slate-700 hover:bg-slate-800 px-1.5 py-0.5 text-blue-300"
+                      >
+                        詳細評価へ
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       {/* 銘柄評価フォーム */}

@@ -100,6 +100,29 @@ export interface FundPolicy {
     minimumClosedSignals: number;
     assumedRoundTripCostPct: number;
   };
+
+  /**
+   * Fund Analyst（自動巡回・一次抽出）の設定。
+   * 旧バージョンのpolicy.mdには存在しないためオプショナル。
+   * 未設定時は DEFAULT_POLICY.analyst を使う。
+   */
+  analyst?: {
+    /** 保有＋テーマ以外に監視したいティッカー */
+    universeExtra: string[];
+    /** 「今日見るべき銘柄」の表示件数 */
+    topN: number;
+    /** スクリーニングスコアの配点（合計100） */
+    weights: {
+      trend: number;
+      rvol: number;
+      momentum: number;
+      liquidity: number;
+    };
+    /** モメンタム計算の営業日数 */
+    momentumDays: number;
+    /** この騰落率%でモメンタム満点 */
+    momentumFullPct: number;
+  };
 }
 
 export const DEFAULT_POLICY: FundPolicy = {
@@ -171,6 +194,18 @@ export const DEFAULT_POLICY: FundPolicy = {
     minimumDays: 30,
     minimumClosedSignals: 20,
     assumedRoundTripCostPct: 0.4,
+  },
+  analyst: {
+    universeExtra: ["VRT", "ETN", "PWR", "COST", "V", "UNH"],
+    topN: 8,
+    weights: {
+      trend: 35,
+      rvol: 25,
+      momentum: 25,
+      liquidity: 15,
+    },
+    momentumDays: 5,
+    momentumFullPct: 8,
   },
 };
 
