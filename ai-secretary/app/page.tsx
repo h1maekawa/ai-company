@@ -48,6 +48,12 @@ export default function HubPage() {
         <p className="text-slate-500 text-xs mt-1">
           事業部をタップして話しかける
         </p>
+        <Link
+          href="/piro"
+          className="inline-flex mt-3 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20"
+        >
+          Piro Creator OSを開く →
+        </Link>
       </header>
 
       {/* ─── Desktop / tablet: zoned mind map ─── */}
