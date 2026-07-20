@@ -26,6 +26,22 @@ This guide outlines common development commands and the available slash commands
 - `/portfolio-review` - ポートフォリオ全体評価 (Portfolio asset allocation review)
 - `/fund-heatmap` - ポートフォリオ保有割合・テーマ偏りヒートマップ分析
 
+#### Investment Department (Phase 1, 2026-07-19)
+投資部門の配置設計は `docs/11_INVESTMENT_DEPT_PLACEMENT.md`、Flow+連携仕様は `docs/investment/` を参照。
+- 画面: `/fund` （楽天証券CSV取込・投信50:個別株50差分・集中度・当月投資可能額）
+- API: `POST /api/fund/import`（CSV取込→`memory/personal/fund/holdings.md` 自動生成）、`GET /api/fund/allocation`
+- 投資可能額: `memory/personal/fund/capacity.md`（Phase 1は手動入力、Phase 3でFlow+ APIから自動更新）
+- ルール: 証券注文の自動実行はしない／保有確定値の正は `holdings.md`、判断メモは `positions.md`
+
+#### Fund Policy Engine (Phase 1.1〜1.3, 2026-07-19)
+仕様の正は `docs/12_FUND_POLICY_ENGINE.md`。
+- ポリシー: `app/lib/fund/policy.ts`（バージョン付き設定・数値直書き禁止）＋ `memory/personal/fund/policy.md`
+- エンジン: `app/lib/fund/engine.ts`（ゲート判定・購入額/株数は決定論的関数。AIプロンプトでは計算しない）
+- 市場データ: `app/lib/fund/marketData/`（プロバイダー抽象化、Stooqデフォルト、RVOL20/ADTV20/ATR14）
+- API: `GET/PUT /api/fund/policy`、`POST /api/fund/evaluate`、`GET /api/fund/recommendations`、`POST /api/fund/decisions`、`GET /api/fund/reviews`
+- テスト: `npm run test:fund`（ai-secretary内。§20受入条件をカバー）
+- 短期はpaper mode（30日 or 20件決着まで実資金移行しない）
+
 ### 3. Note Department (`personal-note`)
 - `/note-research` - トレンド＋競合＋アフィリ案件の3点調査
 - `/note-title` - バズりタイトル5案（アフィリ連動度スコア付き）

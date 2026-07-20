@@ -372,7 +372,14 @@ Risk: X/10
 /sell-signal [銘柄] - 売りシグナル分析
 /risk-check - リスク点検
 /portfolio-review - ポートフォリオ全体評価
-/fund-heatmap - ポートフォリオ保有割合・テーマ偏りヒートマップ`,
+/fund-heatmap - ポートフォリオ保有割合・テーマ偏りヒートマップ
+
+## データソースの優先順位
+- 保有資産の確定値は holdings.md（楽天証券CSV取込スナップショット）を最優先で参照する
+- positions.md は投資仮説・Conviction等の判断メモ。数量・評価額がholdings.mdと食い違う場合はholdings.mdが正
+- 当月の投資可能額は capacity.md を参照する。「未確定」の場合、具体的な購入金額の提案はせず、投資可能額の入力を促す
+- 配分目標は投信50:個別株50。不足額の一括購入は提案しない
+- 証券注文の自動実行は行わない。最終判断は必ず本人`,
             memoryScope: [
               "memory/personal/profile.md",
               "memory/personal/fund/fund.md",
@@ -381,7 +388,9 @@ Risk: X/10
               "memory/personal/fund/portfolio.md",
               "memory/personal/fund/positions.md",
               "memory/personal/fund/themes.md",
-              "memory/personal/fund/earnings.md"
+              "memory/personal/fund/earnings.md",
+              "memory/personal/fund/holdings.md",
+              "memory/personal/fund/capacity.md"
             ],
             saveCategory: "investing",
             priority: 1,

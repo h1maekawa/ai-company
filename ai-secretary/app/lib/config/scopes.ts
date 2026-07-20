@@ -93,6 +93,9 @@ export const MEMORY_SCOPES: MemoryScopes = {
       "memory/personal/fund/positions.md",
       "memory/personal/fund/themes.md",
       "memory/personal/fund/earnings.md",
+      "memory/personal/fund/holdings.md",
+      "memory/personal/fund/capacity.md",
+      "memory/personal/fund/policy.md",
       "memory/personal/fund/investment-log/"
     ],
     shared: ["memory/personal/goals.md", "memory/shared/ai-development-rules.md"],
