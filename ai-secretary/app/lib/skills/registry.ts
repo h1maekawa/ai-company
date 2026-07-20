@@ -147,37 +147,12 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     category: "generation",
     allowedSecretaries: ["personal-morning"],
     inputSchemaDescription:
-      "ContextBusのInbox/タスク一覧、fund/positions.md、note下書き一覧、note/kpi.md、hd-business/kpi.md・pipeline.md、goals.md",
+      "ContextBusのInbox/タスク一覧、fund/positions.md、note下書き一覧、note/kpi.md、goals.md",
     outputSchemaDescription:
       "朝会レポートMarkdown（今日やること/最重要/止まっていること/投資注目/note注目/HD営業進捗/売上最大行動）",
     status: "planned",
   },
 
-  // ─── HD Business（Phase2 Foundationから継続。今回のPersonal OS拡張の対象外） ──
-  {
-    id: "hd-kpi-calculation",
-    name: "HD KPI Calculation",
-    description:
-      "売上目標から受注数・商談数・アポ数・架電数を逆算するFlow KPI計算（受注目標=売上目標÷平均単価 等の実計算）。現状はhd-kpi-manager秘書のprompt内でLLMに計算式を提示しているのみで、確定値の実計算は行っていない。",
-    category: "calculation",
-    allowedSecretaries: ["hd-kpi-manager"],
-    inputSchemaDescription:
-      "売上目標・平均単価・各転換率（受注率/商談率/アポ率）、または /hd-sim の変数指定",
-    outputSchemaDescription:
-      "必要受注数・必要商談数・必要アポ数・必要架電数の逆算結果（数値）",
-    status: "planned",
-  },
-  {
-    id: "precheck-memo-format",
-    name: "Precheck Memo Format",
-    description:
-      "クロージング前の案件（高確度案件A/S）について、確度・商材別リードタイム・懸念事項を整理した前確メモを定型フォーマットで生成する。",
-    category: "format",
-    allowedSecretaries: ["hd-closing-manager"],
-    inputSchemaDescription: "案件名・確度ランク・商談内容・懸念点・希望クロージング期日",
-    outputSchemaDescription: "前確メモMarkdown（案件概要・確度根拠・リスク・次アクション）",
-    status: "planned",
-  },
 ];
 
 /**

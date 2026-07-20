@@ -63,8 +63,6 @@ export async function generateMorningReport(): Promise<string> {
   const noteKpiContent = await safeGetFile("memory/personal/note/kpi.md");
 
   // 3b. Load HD Business KPI + Pipeline
-  const hdKpiContent = await safeGetFile("memory/company/hd-business/kpi.md");
-  const hdPipelineContent = await safeGetFile("memory/company/hd-business/pipeline.md");
 
   // 4. Load Current goals (memory/personal/goals.md, falling back to memory/goals.md)
   let goalsContent = await safeGetFile("memory/personal/goals.md");
@@ -98,13 +96,6 @@ ${draftsText}
 
 === 5. 現在の目標 ===
 ${goalsContent || "なし"}
-
-=== 6. HD Business KPI・パイプライン状況 ===
-KPI:
-${hdKpiContent || "なし"}
-
-パイプライン:
-${hdPipelineContent || "なし"}
 `;
 
   const systemPrompt = `

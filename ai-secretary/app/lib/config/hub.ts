@@ -130,17 +130,6 @@ export const HUB_NODES: HubNode[] = [
     ],
   },
   {
-    id: "hd",
-    group: "company",
-    secretaryId: "hd-ceo",
-    icon: "📊",
-    name: "HD事業",
-    tagline: "HDビジネス・営業パイプライン",
-    mode: "company",
-    color: "#ec4899",
-    examples: ["KPIの進捗を確認したい", "パイプラインの状況は？", "クロージングの相談"],
-  },
-  {
     id: "kaizen",
     group: "shared",
     secretaryId: "executive-kaizen",

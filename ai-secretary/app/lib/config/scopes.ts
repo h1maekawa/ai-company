@@ -123,56 +123,6 @@ export const MEMORY_SCOPES: MemoryScopes = {
     local: ["memory/company/strategy.md"],
     shared: [],
     global: ["memory/company/profile.md"]
-  },
-
-  // ─── HD Business Department ────────────────────────────
-  "hd-ceo": {
-    local: [
-      "memory/company/hd-business/",
-      "memory/company/strategy/index.md"
-    ],
-    shared: [],
-    global: ["memory/company/profile.md"]
-  },
-  "hd-kpi-manager": {
-    local: [
-      "memory/company/hd-business/targets.md",
-      "memory/company/hd-business/kpi.md",
-      "memory/company/hd-business/daily.md",
-      "memory/company/hd-business/weekly.md"
-    ],
-    shared: [],
-    global: ["memory/company/profile.md"]
-  },
-  "hd-pipeline-manager": {
-    local: [
-      "memory/company/hd-business/pipeline.md",
-      "memory/company/hd-business/lead-times.md",
-      "memory/company/hd-business/targets.md"
-    ],
-    shared: [],
-    global: ["memory/company/profile.md"]
-  },
-  "hd-closing-manager": {
-    local: [
-      "memory/company/hd-business/pipeline.md",
-      "memory/company/hd-business/targets.md",
-      "memory/company/hd-business/kpi.md",
-      "memory/company/hd-business/lead-times.md"
-    ],
-    shared: [],
-    global: ["memory/company/profile.md"]
-  },
-  "hd-improvement-manager": {
-    local: [
-      "memory/company/hd-business/bottlenecks.md",
-      "memory/company/hd-business/kpi.md",
-      "memory/company/hd-business/weekly.md",
-      "memory/company/hd-business/playbook.md",
-      "memory/company/hd-business/rules.md"
-    ],
-    shared: [],
-    global: ["memory/company/profile.md"]
   }
 };
 
