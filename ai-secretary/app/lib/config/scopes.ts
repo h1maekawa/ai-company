@@ -16,10 +16,18 @@ export type MemoryScopes = {
 
 export const MEMORY_SCOPES: MemoryScopes = {
   // ─── Shared / Executive ───────────────────────────────
+  // 専属秘書（唯一の窓口）。旧personal-ceoの統括スコープを軽量化して統合。
+  // ディレクトリ全読みはコンテキスト肥大の原因になるため、要約系ファイルのみ読む
   "executive-assistant": {
-    local: [],
-    shared: ["memory/personal/profile.md", "memory/company/profile.md"],
-    global: ["memory/personal/goals.md"]
+    local: [
+      "memory/personal/rules.md",
+      "memory/personal/thinking/index.md",
+      "memory/personal/fund/holdings.md",
+      "memory/personal/fund/capacity.md",
+      "memory/personal/note/kpi.md"
+    ],
+    shared: ["memory/shared/ai-development-rules.md"],
+    global: ["memory/personal/profile.md", "memory/personal/goals.md"]
   },
   "executive-inbox": {
     local: [],
@@ -33,17 +41,9 @@ export const MEMORY_SCOPES: MemoryScopes = {
   },
 
   // ─── Personal OS ──────────────────────────────────────
-  "personal-ceo": {
-    local: [
-      "memory/personal/rules.md",
-      "memory/personal/thinking/index.md",
-      "memory/personal/goals.md",
-      "memory/personal/investment/",
-      "memory/personal/finance/",
-      "memory/personal/fund/",
-      "memory/personal/note/"
-    ],
-    shared: ["memory/shared/ai-development-rules.md"],
+  "personal-piro": {
+    local: [],
+    shared: ["memory/personal/goals.md"],
     global: ["memory/personal/profile.md"]
   },
   "personal-morning": {
@@ -100,29 +100,6 @@ export const MEMORY_SCOPES: MemoryScopes = {
     ],
     shared: ["memory/personal/goals.md", "memory/shared/ai-development-rules.md"],
     global: ["memory/personal/profile.md"]
-  },
-
-  // ─── Company OS ───────────────────────────────────────
-  "company-ceo": {
-    local: ["memory/company/strategy/index.md"],
-    shared: [],
-    global: ["memory/company/profile.md"]
-  },
-  "company-system": {
-    local: ["memory/company/strategy.md"],
-    shared: [],
-    global: ["memory/company/profile.md"]
-  },
-  // Backward compatibility fallbacks
-  "crestix-ceo": {
-    local: ["memory/company/strategy/index.md"],
-    shared: [],
-    global: ["memory/company/profile.md"]
-  },
-  "crestix-system": {
-    local: ["memory/company/strategy.md"],
-    shared: [],
-    global: ["memory/company/profile.md"]
   }
 };
 

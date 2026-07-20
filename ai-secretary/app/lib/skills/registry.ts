@@ -19,7 +19,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description:
       "雑多な入力をInboxに保存しやすいMarkdown形式へ整形する。cc-secretaryの「メモ [内容] / capture [text]」を参考にした最小キャプチャ整形。",
     category: "format",
-    allowedSecretaries: ["personal-ceo", "personal-morning", "executive-assistant"],
+    allowedSecretaries: ["executive-assistant", "personal-morning"],
     inputSchemaDescription: "content（本文）・source（任意、発生元）・tags（任意、タグ配列）",
     outputSchemaDescription: "Date/Source/Tags＋内容を持つInbox Capture形式のMarkdown",
     status: "implemented",
@@ -30,7 +30,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description:
       "cc-secretaryの「タスク追加 [内容]」を参考に、今日のTODOに追記しやすいMarkdownタスク行を生成する。",
     category: "format",
-    allowedSecretaries: ["personal-ceo", "personal-morning", "executive-assistant"],
+    allowedSecretaries: ["executive-assistant", "personal-morning"],
     inputSchemaDescription: "task（内容）・priority（high/normal/low、任意）・dueDate（任意）・memo（任意）",
     outputSchemaDescription: "`- [ ] タスク`形式のMarkdownタスク行（Priority/Due/Memo付き）",
     status: "implemented",
@@ -41,7 +41,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description:
       "cc-secretaryの「今日のタスク」を参考にした表示枠生成。このPhaseではMemory読み込みは行わず、枠のみを返す。",
     category: "format",
-    allowedSecretaries: ["personal-morning", "personal-ceo"],
+    allowedSecretaries: ["personal-morning", "executive-assistant"],
     inputSchemaDescription: "date（任意、省略時は当日）",
     outputSchemaDescription: "最優先／通常／余裕があれば／完了の4セクションを持つ「今日のタスク」Markdown枠",
     status: "implemented",
@@ -52,7 +52,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description:
       "noteのアイデアや話した内容を、下書きとして扱いやすいMarkdown構成メモへ整形する。/api/note/generate（LLMによる本文自動生成）とは別物の軽量フォーマッタ。",
     category: "format",
-    allowedSecretaries: ["personal-note", "personal-ceo", "personal-morning"],
+    allowedSecretaries: ["personal-note", "executive-assistant", "personal-morning"],
     inputSchemaDescription:
       "title・theme・targetReader・hook（冒頭フック）・bodyMemo・cta・paidPartIdea",
     outputSchemaDescription:

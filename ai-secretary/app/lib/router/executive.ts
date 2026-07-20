@@ -74,6 +74,16 @@ export async function routeRequest(
       };
     }
 
+    if (normalized.includes("piro") || normalized.includes("ピロ")) {
+      return {
+        intent: "Piroコンテンツの相談",
+        department: "personal",
+        room: undefined,
+        secretary: "personal-piro",
+        confidence: 0.9,
+      };
+    }
+
     if (
       normalized.includes("個人用ai会社") ||
       normalized.includes("個人用ai") ||
@@ -82,18 +92,17 @@ export async function routeRequest(
       normalized.includes("やること")
     ) {
       return {
-        intent: "個人用AI会社の運用確認",
-        department: "personal",
+        intent: "秘書への相談・運用確認",
+        department: "executive",
         room: undefined,
-        secretary: "personal-ceo",
+        secretary: "executive-assistant",
         confidence: 0.9,
       };
     }
   }
 
-  const dbCompany = activeCompany === "company" ? "crestix" : "personal";
   const filteredSecretaries = Object.values(SECRETARY_REGISTRY).filter(sec => {
-    return sec.config.company === "shared" || sec.config.company === dbCompany;
+    return sec.config.company === "shared" || sec.config.company === "personal";
   });
 
   const registryList = filteredSecretaries.map(sec => {
@@ -113,28 +122,21 @@ export async function routeRequest(
 ${JSON.stringify(registryList, null, 2)}
 
 ## ルーティング判定ルール
-1. 曖昧な質問や、特定の部署に当てはまらない一般的な壁打ちは "executive-assistant" に割り当ててください。
+1. 曖昧な質問、一般的な壁打ち、TODO・メモ、そして個人事業全体の統括（リソース配分・優先順位・集中事業の決定）は "executive-assistant"（専属秘書）に割り当ててください。
 2. 投資やアセットアロケーション、ポートフォリオ、決算、保有ポジションは "personal-finance" または "personal-fund" 関連の秘書に割り当ててください。
-
-3. 習慣・健康・個人的なToDo管理は "personal" 関連の秘書に割り当ててください。
+3. 習慣・健康・個人的なToDo管理は "executive-assistant" に割り当ててください。
 4. noteの記事企画、キーワードリサーチ、構成、執筆、マーケティング、販売導線、下書き作成は "personal-note" 秘書に割り当ててください。
-5. Crestixの営業、DMM営業、採用、顧客CRMは "crestix-system" または "crestix-ceo" に割り当ててください。
-6. システム開発、Obsidian環境、自動化は "crestix-system" に割り当ててください。
-7. 以下のいずれかに該当する場合は "personal-fund" に割り当ててください（confidence: 0.95）：
+5. 以下のいずれかに該当する場合は "personal-fund" に割り当ててください（confidence: 0.95）：
    - /fund-review, /market-scan, /earnings-check, /rotation-check, /buy-signal, /sell-signal, /risk-check, /portfolio-review, /fund-heatmap のいずれかのコマンドが含まれる
    - 「買いシグナル」「売りシグナル」「利確」「損切り」「押し目」「監視銘柄」「ウォッチリスト」「投資判断」「ファンド」「Fund」「ポジション」が含まれる
    - 特定銘柄（NVDA, MU, AMD, AVGO, TSM, ASML, VRT, ETN, PWR, KO 等）の売買判断・分析を求めている
    - 「ポートフォリオレビュー」「資産配分」「コア資産」「サテライト」「ヒートマップ」の話題
-8. 以下のいずれかに該当する場合は "personal-note" に割り当ててください（confidence: 0.95）：
+6. 以下のいずれかに該当する場合は "personal-note" に割り当ててください（confidence: 0.95）：
    - /note-research, /note-title, /note-outline, /note-draft, /note-post-plan, /note-kpi, /note-affili, /note-paid のいずれかのコマンドが含まれる
    - 「note執筆」「note構成」「note下書き」「noteネタ」「バズり導入文」「CTAテンプレート」等の話題
-9. 以下のいずれかに該当する場合は "personal-ceo" に割り当ててください（confidence: 0.95）：
-   - 個人事業全体の統括、リソース配分、アテンション管理、優先順位決定、集中事業の決定に関する話題
-   - 「個人CEO」「Personal CEO」「事業横断」「リソース最適化」などの文脈
-10. 以下のいずれかに該当する場合は "crestix-ceo" に割り当ててください（confidence: 0.95）：
-    - Crestix（法人）の中長期戦略、サービス開発、アライアンス、経営判断に関する話題
-    - 「Crestix CEO」「法人経営」「経営上の意思決定」などの文脈
-11. 以下のいずれかに該当する場合は "personal-morning" に割り当ててください（confidence: 0.95）：
+7. 以下のいずれかに該当する場合は "personal-piro" に割り当ててください（confidence: 0.95）：
+   - 「Piro」「ピロ」「クリエイターOS」の話題、リサーチ→記事→X告知パイプラインの相談
+8. 以下のいずれかに該当する場合は "personal-morning" に割り当ててください（confidence: 0.95）：
     - /morning-report コマンドが含まれる
     - 「朝会」「モーニングレポート」「今日のやること」「日次タスク」「日次オペレーション」に関する話題
 ## 信頼度 (confidence) 計算ルール
@@ -146,9 +148,9 @@ ${JSON.stringify(registryList, null, 2)}
 必ず以下のJSONフォーマットのみを返してください。余計なマークダウンや説明は一切含めないでください。
 {
   "intent": "ユーザーの意図（日本語）",
-  "department": "所属部門（例: personal, crestix, executive）",
+  "department": "所属部門（例: personal, executive）",
   "room": "所属室（ある場合のみ、例: personal-fund-room。ない場合は空文字列にするか省略）",
-  "secretary": "秘書ID（例: personal-ceo, personal-morning, personal-note, personal-fund, crestix-ceo）",
+  "secretary": "秘書ID（例: executive-assistant, personal-morning, personal-note, personal-fund, personal-piro）",
   "confidence": 0.0〜1.0の数値
 }
 `;

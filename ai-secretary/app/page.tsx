@@ -4,8 +4,7 @@ import Link from "next/link";
 import { CENTER_NODE, GROUP_LABELS, HUB_NODES, HubNode } from "@/app/lib/config/hub";
 
 /**
- * ゾーン分割レイアウト:
- *   左半分 = 👤 個人事業部 / 右半分 = 🏢 会社事業部 / 下中央 = 共通（改善など）
+ * 放射レイアウト: 中央=秘書（唯一の窓口）、周囲=個人事業部の各部署＋共通（改善）。
  * 角度は「東=0°・時計回り（画面座標系: yは下向きが正）」で指定する。
  * 座標は %ベースで SVG(viewBox 0-100) と CSS position を共有する。
  */
@@ -19,10 +18,9 @@ function positionAt(angleDeg: number) {
   };
 }
 
-// グループごとの配置角度。左半円=個人(4枠)、右半円=会社(3枠)、下中央=共通(1枠)
+// グループごとの配置角度。個人5部署を円周に均等配置、共通(改善)は真下
 const GROUP_ANGLES: Record<string, number[]> = {
-  personal: [230, 195, 160, 125],
-  company: [-50, 0, 50],
+  personal: [150, 210, 270, 330, 30],
   shared: [90],
 };
 
@@ -62,14 +60,10 @@ export default function HubPage() {
           className="relative"
           style={{ width: "min(82vmin, 46rem)", height: "min(82vmin, 46rem)" }}
         >
-          {/* zone backgrounds */}
+          {/* zone background（個人事業部で全域を1ゾーン化） */}
           <div
-            className="absolute rounded-3xl border"
+            className="absolute inset-0 rounded-3xl border"
             style={{
-              left: 0,
-              top: "2%",
-              width: "48%",
-              height: "96%",
               backgroundColor: GROUP_LABELS.personal.color + "08",
               borderColor: GROUP_LABELS.personal.color + "26",
             }}
@@ -79,24 +73,6 @@ export default function HubPage() {
               style={{ color: GROUP_LABELS.personal.color }}
             >
               {GROUP_LABELS.personal.icon} {GROUP_LABELS.personal.name}
-            </span>
-          </div>
-          <div
-            className="absolute rounded-3xl border"
-            style={{
-              right: 0,
-              top: "2%",
-              width: "48%",
-              height: "96%",
-              backgroundColor: GROUP_LABELS.company.color + "08",
-              borderColor: GROUP_LABELS.company.color + "26",
-            }}
-          >
-            <span
-              className="absolute top-3 right-4 text-xs font-semibold"
-              style={{ color: GROUP_LABELS.company.color }}
-            >
-              {GROUP_LABELS.company.icon} {GROUP_LABELS.company.name}
             </span>
           </div>
 

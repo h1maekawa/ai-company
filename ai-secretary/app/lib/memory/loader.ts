@@ -122,7 +122,7 @@ export async function loadScopedMemory(
 export async function loadMemoryFromVault(mode: string): Promise<string> {
   let secretaryId = "executive-assistant";
   if (mode === "personal") secretaryId = "personal-note";
-  else if (mode === "company") secretaryId = "crestix-system";
+  else if (mode === "company") secretaryId = "executive-assistant";
   else if (mode === "finance") secretaryId = "personal-finance";
   else if (mode === "note") secretaryId = "personal-note";
 
