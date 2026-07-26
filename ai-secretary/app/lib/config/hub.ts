@@ -22,6 +22,11 @@ export type HubNode = {
   examples: string[];
   /** マップ上の大別: 個人事業部 / 会社事業部 / 共通 */
   group: HubGroup;
+  /**
+   * 専用画面を持つ部署はここにパスを入れる（未指定なら /chat?node=<id> を開く）。
+   * 例: Note事業部 → /note、朝会 → /planning
+   */
+  href?: string;
 };
 
 export const GROUP_LABELS: Record<HubGroup, { icon: string; name: string; color: string }> = {
@@ -53,9 +58,10 @@ export const HUB_NODES: HubNode[] = [
     secretaryId: "personal-morning",
     icon: "🌅",
     name: "朝会",
-    tagline: "モーニングレポート・1日の計画",
+    tagline: "今日の行動設計・タイムブロッキング",
     mode: "personal",
     color: "#f59e0b",
+    href: "/planning",
     examples: ["今日の朝会をはじめて", "/morning-report", "今日の優先タスクは？"],
   },
   {
@@ -64,9 +70,10 @@ export const HUB_NODES: HubNode[] = [
     secretaryId: "personal-note",
     icon: "📝",
     name: "Note事業",
-    tagline: "note収益化・記事作成",
+    tagline: "Creator Workflow・記事作成・収益化",
     mode: "note",
     color: "#10b981",
+    href: "/note",
     examples: [
       "今日の記事を企画して",
       "新NISAでタイトル案を5つ出して",
@@ -100,21 +107,6 @@ export const HUB_NODES: HubNode[] = [
     examples: ["今月の収支を整理したい", "固定費の見直しをしたい", "予算の相談"],
   },
   {
-    id: "piro",
-    group: "personal",
-    secretaryId: "personal-piro",
-    icon: "✍️",
-    name: "Piroクリエイター",
-    tagline: "リサーチ→記事→X告知の生成",
-    mode: "personal",
-    color: "#8b5cf6",
-    examples: [
-      "次に書くべきトピックを相談したい",
-      "生成した記事をレビューして",
-      "今週の投稿計画を立てて",
-    ],
-  },
-  {
     id: "kaizen",
     group: "shared",
     secretaryId: "executive-kaizen",
@@ -130,6 +122,11 @@ export const HUB_NODES: HubNode[] = [
     ],
   },
 ];
+
+/** そのノードを開くときのリンク先。専用画面があればそちら、なければチャット */
+export function hubNodeHref(node: HubNode): string {
+  return node.href ?? `/chat?node=${node.id}`;
+}
 
 export function findHubNode(id: string | null): HubNode | undefined {
   if (!id) return undefined;

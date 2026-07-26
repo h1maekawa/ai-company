@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { CENTER_NODE, GROUP_LABELS, HUB_NODES, HubNode } from "@/app/lib/config/hub";
+import { useEffect, useState } from "react";
+import { CENTER_NODE, GROUP_LABELS, HUB_NODES, HubNode, hubNodeHref } from "@/app/lib/config/hub";
+import type { DailyPlan, PlanSummary } from "@/app/lib/planning/types";
+import { formatDuration } from "@/app/lib/planning/types";
 
 /**
  * 放射レイアウト: 中央=秘書（唯一の窓口）、周囲=個人事業部の各部署＋共通（改善）。
@@ -18,47 +21,109 @@ function positionAt(angleDeg: number) {
   };
 }
 
-// グループごとの配置角度。個人5部署を円周に均等配置、共通(改善)は真下
-const GROUP_ANGLES: Record<string, number[]> = {
-  personal: [150, 210, 270, 330, 30],
-  shared: [90],
-};
-
+/**
+ * 個人事業部は上側の弧（150°→390°）へ均等配置、共通（改善）は真下。
+ * 部署が増減しても崩れないよう、角度は件数から計算する。
+ */
 function layoutNodes(): { node: HubNode; x: number; y: number }[] {
-  const used: Record<string, number> = { personal: 0, company: 0, shared: 0 };
-  return HUB_NODES.map((node) => {
-    const angles = GROUP_ANGLES[node.group] ?? GROUP_ANGLES.shared;
-    const angle = angles[Math.min(used[node.group], angles.length - 1)];
-    used[node.group] += 1;
+  const personal = HUB_NODES.filter((n) => n.group === "personal");
+  const others = HUB_NODES.filter((n) => n.group !== "personal");
+
+  const placed = personal.map((node, index) => {
+    const angle =
+      personal.length === 1 ? 270 : 150 + (240 * index) / (personal.length - 1);
     return { node, ...positionAt(angle) };
   });
+
+  others.forEach((node, index) => {
+    // 共通ノードは真下に、複数あれば左右へ散らす
+    const angle = 90 + (index - (others.length - 1) / 2) * 40;
+    placed.push({ node, ...positionAt(angle) });
+  });
+
+  return placed;
 }
 
 const GROUP_ORDER = ["personal", "company", "shared"] as const;
 
 export default function HubPage() {
   const placed = layoutNodes();
+  const [plan, setPlan] = useState<DailyPlan | null>(null);
+  const [summary, setSummary] = useState<PlanSummary | null>(null);
+
+  useEffect(() => {
+    fetch("/api/planning")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.plan) {
+          setPlan(data.plan);
+          setSummary(data.summary);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#0f1117] flex flex-col">
       <header className="px-6 pt-6 pb-2 text-center">
         <h1 className="text-white font-bold text-xl">🧠 AI Company</h1>
-        <p className="text-slate-500 text-xs mt-1">
-          事業部をタップして話しかける
-        </p>
-        <Link
-          href="/piro"
-          className="inline-flex mt-3 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20"
-        >
-          Piro Creator OSを開く →
-        </Link>
+        <p className="text-slate-500 text-xs mt-1">事業部をタップして話しかける</p>
       </header>
+
+      {/* ─── Today's Dashboard ─────────────────────── */}
+      <section className="mx-auto w-full max-w-3xl px-6 pt-3">
+        <Link
+          href="/planning"
+          className="block rounded-2xl border border-slate-800 bg-slate-900/60 p-4 transition-colors hover:border-amber-500/40 hover:bg-slate-900"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold tracking-widest text-amber-400">TODAY</p>
+            <span className="text-[11px] text-slate-500">朝会をひらく →</span>
+          </div>
+
+          {summary && summary.total > 0 ? (
+            <>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Kpi label="今日やること" value={`${summary.total}件`} accent="#e2e8f0" />
+                <Kpi label="残タスク" value={`${summary.remaining}件`} accent="#fb923c" />
+                <Kpi
+                  label="今日の予定時間"
+                  value={formatDuration(summary.plannedMinutes)}
+                  accent="#34d399"
+                />
+                <Kpi label="完了率" value={`${summary.completionRate}%`} accent="#f472b6" />
+              </div>
+
+              {(summary.currentBlock || summary.nextBlock) && (
+                <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                  <p className="text-[10px] font-semibold text-amber-300">
+                    {summary.currentBlock ? "NOW — 今これをやる" : "NEXT — 次のブロック"}
+                  </p>
+                  <p className="mt-0.5 truncate text-sm font-bold text-white">
+                    {(summary.currentBlock ?? summary.nextBlock)!.title}
+                  </p>
+                  <p className="text-[11px] text-amber-200/70">
+                    {(summary.currentBlock ?? summary.nextBlock)!.start}〜
+                    {(summary.currentBlock ?? summary.nextBlock)!.end}
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-slate-400">
+              {plan
+                ? "今日やることがまだ未登録です。朝会で書き出しましょう。"
+                : "読み込み中…"}
+            </p>
+          )}
+        </Link>
+      </section>
 
       {/* ─── Desktop / tablet: zoned mind map ─── */}
       <main className="hidden sm:flex flex-1 items-center justify-center p-6">
         <div
           className="relative"
-          style={{ width: "min(82vmin, 46rem)", height: "min(82vmin, 46rem)" }}
+          style={{ width: "min(72vmin, 42rem)", height: "min(72vmin, 42rem)" }}
         >
           {/* zone background（個人事業部で全域を1ゾーン化） */}
           <div
@@ -116,7 +181,7 @@ export default function HubPage() {
           {placed.map(({ node, x, y }) => (
             <Link
               key={node.id}
-              href={`/chat?node=${node.id}`}
+              href={hubNodeHref(node)}
               className="absolute z-10 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 group"
               style={{ left: `${x}%`, top: `${y}%` }}
             >
@@ -170,10 +235,7 @@ export default function HubPage() {
               >
                 {label.icon} {label.name}
               </h2>
-              <div
-                className="ml-3 pl-0"
-                style={{ borderLeft: `2px solid ${label.color}44` }}
-              >
+              <div className="ml-3 pl-0" style={{ borderLeft: `2px solid ${label.color}44` }}>
                 {nodes.map((node) => (
                   <div key={node.id} className="relative pt-3">
                     {/* horizontal connector */}
@@ -182,7 +244,7 @@ export default function HubPage() {
                       style={{ backgroundColor: node.color + "66" }}
                     />
                     <Link
-                      href={`/chat?node=${node.id}`}
+                      href={hubNodeHref(node)}
                       className="ml-4 flex items-center gap-3 bg-slate-900/60 border border-slate-800 rounded-2xl px-3.5 py-2.5 active:bg-slate-800 transition-colors"
                       style={{ borderLeftColor: node.color + "99", borderLeftWidth: 3 }}
                     >
@@ -207,6 +269,17 @@ export default function HubPage() {
           );
         })}
       </main>
+    </div>
+  );
+}
+
+function Kpi({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <div className="rounded-xl bg-slate-950/50 px-3 py-2">
+      <p className="text-[10px] text-slate-500">{label}</p>
+      <p className="mt-0.5 text-base font-bold" style={{ color: accent }}>
+        {value}
+      </p>
     </div>
   );
 }

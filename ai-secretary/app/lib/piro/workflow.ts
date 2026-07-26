@@ -115,12 +115,24 @@ export async function getPiroStatus() {
     listVaultDirectory(paths.content),
     listVaultDirectory(paths.x),
   ]);
+  const sortedDesc = (names: string[]) => [...names].sort().reverse();
+  const today = todayJst();
+
   return {
     counts: { research: research.length, content: content.length, x: x.length },
+    /** 今日作成された記事下書きの数（Note事業部ダッシュボード用） */
+    todayContent: content.filter((name) => name.startsWith(today)).length,
     recent: {
-      research: research.sort().slice(-3).reverse(),
-      content: content.sort().slice(-3).reverse(),
-      x: x.sort().slice(-3).reverse(),
+      research: sortedDesc(research).slice(0, 3),
+      content: sortedDesc(content).slice(0, 3),
+      x: sortedDesc(x).slice(0, 3),
     },
+    /** Drafts管理・Knowledge Baseタブ用の全件リスト（新しい順） */
+    files: {
+      research: sortedDesc(research),
+      content: sortedDesc(content),
+      x: sortedDesc(x),
+    },
+    dirs: paths,
   };
 }
