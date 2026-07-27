@@ -86,9 +86,10 @@ export const HUB_NODES: HubNode[] = [
     secretaryId: "personal-fund",
     icon: "📈",
     name: "投資・Fund",
-    tagline: "銘柄分析・ポートフォリオ",
+    tagline: "AI投資パートナー・銘柄分析",
     mode: "finance",
     color: "#ef4444",
+    href: "/investing",
     examples: [
       "ポートフォリオの現状を分析して",
       "/buy-signal NVDA",
