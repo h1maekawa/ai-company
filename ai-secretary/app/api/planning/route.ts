@@ -9,8 +9,10 @@ import {
   summarizePlan,
   todayJst,
   nowJst,
+  windowsForDate,
 } from "@/app/lib/planning/types";
 import { isCalendarConfigured } from "@/app/lib/planning/calendar";
+import { loadTemplate } from "@/app/lib/planning/template";
 
 // リクエストごとにVault/環境変数を読むため静的化しない
 export const dynamic = "force-dynamic";
@@ -27,6 +29,12 @@ export async function GET(req: NextRequest) {
   try {
     const date = req.nextUrl.searchParams.get("date") || todayJst();
     const plan = await loadPlan(date);
+
+    // 時間割未生成でも枠は見せたいので、未設定ならテンプレートから解決する
+    if (!plan.windows || plan.windows.length === 0) {
+      const template = await loadTemplate();
+      plan.windows = windowsForDate(template, date);
+    }
     return NextResponse.json(withSummary(plan));
   } catch (error) {
     const message = error instanceof Error ? error.message : "プランの取得に失敗しました";
@@ -54,6 +62,15 @@ function sanitizeTasks(value: unknown): PlanTask[] {
         raw.category === "work" || raw.category === "life"
           ? (raw.category as TaskCategory)
           : undefined;
+      const timeHint =
+        raw.timeHint === "morning" || raw.timeHint === "daytime" || raw.timeHint === "evening"
+          ? raw.timeHint
+          : undefined;
+      // ドラッグで固定した開始時刻。"HH:MM" 以外は無視する
+      const pinnedStart =
+        typeof raw.pinnedStart === "string" && /^\d{2}:\d{2}$/.test(raw.pinnedStart)
+          ? raw.pinnedStart
+          : undefined;
       const task: PlanTask = {
         id: String(raw.id ?? "").trim() || `t${Date.now().toString(36)}${index}`,
         title,
@@ -62,6 +79,8 @@ function sanitizeTasks(value: unknown): PlanTask[] {
         priority,
         done: Boolean(raw.done),
         ...(category ? { category } : {}),
+        ...(timeHint ? { timeHint } : {}),
+        ...(pinnedStart ? { pinnedStart } : {}),
         ...(note ? { note } : {}),
       };
       return task;

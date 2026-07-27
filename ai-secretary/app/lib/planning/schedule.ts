@@ -88,55 +88,91 @@ export type ScheduleResult = {
   windows: TimeWindow[];
 };
 
-/** 枠ごとの空き状況。cursor は次に置ける最早時刻 */
-type Slot = { window: TimeWindow; cursor: number; end: number };
+/** 既に埋まっている時間帯 */
+type Busy = { start: number; end: number };
+
+/**
+ * 指定カテゴリの枠の中から、minutes 分の空きが取れる最早の開始時刻を探す。
+ * 見つからなければ null（＝はみ出し）。
+ */
+function findSlot(
+  windows: TimeWindow[],
+  busy: Busy[],
+  task: PlanTask,
+  floor: number
+): number | null {
+  const candidates = windows.filter((w) => !task.category || w.category === task.category);
+
+  // 時間帯の希望がある枠を先に試す（「夕食を作る」が昼休み枠に入らないように）
+  const hint = task.timeHint && task.timeHint !== "any" ? TIME_HINT_RANGES[task.timeHint] : null;
+  const ordered = hint
+    ? [
+        ...candidates.filter(
+          (w) => toMinutes(w.start) < hint[1] && toMinutes(w.end) > hint[0]
+        ),
+        ...candidates.filter(
+          (w) => !(toMinutes(w.start) < hint[1] && toMinutes(w.end) > hint[0])
+        ),
+      ]
+    : candidates;
+
+  for (const window of ordered) {
+    const windowEnd = toMinutes(window.end);
+    let cursor = Math.max(toMinutes(window.start), floor);
+
+    const overlapping = busy
+      .filter((b) => b.end > cursor && b.start < windowEnd)
+      .sort((a, b) => a.start - b.start);
+
+    for (const block of overlapping) {
+      if (cursor + task.minutes <= block.start) return cursor;
+      cursor = Math.max(cursor, block.end + BUFFER_MINUTES);
+    }
+    if (cursor + task.minutes <= windowEnd) return cursor;
+  }
+  return null;
+}
+
+function toBlock(task: PlanTask, start: number, pinned: boolean): TimeBlock {
+  return {
+    taskId: task.id,
+    title: task.title,
+    start: toHHMM(start),
+    end: toHHMM(start + task.minutes),
+    bucket: task.bucket,
+    priority: task.priority,
+    ...(task.category ? { category: task.category } : {}),
+    ...(pinned ? { pinned: true } : {}),
+  };
+}
 
 export function buildSchedule(plan: DailyPlan, fromHHMM?: string): ScheduleResult {
   const windows = resolveWindows(plan);
   const floor = fromHHMM ? toMinutes(fromHHMM) : 0;
 
-  const slots: Slot[] = windows.map((window) => ({
-    window,
-    cursor: Math.max(toMinutes(window.start), floor),
-    end: toMinutes(window.end),
-  }));
-
+  const pending = orderTasks(plan.tasks);
   const blocks: TimeBlock[] = [];
   const overflow: PlanTask[] = [];
+  const busy: Busy[] = [];
 
-  for (const task of orderTasks(plan.tasks)) {
-    // カテゴリが決まっていれば合う枠だけ、未分類ならどの枠でも候補にする
-    const candidates = slots.filter(
-      (slot) => !task.category || slot.window.category === task.category
-    );
-    const fits = candidates.filter((s) => s.cursor + task.minutes <= s.end);
+  // 1. 手動で固定されたタスクを先に置く（ドラッグした位置は必ず尊重する）
+  const pinned = pending.filter((t) => t.pinnedStart);
+  for (const task of pinned) {
+    const start = toMinutes(task.pinnedStart as string);
+    blocks.push(toBlock(task, start, true));
+    busy.push({ start, end: start + task.minutes });
+  }
 
-    // 時間帯の希望がある場合、その帯と重なる枠を先に試す
-    // （「夕食を作る」が昼休み枠に入ってしまうのを防ぐ）
-    const hint = task.timeHint && task.timeHint !== "any" ? TIME_HINT_RANGES[task.timeHint] : null;
-    const preferred = hint
-      ? fits.filter((s) => s.cursor < hint[1] && s.end > hint[0])
-      : [];
-
-    const slot = preferred[0] ?? fits[0];
-    if (!slot) {
+  // 2. 残りを空いている枠へ優先度順に詰める
+  for (const task of pending) {
+    if (task.pinnedStart) continue;
+    const start = findSlot(windows, busy, task, floor);
+    if (start === null) {
       overflow.push(task);
       continue;
     }
-
-    const start = slot.cursor;
-    const end = start + task.minutes;
-    blocks.push({
-      taskId: task.id,
-      title: task.title,
-      start: toHHMM(start),
-      end: toHHMM(end),
-      bucket: task.bucket,
-      priority: task.priority,
-      ...(task.category ? { category: task.category } : {}),
-    });
-
-    slot.cursor = end + BUFFER_MINUTES;
+    blocks.push(toBlock(task, start, false));
+    busy.push({ start, end: start + task.minutes });
   }
 
   blocks.sort((a, b) => toMinutes(a.start) - toMinutes(b.start));

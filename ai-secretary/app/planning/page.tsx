@@ -154,6 +154,24 @@ export default function PlanningPage() {
     );
   }
 
+  /** タイムラインへドロップして時刻を固定する */
+  function pinTask(id: string, startHHMM: string) {
+    if (!plan) return;
+    const next = plan.tasks.map((t) => (t.id === id ? { ...t, pinnedStart: startHHMM } : t));
+    persistTasks(next).then(() => post("/api/planning/schedule", { date: plan.date }, "schedule"));
+  }
+
+  /** 固定を解除して自動配置へ戻す */
+  function unpinTask(id: string) {
+    if (!plan) return;
+    const next = plan.tasks.map((t) => {
+      if (t.id !== id) return t;
+      const { pinnedStart: _drop, ...rest } = t;
+      return rest;
+    });
+    persistTasks(next).then(() => post("/api/planning/schedule", { date: plan.date }, "schedule"));
+  }
+
   function moveToBucket(id: string, bucket: TaskBucket) {
     if (!plan) return;
     const task = plan.tasks.find((t) => t.id === id);
@@ -367,6 +385,7 @@ export default function PlanningPage() {
                           task={task}
                           color={bucket.color}
                           onDragStart={() => setDragTaskId(task.id)}
+                          onDragEnd={() => setDragTaskId(null)}
                           onToggle={() => updateTask(task.id, { done: !task.done })}
                           onPriority={(p) => updateTask(task.id, { priority: p })}
                           onCategory={() => cycleCategory(task.id)}
@@ -393,18 +412,16 @@ export default function PlanningPage() {
               </button>
             </div>
 
-            {!hasBlocks ? (
+            {(plan?.windows?.length ?? 0) === 0 ? (
               <div className="py-10 text-center">
                 <p className="text-sm text-slate-600">
-                  「時間割を生成」を押すと
-                  <br />
-                  仕事の枠・自分の枠に振り分けます
+                  1日の枠がまだ決まっていません
                 </p>
                 <button
                   onClick={() => setTemplateOpen(true)}
                   className="mt-3 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-800"
                 >
-                  先に1日の枠を決める
+                  仕事／自分の時間を決める
                 </button>
               </div>
             ) : (
@@ -413,6 +430,9 @@ export default function PlanningPage() {
                 blocks={plan?.blocks ?? []}
                 nowHHMM={nowJst()}
                 doneTaskIds={new Set((plan?.tasks ?? []).filter((t) => t.done).map((t) => t.id))}
+                onDropTask={pinTask}
+                onUnpin={unpinTask}
+                isDragging={dragTaskId !== null}
               />
             )}
 
@@ -535,6 +555,7 @@ function TaskRow({
   task,
   color,
   onDragStart,
+  onDragEnd,
   onToggle,
   onPriority,
   onCategory,
@@ -544,6 +565,7 @@ function TaskRow({
   task: PlanTask;
   color: string;
   onDragStart: () => void;
+  onDragEnd: () => void;
   onToggle: () => void;
   onPriority: (p: Priority) => void;
   onCategory: () => void;
@@ -554,7 +576,12 @@ function TaskRow({
   return (
     <li
       draggable
-      onDragStart={onDragStart}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", task.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
       className="group cursor-grab rounded-xl border border-slate-800 bg-slate-950/50 p-3 active:cursor-grabbing"
     >
       <div className="flex items-start gap-2.5">

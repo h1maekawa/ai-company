@@ -132,6 +132,11 @@ export type PlanTask = {
   category?: TaskCategory;
   /** 向いている時間帯。未指定は "any" 扱い */
   timeHint?: TimeHint;
+  /**
+   * 手動でタイムラインへドラッグして固定した開始時刻 "HH:MM"。
+   * 設定されている間は自動配置より優先され、時間割を作り直しても動かない。
+   */
+  pinnedStart?: string;
   /** AIが分類した理由（UIの補助表示用・任意） */
   note?: string;
 };
@@ -146,6 +151,8 @@ export type TimeBlock = {
   bucket: TaskBucket;
   priority: Priority;
   category?: TaskCategory;
+  /** 手動で固定された配置か（UIでピン表示する） */
+  pinned?: boolean;
 };
 
 export type DailyPlan = {
