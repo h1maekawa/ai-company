@@ -56,6 +56,14 @@ function buildMarkdown(plan: DailyPlan): string {
     ];
   });
 
+  const windowLines =
+    !plan.windows || plan.windows.length === 0
+      ? ["（枠は未設定）"]
+      : plan.windows.map(
+          (w) =>
+            `- ${w.start}〜${w.end} ${w.category === "work" ? "💼仕事" : "🏠自分の時間"}：${w.label}`
+        );
+
   const blockLines =
     plan.blocks.length === 0
       ? ["", "（まだ生成されていません）"]
@@ -82,6 +90,9 @@ ${plan.syncedAt ? `Googleカレンダー同期済み: ${plan.syncedAt}` : ""}
 
 ## やること
 ${taskLines.join("\n")}
+
+## 今日の時間枠
+${windowLines.join("\n")}
 
 ## タイムブロッキング
 ${blockLines.join("\n")}

@@ -84,6 +84,7 @@ export async function PUT(req: NextRequest) {
     const next: DailyPlan = {
       ...current,
       tasks: body.tasks === undefined ? current.tasks : sanitizeTasks(body.tasks),
+      windows: current.windows,
       workStart: sanitizeTime(body.workStart, current.workStart),
       workEnd: sanitizeTime(body.workEnd, current.workEnd),
       breakStart: sanitizeTime(body.breakStart, current.breakStart),

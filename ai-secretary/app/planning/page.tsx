@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { DayTimeline } from "@/components/planning/DayTimeline";
+import { TemplateEditor } from "@/components/planning/TemplateEditor";
 import {
   BUCKETS,
   DailyPlan,
@@ -14,6 +16,7 @@ import {
   categoryOf,
   bucketDefaultMinutes,
   formatDuration,
+  nowJst,
 } from "@/app/lib/planning/types";
 
 type PlanResponse = {
@@ -55,6 +58,7 @@ export default function PlanningPage() {
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   /** 表示するカテゴリ。null は「すべて」 */
   const [filter, setFilter] = useState<TaskCategory | "uncategorized" | null>(null);
+  const [templateOpen, setTemplateOpen] = useState(false);
 
   const apply = useCallback((data: PlanResponse) => {
     setPlan(data.plan);
@@ -377,61 +381,39 @@ export default function PlanningPage() {
             })}
           </section>
 
-          {/* 右: Today's Schedule */}
+          {/* 右: 1日の時間枠とタイムライン */}
           <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:sticky lg:top-5 lg:self-start">
-            <div className="mb-3 flex items-baseline justify-between">
-              <h3 className="text-sm font-bold">Today&apos;s Schedule</h3>
-              <span className="text-xs text-slate-500">
-                {plan ? `${plan.workStart}〜${plan.workEnd}` : ""}
-              </span>
+            <div className="mb-3 flex items-baseline justify-between gap-2">
+              <h3 className="text-sm font-bold">今日の使い方</h3>
+              <button
+                onClick={() => setTemplateOpen(true)}
+                className="rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+              >
+                ⚙ 枠を編集
+              </button>
             </div>
 
             {!hasBlocks ? (
-              <p className="py-10 text-center text-sm text-slate-600">
-                「時間割を生成」を押すと
-                <br />
-                優先順位×所要時間で組み立てます
-              </p>
+              <div className="py-10 text-center">
+                <p className="text-sm text-slate-600">
+                  「時間割を生成」を押すと
+                  <br />
+                  仕事の枠・自分の枠に振り分けます
+                </p>
+                <button
+                  onClick={() => setTemplateOpen(true)}
+                  className="mt-3 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-800"
+                >
+                  先に1日の枠を決める
+                </button>
+              </div>
             ) : (
-              <ol className="space-y-2">
-                {plan!.blocks.map((block) => {
-                  const isNow = summary?.currentBlock?.taskId === block.taskId;
-                  const task = plan!.tasks.find((t) => t.id === block.taskId);
-                  const color =
-                    BUCKETS.find((b) => b.id === block.bucket)?.color ?? "#64748b";
-                  return (
-                    <li
-                      key={`${block.taskId}-${block.start}`}
-                      className={`flex gap-3 rounded-xl border p-3 ${
-                        isNow
-                          ? "border-amber-500/50 bg-amber-500/10"
-                          : "border-slate-800 bg-slate-950/40"
-                      }`}
-                    >
-                      <div className="w-[4.5rem] shrink-0 text-xs">
-                        <p className="font-bold text-slate-200">{block.start}</p>
-                        <p className="text-slate-600">{block.end}</p>
-                      </div>
-                      <div
-                        className="w-1 shrink-0 rounded-full"
-                        style={{ backgroundColor: color }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p
-                          className={`text-sm font-medium ${
-                            task?.done ? "text-slate-600 line-through" : "text-slate-100"
-                          }`}
-                        >
-                          {block.title}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          {"★".repeat(block.priority)}
-                        </p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
+              <DayTimeline
+                windows={plan?.windows ?? []}
+                blocks={plan?.blocks ?? []}
+                nowHHMM={nowJst()}
+                doneTaskIds={new Set((plan?.tasks ?? []).filter((t) => t.done).map((t) => t.id))}
+              />
             )}
 
             {overflow.length > 0 && (
@@ -478,6 +460,16 @@ export default function PlanningPage() {
           </section>
         </div>
       </div>
+
+      {templateOpen && (
+        <TemplateEditor
+          onClose={() => setTemplateOpen(false)}
+          onSaved={() => {
+            // 枠を変えたら今日の時間割を組み直す
+            post("/api/planning/schedule", { date: plan?.date }, "schedule");
+          }}
+        />
+      )}
 
       {/* ─── AI Suggest（右下） ─────────────────── */}
       {suggestions.length > 0 && (

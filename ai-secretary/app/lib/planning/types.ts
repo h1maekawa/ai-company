@@ -29,6 +29,90 @@ export function categoryOf(id: TaskCategory | undefined) {
   return TASK_CATEGORIES.find((c) => c.id === id);
 }
 
+/**
+ * 1日の時間枠。「この時間は仕事」「ここからは自分の時間」を宣言するためのもの。
+ * 24時間は増やせないので、タスクは必ずこの枠の中へ配置する。
+ */
+export type TimeWindow = {
+  id: string;
+  label: string;
+  /** "HH:MM" */
+  start: string;
+  end: string;
+  /** その枠で何をする時間か */
+  category: TaskCategory;
+};
+
+/**
+ * その行動に向いている時間帯。枠が同じカテゴリで複数あるとき、
+ * どれを優先するかの判断に使う（「夕食を作る」が昼枠に入らないように）。
+ */
+export type TimeHint = "morning" | "daytime" | "evening" | "any";
+
+/** 各ヒントが指す時間帯（分）。判定は重なりで行う */
+export const TIME_HINT_RANGES: Record<Exclude<TimeHint, "any">, [number, number]> = {
+  morning: [4 * 60, 11 * 60],
+  daytime: [9 * 60, 18 * 60],
+  evening: [17 * 60, 24 * 60],
+};
+
+/** 曜日ごとの枠。index 0=日曜 〜 6=土曜 */
+export type WeeklyTemplate = {
+  days: TimeWindow[][];
+  updatedAt: string;
+};
+
+export const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
+
+/**
+ * 初期テンプレート。あくまで出発点で、実際の生活に合わせて画面から編集する。
+ * 平日は日中を仕事、朝晩を自分の時間に。土日は終日プライベート。
+ */
+export function defaultWeeklyTemplate(): WeeklyTemplate {
+  const weekday: TimeWindow[] = [
+    { id: "w-morning", label: "朝の準備", start: "07:00", end: "09:00", category: "life" },
+    { id: "w-am", label: "午前の仕事", start: "09:00", end: "12:00", category: "work" },
+    { id: "w-lunch", label: "昼休み", start: "12:00", end: "13:00", category: "life" },
+    { id: "w-pm", label: "午後の仕事", start: "13:00", end: "18:00", category: "work" },
+    { id: "w-evening", label: "自分の時間", start: "18:00", end: "22:00", category: "life" },
+  ];
+  const holiday: TimeWindow[] = [
+    { id: "h-morning", label: "午前", start: "08:00", end: "12:00", category: "life" },
+    { id: "h-afternoon", label: "午後", start: "13:00", end: "22:00", category: "life" },
+  ];
+  const clone = (windows: TimeWindow[], prefix: string) =>
+    windows.map((w) => ({ ...w, id: `${prefix}-${w.id}` }));
+
+  return {
+    days: [
+      clone(holiday, "sun"),
+      clone(weekday, "mon"),
+      clone(weekday, "tue"),
+      clone(weekday, "wed"),
+      clone(weekday, "thu"),
+      clone(weekday, "fri"),
+      clone(holiday, "sat"),
+    ],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/** その日付（YYYY-MM-DD）に適用される枠を取り出す */
+export function windowsForDate(template: WeeklyTemplate, date: string): TimeWindow[] {
+  const weekday = new Date(`${date}T00:00:00+09:00`).getDay();
+  return template.days[weekday] ?? [];
+}
+
+/** 枠の合計時間（分）をカテゴリ別に集計する */
+export function windowCapacity(windows: TimeWindow[]): { work: number; life: number } {
+  const capacity = { work: 0, life: 0 };
+  for (const w of windows) {
+    const minutes = Math.max(0, toMinutes(w.end) - toMinutes(w.start));
+    capacity[w.category] += minutes;
+  }
+  return capacity;
+}
+
 /** 5=★★★★★（最優先） 〜 1=★☆☆☆☆ */
 export type Priority = 1 | 2 | 3 | 4 | 5;
 
@@ -46,6 +130,8 @@ export type PlanTask = {
    * 未設定のものは推測で埋めず、UIで「未分類」として明示する。
    */
   category?: TaskCategory;
+  /** 向いている時間帯。未指定は "any" 扱い */
+  timeHint?: TimeHint;
   /** AIが分類した理由（UIの補助表示用・任意） */
   note?: string;
 };
@@ -70,9 +156,14 @@ export type DailyPlan = {
   /** 稼働開始・終了（"HH:MM"） */
   workStart: string;
   workEnd: string;
-  /** 休憩（昼）。ここはブロックを置かない */
+  /** 休憩（昼）。ここはブロックを置かない（windows導入前との互換用） */
   breakStart: string;
   breakEnd: string;
+  /**
+   * その日に適用された時間枠のスナップショット。
+   * テンプレートを後から変えても過去の記録が書き換わらないよう、日ごとに保存する。
+   */
+  windows?: TimeWindow[];
   /** Googleカレンダーへ同期済みならISO日時 */
   syncedAt?: string;
   updatedAt: string;

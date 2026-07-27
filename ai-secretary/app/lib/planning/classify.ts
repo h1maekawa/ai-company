@@ -8,7 +8,7 @@
  */
 
 import { callAI } from "../ai/client";
-import { PlanTask, Priority, TaskBucket, TaskCategory, bucketDefaultMinutes } from "./types";
+import { PlanTask, Priority, TaskBucket, TaskCategory, TimeHint, bucketDefaultMinutes } from "./types";
 
 const SYSTEM_PROMPT = `あなたは「1日の行動設計」を担当するAI秘書です。
 ユーザーが朝に書き出した「今日やること」を、実行可能なタスク配列へ変換します。
@@ -34,12 +34,18 @@ const SYSTEM_PROMPT = `あなたは「1日の行動設計」を担当するAI秘
    - "life" = 私生活・家庭・健康・自己管理のこと
      （例: 買い物に行く / 病院を予約する / 部屋を片づける / 運動する / 読書をする）
    - 判断に迷うものは、その行動が収入につながるかで決める
+7. timeHint でその行動に向いている時間帯を選ぶ
+   - "morning" = 朝でないと意味がないこと（朝食、朝の運動、朝会）
+   - "daytime" = 日中に限られること（電話、来客対応、役所や病院、買い物）
+   - "evening" = 夕方以降が自然なこと（夕食を作る、晩の家事、晩酌、夜の読書）
+   - "any" = いつでもよいこと
+   - 迷ったら "any" にする
 
 ## 出力
 
 必ず次のJSONのみを返す。説明文やコードブロックは不要。
 
-{"tasks":[{"title":"動詞ベースのタスク名","bucket":"quick|focus|deep","minutes":30,"priority":4,"category":"work|life","note":"分類理由を10文字程度"}]}
+{"tasks":[{"title":"動詞ベースのタスク名","bucket":"quick|focus|deep","minutes":30,"priority":4,"category":"work|life","timeHint":"morning|daytime|evening|any","note":"分類理由を10文字程度"}]}
 
 入力:
 {{input}}`;
@@ -50,8 +56,13 @@ type RawTask = {
   minutes?: unknown;
   priority?: unknown;
   category?: unknown;
+  timeHint?: unknown;
   note?: unknown;
 };
+
+function normalizeTimeHint(value: unknown): TimeHint | undefined {
+  return value === "morning" || value === "daytime" || value === "evening" ? value : undefined;
+}
 
 /** 不正値は推測で埋めず undefined（＝未分類）にする */
 function normalizeCategory(value: unknown): TaskCategory | undefined {
@@ -129,6 +140,7 @@ export async function classifyTasks(input: string): Promise<ClassifyResult> {
           : bucketDefaultMinutes(bucket);
       const note = String(item.note ?? "").trim();
       const category = normalizeCategory(item.category);
+      const timeHint = normalizeTimeHint(item.timeHint);
       const task: PlanTask = {
         id: makeId(index),
         title,
@@ -137,6 +149,7 @@ export async function classifyTasks(input: string): Promise<ClassifyResult> {
         priority: normalizePriority(item.priority),
         done: false,
         ...(category ? { category } : {}),
+        ...(timeHint ? { timeHint } : {}),
         ...(note ? { note } : {}),
       };
       return task;
