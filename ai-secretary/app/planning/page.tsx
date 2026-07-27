@@ -9,6 +9,9 @@ import {
   PlanTask,
   Priority,
   TaskBucket,
+  TaskCategory,
+  TASK_CATEGORIES,
+  categoryOf,
   bucketDefaultMinutes,
   formatDuration,
 } from "@/app/lib/planning/types";
@@ -19,6 +22,7 @@ type PlanResponse = {
   calendarConfigured: boolean;
   suggestions?: string[];
   overflow?: PlanTask[];
+  degraded?: boolean;
   error?: string;
 };
 
@@ -46,7 +50,11 @@ export default function PlanningPage() {
   const [busy, setBusy] = useState<"" | "classify" | "schedule" | "sync">("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  /** AI分類が落ちて仮の値で作られたときの警告 */
+  const [degraded, setDegraded] = useState(false);
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
+  /** 表示するカテゴリ。null は「すべて」 */
+  const [filter, setFilter] = useState<TaskCategory | "uncategorized" | null>(null);
 
   const apply = useCallback((data: PlanResponse) => {
     setPlan(data.plan);
@@ -83,6 +91,7 @@ export default function PlanningPage() {
       if (data.added) {
         setInput("");
         setNotice(`${data.added}件のタスクを追加しました`);
+        setDegraded(Boolean(data.degraded));
       }
       if (data.result) {
         setNotice(`Googleカレンダーへ${data.result.created}件同期しました`);
@@ -123,6 +132,22 @@ export default function PlanningPage() {
   function removeTask(id: string) {
     if (!plan) return;
     persistTasks(plan.tasks.filter((t) => t.id !== id));
+  }
+
+  /** 未分類 → 仕事 → 生活 → 未分類 と切り替える */
+  function cycleCategory(id: string) {
+    if (!plan) return;
+    const task = plan.tasks.find((t) => t.id === id);
+    if (!task) return;
+    const next: TaskCategory | undefined =
+      task.category === "work" ? "life" : task.category === "life" ? undefined : "work";
+    persistTasks(
+      plan.tasks.map((t) => {
+        if (t.id !== id) return t;
+        const { category: _drop, ...rest } = t;
+        return next ? { ...rest, category: next } : rest;
+      })
+    );
   }
 
   function moveToBucket(id: string, bucket: TaskBucket) {
@@ -181,7 +206,12 @@ export default function PlanningPage() {
 
         {/* ─── KPIカード ───────────────────────────── */}
         <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Kpi label="今日やること" value={`${summary?.total ?? 0}件`} accent="#e2e8f0" />
+          <Kpi
+            label="今日やること"
+            value={`${summary?.total ?? 0}件`}
+            accent="#e2e8f0"
+            sub={`💼${summary?.byCategory.work ?? 0} ・ 🏠${summary?.byCategory.life ?? 0}`}
+          />
           {BUCKETS.map((bucket) => (
             <Kpi
               key={bucket.id}
@@ -241,15 +271,65 @@ export default function PlanningPage() {
           </div>
           {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
           {notice && <p className="mt-3 text-sm text-emerald-400">{notice}</p>}
+          {degraded && (
+            <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5">
+              <p className="text-xs font-semibold text-amber-300">
+                AIの分類が使えなかったため、仮の値で登録しました
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-amber-200/80">
+                所要時間30分・優先度★3・カテゴリ未分類は推定ではなく既定値です。
+                各タスクのチップをクリックして調整するか、しばらく待って入力し直してください。
+              </p>
+            </div>
+          )}
         </section>
 
         {/* ─── メイン: 左=タスク / 右=タイムライン ───── */}
         <div className="grid gap-5 lg:grid-cols-[1.15fr_1fr]">
           {/* 左: バケット別タスク */}
           <section className="space-y-4">
+            {/* カテゴリフィルタ */}
+            <div className="flex flex-wrap gap-1 rounded-xl border border-slate-800 bg-slate-900/60 p-1">
+              {[
+                { id: null as TaskCategory | "uncategorized" | null, label: "すべて", icon: "" },
+                ...TASK_CATEGORIES.map((c) => ({ id: c.id as TaskCategory | "uncategorized" | null, label: c.label, icon: c.icon })),
+                ...((summary?.byCategory.uncategorized ?? 0) > 0
+                  ? [{ id: "uncategorized" as TaskCategory | "uncategorized" | null, label: "未分類", icon: "❓" }]
+                  : []),
+              ].map((tab) => {
+                const count =
+                  tab.id === null
+                    ? summary?.total ?? 0
+                    : tab.id === "uncategorized"
+                      ? summary?.byCategory.uncategorized ?? 0
+                      : summary?.byCategory[tab.id] ?? 0;
+                const active = filter === tab.id;
+                return (
+                  <button
+                    key={String(tab.id)}
+                    onClick={() => setFilter(tab.id)}
+                    className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                      active ? "bg-amber-600 text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {tab.icon && <span className="mr-1">{tab.icon}</span>}
+                    {tab.label}
+                    <span className={`ml-1.5 ${active ? "text-white/70" : "text-slate-600"}`}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             {BUCKETS.map((bucket) => {
               const tasks = (plan?.tasks ?? [])
                 .filter((t) => t.bucket === bucket.id)
+                .filter((t) =>
+                  filter === null
+                    ? true
+                    : filter === "uncategorized"
+                      ? !t.category
+                      : t.category === filter
+                )
                 .sort((a, b) => b.priority - a.priority);
               return (
                 <div
@@ -285,6 +365,7 @@ export default function PlanningPage() {
                           onDragStart={() => setDragTaskId(task.id)}
                           onToggle={() => updateTask(task.id, { done: !task.done })}
                           onPriority={(p) => updateTask(task.id, { priority: p })}
+                          onCategory={() => cycleCategory(task.id)}
                           onMinutes={(m) => updateTask(task.id, { minutes: m })}
                           onRemove={() => removeTask(task.id)}
                         />
@@ -464,6 +545,7 @@ function TaskRow({
   onDragStart,
   onToggle,
   onPriority,
+  onCategory,
   onMinutes,
   onRemove,
 }: {
@@ -472,9 +554,11 @@ function TaskRow({
   onDragStart: () => void;
   onToggle: () => void;
   onPriority: (p: Priority) => void;
+  onCategory: () => void;
   onMinutes: (m: number) => void;
   onRemove: () => void;
 }) {
+  const cat = categoryOf(task.category);
   return (
     <li
       draggable
@@ -504,6 +588,20 @@ function TaskRow({
           </p>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            {/* カテゴリ（クリックで 仕事→生活→未分類 と切替） */}
+            <button
+              onClick={onCategory}
+              title="クリックで 仕事 / 生活 / 未分類 を切り替え"
+              className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+              style={
+                cat
+                  ? { color: cat.color, backgroundColor: `${cat.color}1a`, borderColor: `${cat.color}44` }
+                  : { color: "#64748b", backgroundColor: "transparent", borderColor: "#334155" }
+              }
+            >
+              {cat ? `${cat.icon} ${cat.label}` : "❓ 未分類"}
+            </button>
+
             {/* 優先度（クリックで変更） */}
             <div className="flex" role="group" aria-label="優先順位">
               {([1, 2, 3, 4, 5] as Priority[]).map((p) => (

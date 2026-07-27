@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "今日やることを入力してください" }, { status: 400 });
     }
 
-    const classified = await classifyTasks(text);
+    const { tasks: classified, degraded } = await classifyTasks(text);
     if (classified.length === 0) {
       return NextResponse.json(
         { error: "タスクを読み取れませんでした。動詞ベースで書き直してみてください。" },
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
       summary: summarizePlan(saved, nowJst()),
       calendarConfigured: isCalendarConfigured(),
       added: classified.length,
+      degraded,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "タスクの分類に失敗しました";

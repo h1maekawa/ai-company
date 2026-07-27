@@ -14,6 +14,21 @@ export const BUCKETS: { id: TaskBucket; label: string; hint: string; color: stri
   { id: "deep", label: "60分以上", hint: "まとまった集中が要ること", color: "#fb923c" },
 ];
 
+/**
+ * タスクの領域。所要時間(bucket)とは独立した軸で、
+ * 「仕事として動いているか／生活として動いているか」を分ける。
+ */
+export type TaskCategory = "work" | "life";
+
+export const TASK_CATEGORIES: { id: TaskCategory; label: string; icon: string; color: string }[] = [
+  { id: "work", label: "仕事", icon: "💼", color: "#60a5fa" },
+  { id: "life", label: "生活", icon: "🏠", color: "#4ade80" },
+];
+
+export function categoryOf(id: TaskCategory | undefined) {
+  return TASK_CATEGORIES.find((c) => c.id === id);
+}
+
 /** 5=★★★★★（最優先） 〜 1=★☆☆☆☆ */
 export type Priority = 1 | 2 | 3 | 4 | 5;
 
@@ -26,6 +41,11 @@ export type PlanTask = {
   minutes: number;
   priority: Priority;
   done: boolean;
+  /**
+   * 仕事 / 生活。カテゴリ導入前に作られたタスクには存在しないため任意。
+   * 未設定のものは推測で埋めず、UIで「未分類」として明示する。
+   */
+  category?: TaskCategory;
   /** AIが分類した理由（UIの補助表示用・任意） */
   note?: string;
 };
@@ -39,6 +59,7 @@ export type TimeBlock = {
   end: string;
   bucket: TaskBucket;
   priority: Priority;
+  category?: TaskCategory;
 };
 
 export type DailyPlan = {
@@ -90,6 +111,8 @@ export type PlanSummary = {
   completionRate: number;
   /** バケット別の件数 */
   byBucket: Record<TaskBucket, number>;
+  /** カテゴリ別の件数。uncategorized は未設定のまま残っているもの */
+  byCategory: { work: number; life: number; uncategorized: number };
   /** 今日の予定時間（分） */
   plannedMinutes: number;
   /** 現在時刻に該当するブロック（なければ null） */
@@ -114,7 +137,13 @@ export function summarizePlan(plan: DailyPlan, nowHHMM: string): PlanSummary {
   const total = plan.tasks.length;
   const done = plan.tasks.filter((t) => t.done).length;
   const byBucket: Record<TaskBucket, number> = { quick: 0, focus: 0, deep: 0 };
-  for (const task of plan.tasks) byBucket[task.bucket] += 1;
+  const byCategory = { work: 0, life: 0, uncategorized: 0 };
+  for (const task of plan.tasks) {
+    byBucket[task.bucket] += 1;
+    if (task.category === "work") byCategory.work += 1;
+    else if (task.category === "life") byCategory.life += 1;
+    else byCategory.uncategorized += 1;
+  }
 
   const plannedMinutes = plan.tasks
     .filter((t) => !t.done)
@@ -136,6 +165,7 @@ export function summarizePlan(plan: DailyPlan, nowHHMM: string): PlanSummary {
     remaining: total - done,
     completionRate: total === 0 ? 0 : Math.round((done / total) * 100),
     byBucket,
+    byCategory,
     plannedMinutes,
     currentBlock,
     nextBlock,

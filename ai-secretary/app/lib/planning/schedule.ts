@@ -73,6 +73,7 @@ export function buildSchedule(plan: DailyPlan, fromHHMM?: string): ScheduleResul
       end: toHHMM(end),
       bucket: task.bucket,
       priority: task.priority,
+      ...(task.category ? { category: task.category } : {}),
     });
 
     cursor = end + BUFFER_MINUTES;

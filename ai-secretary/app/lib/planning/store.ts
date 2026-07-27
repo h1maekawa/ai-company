@@ -12,6 +12,7 @@ import {
   emptyPlan,
   formatDuration,
   BUCKETS,
+  categoryOf,
 } from "./types";
 
 const PLANNING_DIR = "memory/personal/planning";
@@ -38,6 +39,8 @@ function stars(priority: number): string {
 function buildMarkdown(plan: DailyPlan): string {
   const doneCount = plan.tasks.filter((t) => t.done).length;
   const totalMinutes = plan.tasks.reduce((sum, t) => sum + t.minutes, 0);
+  const workCount = plan.tasks.filter((t) => t.category === "work").length;
+  const lifeCount = plan.tasks.filter((t) => t.category === "life").length;
 
   const taskLines = BUCKETS.flatMap((bucket) => {
     const tasks = plan.tasks.filter((t) => t.bucket === bucket.id);
@@ -45,16 +48,21 @@ function buildMarkdown(plan: DailyPlan): string {
     return [
       ``,
       `### ${bucket.label}`,
-      ...tasks.map(
-        (t) => `- [${t.done ? "x" : " "}] ${t.title}（${t.minutes}分・${stars(t.priority)}）`
-      ),
+      ...tasks.map((t) => {
+        const cat = categoryOf(t.category);
+        const label = cat ? `${cat.icon}${cat.label}・` : "";
+        return `- [${t.done ? "x" : " "}] ${t.title}（${label}${t.minutes}分・${stars(t.priority)}）`;
+      }),
     ];
   });
 
   const blockLines =
     plan.blocks.length === 0
       ? ["", "（まだ生成されていません）"]
-      : plan.blocks.map((b) => `- ${b.start}〜${b.end} ${b.title}`);
+      : plan.blocks.map((b) => {
+          const cat = categoryOf(b.category);
+          return `- ${b.start}〜${b.end} ${cat ? `${cat.icon} ` : ""}${b.title}`;
+        });
 
   return `---
 type: daily_plan
@@ -69,6 +77,7 @@ updated: ${plan.updatedAt}
 
 稼働 ${plan.workStart}〜${plan.workEnd}（休憩 ${plan.breakStart}〜${plan.breakEnd}）
 ${plan.tasks.length}件 / 完了 ${doneCount}件 / 予定 ${formatDuration(totalMinutes)}
+💼仕事 ${workCount}件 ・ 🏠生活 ${lifeCount}件
 ${plan.syncedAt ? `Googleカレンダー同期済み: ${plan.syncedAt}` : ""}
 
 ## やること

@@ -12,7 +12,7 @@
  * 差分更新より単純で、時間割を作り直しても必ず一致する。
  */
 
-import { DailyPlan, TimeBlock } from "./types";
+import { DailyPlan, TimeBlock, categoryOf } from "./types";
 
 const TIME_ZONE = "Asia/Tokyo";
 /** このアプリが作ったイベントを識別するための印 */
@@ -102,7 +102,21 @@ async function deleteExistingEvents(accessToken: string, date: string): Promise<
 
 function describeBlock(block: TimeBlock): string {
   const stars = "★".repeat(block.priority);
-  return `AI Company / 朝会で設計したブロック\n優先度: ${stars}\n所要: ${block.start}〜${block.end}`;
+  const cat = categoryOf(block.category);
+  return [
+    "AI Company / 朝会で設計したブロック",
+    cat ? `区分: ${cat.icon} ${cat.label}` : "",
+    `優先度: ${stars}`,
+    `所要: ${block.start}〜${block.end}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** カレンダー上でも仕事/生活が一目で分かるよう、件名に絵文字を付ける */
+function eventTitle(block: TimeBlock): string {
+  const cat = categoryOf(block.category);
+  return cat ? `${cat.icon} ${block.title}` : block.title;
 }
 
 async function createEvent(accessToken: string, date: string, block: TimeBlock): Promise<boolean> {
@@ -113,7 +127,7 @@ async function createEvent(accessToken: string, date: string, block: TimeBlock):
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      summary: block.title,
+      summary: eventTitle(block),
       description: describeBlock(block),
       start: { dateTime: toLocalDateTime(date, block.start), timeZone: TIME_ZONE },
       end: { dateTime: toLocalDateTime(date, block.end), timeZone: TIME_ZONE },
@@ -174,7 +188,7 @@ export function buildIcs(plan: DailyPlan): string {
       `DTSTAMP:${icsStamp(plan.date, block.start)}`,
       `DTSTART:${icsStamp(plan.date, block.start)}`,
       `DTEND:${icsStamp(plan.date, block.end)}`,
-      `SUMMARY:${escapeIcs(block.title)}`,
+      `SUMMARY:${escapeIcs(eventTitle(block))}`,
       `DESCRIPTION:${escapeIcs(describeBlock(block))}`,
       "END:VEVENT"
     );

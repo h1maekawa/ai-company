@@ -5,6 +5,7 @@ import {
   PlanTask,
   Priority,
   TaskBucket,
+  TaskCategory,
   summarizePlan,
   todayJst,
   nowJst,
@@ -49,6 +50,10 @@ function sanitizeTasks(value: unknown): PlanTask[] {
       const minutes = Math.min(480, Math.max(5, Math.round(Number(raw.minutes)) || 30));
       const priority = Math.min(5, Math.max(1, Math.round(Number(raw.priority)) || 3)) as Priority;
       const note = String(raw.note ?? "").trim();
+      const category =
+        raw.category === "work" || raw.category === "life"
+          ? (raw.category as TaskCategory)
+          : undefined;
       const task: PlanTask = {
         id: String(raw.id ?? "").trim() || `t${Date.now().toString(36)}${index}`,
         title,
@@ -56,6 +61,7 @@ function sanitizeTasks(value: unknown): PlanTask[] {
         minutes,
         priority,
         done: Boolean(raw.done),
+        ...(category ? { category } : {}),
         ...(note ? { note } : {}),
       };
       return task;
