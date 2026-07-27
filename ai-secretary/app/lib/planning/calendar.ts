@@ -6,7 +6,15 @@
  *
  * 必要な環境変数:
  *   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN
- *   GOOGLE_CALENDAR_ID（任意・既定 "primary"）
+ *   GOOGLE_CALENDAR_ID_WORK … 仕事の予定を入れるカレンダー
+ *   GOOGLE_CALENDAR_ID_LIFE … プライベートの予定を入れるカレンダー
+ *   GOOGLE_CALENDAR_ID（任意・上2つ未設定時のフォールバック。既定 "primary"）
+ *
+ * 仕事とプライベートでカレンダーを分けられる。片方のアカウントのトークンで
+ * 両方へ書くため、もう一方のカレンダーを「予定の変更権限」で共有しておくこと。
+ *
+ * プライベート側には、仕事の時間帯を「仕事」とだけ書いた予定でブロックする。
+ * 予定の中身を私生活側へ持ち出さずに、埋まっていることだけを見せるため。
  *
  * 同期方式: その日にこのアプリが作ったイベントを全削除してから作り直す。
  * 差分更新より単純で、時間割を作り直しても必ず一致する。
@@ -58,12 +66,32 @@ async function getAccessToken(): Promise<string> {
   return data.access_token;
 }
 
-function calendarId(): string {
+function fallbackCalendarId(): string {
   return process.env.GOOGLE_CALENDAR_ID || "primary";
 }
 
-function apiBase(): string {
-  return `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId())}/events`;
+/** 仕事の予定を入れるカレンダー */
+function workCalendarId(): string {
+  return process.env.GOOGLE_CALENDAR_ID_WORK || fallbackCalendarId();
+}
+
+/** プライベートの予定を入れるカレンダー */
+function lifeCalendarId(): string {
+  return process.env.GOOGLE_CALENDAR_ID_LIFE || fallbackCalendarId();
+}
+
+/** ブロックの区分に応じた宛先カレンダー（未分類は仕事側へ） */
+function calendarIdFor(block: TimeBlock): string {
+  return block.category === "life" ? lifeCalendarId() : workCalendarId();
+}
+
+/** 同期対象になる全カレンダー（重複は除く） */
+function allCalendarIds(): string[] {
+  return [...new Set([workCalendarId(), lifeCalendarId()])];
+}
+
+function apiBase(calendarId: string): string {
+  return `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
 }
 
 /** "2026-07-19" + "09:00" → "2026-07-19T09:00:00" */
@@ -71,8 +99,12 @@ function toLocalDateTime(date: string, hhmm: string): string {
   return `${date}T${hhmm}:00`;
 }
 
-async function deleteExistingEvents(accessToken: string, date: string): Promise<number> {
-  const url = new URL(apiBase());
+async function deleteExistingEvents(
+  accessToken: string,
+  date: string,
+  calendarId: string
+): Promise<number> {
+  const url = new URL(apiBase(calendarId));
   url.searchParams.set("privateExtendedProperty", `${APP_TAG}=${date}`);
   url.searchParams.set("showDeleted", "false");
   url.searchParams.set("maxResults", "250");
@@ -90,7 +122,7 @@ async function deleteExistingEvents(accessToken: string, date: string): Promise<
 
   let deleted = 0;
   for (const item of items) {
-    const del = await fetch(`${apiBase()}/${encodeURIComponent(item.id)}`, {
+    const del = await fetch(`${apiBase(calendarId)}/${encodeURIComponent(item.id)}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -119,19 +151,33 @@ function eventTitle(block: TimeBlock): string {
   return cat ? `${cat.icon} ${block.title}` : block.title;
 }
 
-async function createEvent(accessToken: string, date: string, block: TimeBlock): Promise<boolean> {
-  const response = await fetch(apiBase(), {
+async function createEvent(
+  accessToken: string,
+  date: string,
+  block: TimeBlock,
+  options: { calendarId: string; summary: string; description: string; masked?: boolean }
+): Promise<boolean> {
+  const response = await fetch(apiBase(options.calendarId), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      summary: eventTitle(block),
-      description: describeBlock(block),
+      summary: options.summary,
+      description: options.description,
       start: { dateTime: toLocalDateTime(date, block.start), timeZone: TIME_ZONE },
       end: { dateTime: toLocalDateTime(date, block.end), timeZone: TIME_ZONE },
-      extendedProperties: { private: { [APP_TAG]: date, taskId: block.taskId } },
+      // マスク予定は中身を隠す目的なので、参加者から見えないよう非公開にする
+      visibility: options.masked ? "private" : "default",
+      transparency: "opaque",
+      extendedProperties: {
+        private: {
+          [APP_TAG]: date,
+          taskId: block.taskId,
+          ...(options.masked ? { masked: "1" } : {}),
+        },
+      },
     }),
   });
 
@@ -151,14 +197,47 @@ export async function syncPlanToCalendar(plan: DailyPlan): Promise<CalendarSyncR
   }
 
   const accessToken = await getAccessToken();
-  const deleted = await deleteExistingEvents(accessToken, plan.date);
+
+  // 仕事・プライベート両方のカレンダーから、この日の分を一度消す
+  let deleted = 0;
+  for (const id of allCalendarIds()) {
+    deleted += await deleteExistingEvents(accessToken, plan.date, id);
+  }
+
+  const work = workCalendarId();
+  const life = lifeCalendarId();
+  const separated = work !== life;
 
   let created = 0;
   for (const block of plan.blocks) {
-    if (await createEvent(accessToken, plan.date, block)) created += 1;
+    const target = calendarIdFor(block);
+    if (
+      await createEvent(accessToken, plan.date, block, {
+        calendarId: target,
+        summary: eventTitle(block),
+        description: describeBlock(block),
+      })
+    ) {
+      created += 1;
+    }
+
+    // 仕事の予定は、プライベート側にも「仕事」とだけ入れて時間を塞ぐ
+    // （何の仕事かは書かない。空いていないことだけが分かればよい）
+    if (separated && block.category !== "life") {
+      if (
+        await createEvent(accessToken, plan.date, block, {
+          calendarId: life,
+          summary: "仕事",
+          description: "AI Company / 仕事の予定が入っています",
+          masked: true,
+        })
+      ) {
+        created += 1;
+      }
+    }
   }
 
-  return { created, deleted, calendarId: calendarId() };
+  return { created, deleted, calendarId: separated ? `${work} / ${life}` : work };
 }
 
 // ─── ICSエクスポート（OAuth未設定でもすぐ使えるフォールバック） ───
