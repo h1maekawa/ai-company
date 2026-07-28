@@ -9,8 +9,9 @@ import { PortfolioDonut } from "@/components/investing/PortfolioDonut";
 import { HoldingsTable } from "@/components/investing/HoldingsTable";
 import { NewsPanel } from "@/components/investing/NewsPanel";
 import { AiSuggestCard } from "@/components/investing/AiSuggestCard";
+import { CapacityCard } from "@/components/investing/CapacityCard";
 import { Skeleton } from "@/components/investing/ui";
-import { useAnalysis, useNews, usePortfolio } from "./usePortfolio";
+import { useAnalysis, useCapacity, useNews, usePortfolio } from "./usePortfolio";
 
 const SOURCE_LABEL: Record<string, string> = {
   holdings_csv: "楽天証券CSV",
@@ -22,6 +23,7 @@ export default function InvestingDashboard() {
   const { data, loading, error } = usePortfolio();
   const analysis = useAnalysis();
   const news = useNews();
+  const capacity = useCapacity();
 
   const summary = data?.summary;
   const history = data?.history ?? [];
@@ -113,8 +115,15 @@ export default function InvestingDashboard() {
         </div>
       </section>
 
-      {/* ─── 下部: 保有株 / ニュース ────────────────── */}
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      {/* ─── 家計簿から取り込んだ「今月使えるお金」 ───── */}
+      <section className="mb-5 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <div className="min-w-0">
+          <CapacityCard
+            capacity={capacity.capacity}
+            configured={capacity.configured}
+            loading={capacity.loading}
+          />
+        </div>
         <div className="min-w-0">
           {loading ? (
             <Skeleton className="h-[320px] rounded-2xl" />
@@ -122,6 +131,10 @@ export default function InvestingDashboard() {
             <HoldingsTable positions={data?.positions ?? []} limit={5} />
           )}
         </div>
+      </section>
+
+      {/* ─── 下部: ニュース ────────────────── */}
+      <section className="grid grid-cols-1 gap-4">
         <div className="min-w-0">
           <NewsPanel
             items={news.items}

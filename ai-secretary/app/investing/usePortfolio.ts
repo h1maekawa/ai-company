@@ -2,9 +2,34 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { AiComment, PortfolioHealth } from "@/app/lib/investing/analysis";
+import type { Capacity } from "@/app/lib/investing/capacity";
 import { NewsItem, Portfolio, ValuePoint } from "@/app/lib/investing/types";
 
-type PortfolioResponse = Portfolio & { history: ValuePoint[]; error?: string };
+type PortfolioResponse = Portfolio & {
+  history: ValuePoint[];
+  capacity?: Capacity | null;
+  error?: string;
+};
+
+/** 家計簿から取り込む「今月使えるお金」 */
+export function useCapacity() {
+  const [capacity, setCapacity] = useState<Capacity | null>(null);
+  const [configured, setConfigured] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/investing/capacity")
+      .then((r) => r.json())
+      .then((json: { capacity?: Capacity | null; configured?: boolean }) => {
+        setCapacity(json.capacity ?? null);
+        setConfigured(Boolean(json.configured));
+      })
+      .catch(() => undefined)
+      .finally(() => setLoading(false));
+  }, []);
+
+  return { capacity, configured, loading };
+}
 
 /** ポートフォリオ本体（最優先で表示したいデータ） */
 export function usePortfolio() {
