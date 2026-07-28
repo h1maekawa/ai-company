@@ -4,7 +4,7 @@
  * 「人間可読Markdown＋末尾jsonブロック」形式で保存する（fund/store.ts と同じ流儀）。
  */
 
-import { getVaultFile, saveVaultFile } from "../vault";
+import { getVaultFile, listVaultDirectory, saveVaultFile } from "../vault";
 import {
   DailyPlan,
   PlanTask,
@@ -128,6 +128,43 @@ export async function savePlan(plan: DailyPlan): Promise<DailyPlan> {
   }
   await saveVaultFile(pathFor(next.date), buildMarkdown(next), sha);
   return next;
+}
+
+/** その日のプランが既に作られているか（空の日と未作成の日を区別する） */
+export async function planExists(date: string): Promise<boolean> {
+  try {
+    const file = await getVaultFile(pathFor(date));
+    return Boolean(file.content);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 指定日より前で、最後にプランを作った日を返す。
+ * ディレクトリにはテンプレート等も混ざるため YYYY-MM-DD.md だけを見る。
+ */
+export async function findPreviousPlanDate(
+  before: string,
+  maxLookbackDays = 14
+): Promise<string | null> {
+  let names: string[] = [];
+  try {
+    names = await listVaultDirectory(PLANNING_DIR);
+  } catch {
+    return null;
+  }
+
+  const earliest = new Date(`${before}T00:00:00+09:00`);
+  earliest.setDate(earliest.getDate() - maxLookbackDays);
+  const earliestKey = earliest.toISOString().slice(0, 10);
+
+  const dates = names
+    .map((name) => name.match(/^(\d{4}-\d{2}-\d{2})\.md$/)?.[1])
+    .filter((d): d is string => typeof d === "string" && d < before && d >= earliestKey)
+    .sort();
+
+  return dates.length > 0 ? dates[dates.length - 1] : null;
 }
 
 export async function updateTasks(date: string, tasks: PlanTask[]): Promise<DailyPlan> {

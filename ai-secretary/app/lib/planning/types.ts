@@ -137,6 +137,8 @@ export type PlanTask = {
    * 設定されている間は自動配置より優先され、時間割を作り直しても動かない。
    */
   pinnedStart?: string;
+  /** 前日から引き継いだ場合、その元の日付 "YYYY-MM-DD" */
+  carriedFrom?: string;
   /** AIが分類した理由（UIの補助表示用・任意） */
   note?: string;
 };

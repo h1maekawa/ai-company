@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { loadPlan, savePlan } from "@/app/lib/planning/store";
+import {
+  findPreviousPlanDate,
+  loadPlan,
+  planExists,
+  savePlan,
+} from "@/app/lib/planning/store";
 import {
   DailyPlan,
   PlanTask,
@@ -28,6 +33,7 @@ function withSummary(plan: DailyPlan) {
 export async function GET(req: NextRequest) {
   try {
     const date = req.nextUrl.searchParams.get("date") || todayJst();
+    const isNewDay = !(await planExists(date));
     const plan = await loadPlan(date);
 
     // 時間割未生成でも枠は見せたいので、未設定ならテンプレートから解決する
@@ -35,6 +41,28 @@ export async function GET(req: NextRequest) {
       const template = await loadTemplate();
       plan.windows = windowsForDate(template, date);
     }
+
+    // 日付が変わっても未完了タスクが消えないよう、前回のプランから引き継ぐ。
+    // その日のファイルを作った時点で1回だけ行うので、あとで消しても復活しない。
+    if (isNewDay) {
+      const previousDate = await findPreviousPlanDate(date);
+      if (previousDate) {
+        const previous = await loadPlan(previousDate);
+        const carried = previous.tasks
+          .filter((task) => !task.done)
+          .map((task) => {
+            // 前日の固定時刻は今日の予定として妥当とは限らないため外す
+            const { pinnedStart: _drop, ...rest } = task;
+            return { ...rest, carriedFrom: task.carriedFrom ?? previousDate };
+          });
+
+        if (carried.length > 0) {
+          const saved = await savePlan({ ...plan, tasks: carried });
+          return NextResponse.json({ ...withSummary(saved), carriedOver: carried.length });
+        }
+      }
+    }
+
     return NextResponse.json(withSummary(plan));
   } catch (error) {
     const message = error instanceof Error ? error.message : "プランの取得に失敗しました";
@@ -71,6 +99,10 @@ function sanitizeTasks(value: unknown): PlanTask[] {
         typeof raw.pinnedStart === "string" && /^\d{2}:\d{2}$/.test(raw.pinnedStart)
           ? raw.pinnedStart
           : undefined;
+      const carriedFrom =
+        typeof raw.carriedFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.carriedFrom)
+          ? raw.carriedFrom
+          : undefined;
       const task: PlanTask = {
         id: String(raw.id ?? "").trim() || `t${Date.now().toString(36)}${index}`,
         title,
@@ -81,6 +113,7 @@ function sanitizeTasks(value: unknown): PlanTask[] {
         ...(category ? { category } : {}),
         ...(timeHint ? { timeHint } : {}),
         ...(pinnedStart ? { pinnedStart } : {}),
+        ...(carriedFrom ? { carriedFrom } : {}),
         ...(note ? { note } : {}),
       };
       return task;

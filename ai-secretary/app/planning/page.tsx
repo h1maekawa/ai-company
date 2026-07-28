@@ -26,6 +26,7 @@ type PlanResponse = {
   suggestions?: string[];
   overflow?: PlanTask[];
   degraded?: boolean;
+  carriedOver?: number;
   error?: string;
 };
 
@@ -55,6 +56,8 @@ export default function PlanningPage() {
   const [notice, setNotice] = useState("");
   /** AI分類が落ちて仮の値で作られたときの警告 */
   const [degraded, setDegraded] = useState(false);
+  /** 前日から引き継いだ件数 */
+  const [carriedOver, setCarriedOver] = useState(0);
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   /** 表示するカテゴリ。null は「すべて」 */
   const [filter, setFilter] = useState<TaskCategory | "uncategorized" | null>(null);
@@ -71,7 +74,10 @@ export default function PlanningPage() {
     fetch("/api/planning")
       .then((r) => r.json())
       .then((data: PlanResponse) => {
-        if (!data.error) apply(data);
+        if (!data.error) {
+          apply(data);
+          if (data.carriedOver) setCarriedOver(data.carriedOver);
+        }
       })
       .catch(() => setError("プランの読み込みに失敗しました"));
   }, [apply]);
@@ -254,6 +260,21 @@ export default function PlanningPage() {
             sub={`残 ${summary?.remaining ?? 0}件`}
           />
         </section>
+
+        {carriedOver > 0 && (
+          <div className="mb-5 flex items-start gap-2 rounded-2xl border border-sky-500/40 bg-sky-500/10 px-4 py-3">
+            <span className="text-base leading-none">↩️</span>
+            <div>
+              <p className="text-xs font-semibold text-sky-300">
+                昨日までの未完了 {carriedOver}件を引き継ぎました
+              </p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-sky-200/80">
+                今日やらないものは ✕ で消してください。時間の固定は外してあるので、
+                「時間割を生成」で今日の枠に合わせて配置し直します。
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ─── 朝会入力 ───────────────────────────── */}
         <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
@@ -650,6 +671,15 @@ function TaskRow({
               />
               分
             </label>
+
+            {task.carriedFrom && (
+              <span
+                className="rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-300"
+                title={`${task.carriedFrom} から引き継ぎ`}
+              >
+                ↩️ 持ち越し
+              </span>
+            )}
 
             {task.note && (
               <span className="text-[10px]" style={{ color }}>
