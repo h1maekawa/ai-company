@@ -1,7 +1,7 @@
 "use client";
 
 import { Wallet } from "lucide-react";
-import type { Capacity } from "@/app/lib/investing/capacity";
+import type { Capacity, CapacityFailure } from "@/app/lib/investing/capacity";
 import { formatJpy } from "@/app/lib/investing/types";
 import { Card, CardHeader, EmptyState, Skeleton } from "./ui";
 
@@ -15,10 +15,12 @@ export function CapacityCard({
   capacity,
   configured,
   loading,
+  failure,
 }: {
   capacity: Capacity | null;
   configured: boolean;
   loading: boolean;
+  failure?: CapacityFailure | null;
 }) {
   if (loading) {
     return (
@@ -39,11 +41,12 @@ export function CapacityCard({
         <CardHeader title="今月の使えるお金" />
         <EmptyState
           icon={<Wallet className="h-7 w-7" />}
-          title={configured ? "家計簿から取得できませんでした" : "家計簿と未連携です"}
+          title={failure?.reason ?? (configured ? "家計簿から取得できませんでした" : "家計簿と未連携です")}
           description={
-            configured
+            failure?.hint ??
+            (configured
               ? "家計簿アプリへ接続できていません。連携シークレットとURLをご確認ください。"
-              : "FLOWPLUS_BASE_URL と FLOWPLUS_API_SECRET を設定すると、口座残高と予算から自動で算出されます。"
+              : "FLOWPLUS_BASE_URL と FLOWPLUS_API_SECRET を設定すると、口座残高と予算から自動で算出されます。")
           }
         />
       </Card>

@@ -121,6 +121,7 @@ export default function InvestingDashboard() {
           <CapacityCard
             capacity={capacity.capacity}
             configured={capacity.configured}
+            failure={capacity.failure}
             loading={capacity.loading}
           />
         </div>

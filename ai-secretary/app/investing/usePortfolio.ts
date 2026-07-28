@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { AiComment, PortfolioHealth } from "@/app/lib/investing/analysis";
-import type { Capacity } from "@/app/lib/investing/capacity";
+import type { Capacity, CapacityFailure } from "@/app/lib/investing/capacity";
 import { NewsItem, Portfolio, ValuePoint } from "@/app/lib/investing/types";
 
 type PortfolioResponse = Portfolio & {
@@ -15,20 +15,28 @@ type PortfolioResponse = Portfolio & {
 export function useCapacity() {
   const [capacity, setCapacity] = useState<Capacity | null>(null);
   const [configured, setConfigured] = useState(false);
+  const [failure, setFailure] = useState<CapacityFailure | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/investing/capacity")
       .then((r) => r.json())
-      .then((json: { capacity?: Capacity | null; configured?: boolean }) => {
-        setCapacity(json.capacity ?? null);
-        setConfigured(Boolean(json.configured));
-      })
+      .then(
+        (json: {
+          capacity?: Capacity | null;
+          configured?: boolean;
+          failure?: CapacityFailure | null;
+        }) => {
+          setCapacity(json.capacity ?? null);
+          setConfigured(Boolean(json.configured));
+          setFailure(json.failure ?? null);
+        }
+      )
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }, []);
 
-  return { capacity, configured, loading };
+  return { capacity, configured, failure, loading };
 }
 
 /** ポートフォリオ本体（最優先で表示したいデータ） */

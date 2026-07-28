@@ -58,26 +58,61 @@ function currentMonthJst(): string {
   }).format(new Date());
 }
 
-/** 家計簿アプリから取得する。到達できなければ null */
+/** 接続に失敗したときの理由（シークレットは絶対に含めない） */
+export type CapacityFailure = { reason: string; hint: string };
+
+let lastFailure: CapacityFailure | null = null;
+
+export function getLastFailure(): CapacityFailure | null {
+  return lastFailure;
+}
+
+/** 家計簿アプリから取得する。到達できなければ null（理由は lastFailure に残す） */
 async function fetchFromFlowPlus(month: string): Promise<Capacity | null> {
   const base = process.env.FLOWPLUS_BASE_URL;
   const secret = process.env.FLOWPLUS_API_SECRET;
-  if (!base || !secret) return null;
+  if (!base || !secret) {
+    lastFailure = {
+      reason: "未設定",
+      hint: "FLOWPLUS_BASE_URL と FLOWPLUS_API_SECRET を設定して再デプロイしてください",
+    };
+    return null;
+  }
+
+  const url = `${base.replace(/\/$/, "")}/api/integrations/investment-capacity?month=${month}`;
 
   try {
-    const url = `${base.replace(/\/$/, "")}/api/integrations/investment-capacity?month=${month}`;
     const response = await fetch(url, {
-      headers: { "x-import-secret": secret },
+      headers: { "x-import-secret": secret.trim() },
       cache: "no-store",
     });
+
     if (!response.ok) {
-      console.error("[investing/capacity] 家計簿APIがエラーを返しました:", response.status);
+      const body = await response.text();
+      // 原因の切り分けに必要な情報だけを残す（シークレットは出さない）
+      lastFailure = {
+        reason: `家計簿APIが ${response.status} を返しました`,
+        hint:
+          response.status === 401
+            ? "連携キーが一致していません。家計簿の設定→連携タブで発行し直してください"
+            : response.status === 404
+              ? "URLが違う可能性があります。FLOWPLUS_BASE_URL を確認してください"
+              : body.slice(0, 120),
+      };
+      console.error("[investing/capacity] 家計簿APIがエラー:", response.status, body.slice(0, 200));
       return null;
     }
+
     const data = (await response.json()) as Capacity;
+    lastFailure = null;
     return { ...data, source: "flow_plus" };
   } catch (error) {
-    console.error("[investing/capacity] 家計簿への接続に失敗:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    lastFailure = {
+      reason: "家計簿アプリへ接続できませんでした",
+      hint: `URLを確認してください（${new URL(url).origin}）: ${message.slice(0, 80)}`,
+    };
+    console.error("[investing/capacity] 接続失敗:", message);
     return null;
   }
 }

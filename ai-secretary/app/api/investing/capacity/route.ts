@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isCapacityConfigured, loadCapacity } from "@/app/lib/investing/capacity";
+import { getLastFailure, isCapacityConfigured, loadCapacity } from "@/app/lib/investing/capacity";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const month = req.nextUrl.searchParams.get("month") ?? undefined;
     const capacity = await loadCapacity(month);
-    return NextResponse.json({ capacity, configured: isCapacityConfigured() });
+    return NextResponse.json({
+      capacity,
+      configured: isCapacityConfigured(),
+      failure: capacity ? null : getLastFailure(),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "投資可能額の取得に失敗しました";
     console.error("[api/investing/capacity] 失敗:", error);
