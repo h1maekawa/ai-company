@@ -46,6 +46,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       context: body.context,
       brand: brandFile.brand,
       channels: brandFile.channels,
+      xAccounts: brandFile.xAccounts,
       affiliates,
     });
 
@@ -53,10 +54,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "生成に失敗しました。もう一度お試しください" }, { status: 502 });
     }
 
+    const xAccount = brandFile.xAccounts.find((a) => a.id === result.xAccountId) ?? null;
+
     return NextResponse.json({
       ...result,
       title,
       genre,
+      xAccount,
       availableAffiliates: affiliates.length,
     });
   } catch (error) {

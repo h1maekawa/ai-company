@@ -104,7 +104,7 @@ export type AffiliateLink = {
 
 /* ─── チャネル ─────────────────────────────────────── */
 
-export type ChannelId = "note" | "x" | "line";
+export type ChannelId = "note" | "line";
 
 export type Channel = {
   id: ChannelId;
@@ -120,13 +120,6 @@ export type Channel = {
 
 export const DEFAULT_CHANNELS: Channel[] = [
   {
-    id: "x",
-    label: "X",
-    icon: "𝕏",
-    role: "集客。短い気づきで認知を取り、noteへ送る",
-    nextStep: "note記事へ誘導",
-  },
-  {
     id: "note",
     label: "note",
     icon: "📝",
@@ -141,6 +134,54 @@ export const DEFAULT_CHANNELS: Channel[] = [
     nextStep: "ステップ配信 → 個別相談・教材・アフィリエイト",
   },
 ];
+
+/* ─── Xアカウント（複数運用） ───────────────────────── */
+
+/**
+ * Xは複数アカウントを運用する。どのジャンルをどのアカウントに出すかは
+ * ここでの割り当てで決まる（AIには判断させない）。
+ * アカウントの役割分担・handle・funnel先はまだ確定していないため、
+ * 前川さんが自由に追加・編集できる形にしてある。
+ */
+export type XAccount = {
+  id: string;
+  /** 表示名（例：実践記録アカウント） */
+  label: string;
+  /** @なしのアカウント名。未入力なら空 */
+  handle: string;
+  /** このアカウントの役割・トーン */
+  role: string;
+  /** このアカウントに自動振り分けするジャンルのid。空なら未割り当て */
+  genreIds: string[];
+  /** 次にどこへ送るか（自由記述） */
+  nextStep: string;
+};
+
+export function defaultXAccounts(): XAccount[] {
+  return [
+    {
+      id: "x1",
+      label: "Xアカウント①",
+      handle: "",
+      role: "",
+      genreIds: [],
+      nextStep: "note記事へ誘導",
+    },
+    {
+      id: "x2",
+      label: "Xアカウント②",
+      handle: "",
+      role: "",
+      genreIds: [],
+      nextStep: "note記事へ誘導",
+    },
+  ];
+}
+
+/** そのジャンルが自動振り分けされるXアカウントを探す（最初に一致したもの） */
+export function accountForGenre(accounts: XAccount[], genreId: string): XAccount | undefined {
+  return accounts.find((a) => a.genreIds.includes(genreId));
+}
 
 /* ─── 公式LINEの教育プログラム（ステップ配信） ───────────── */
 

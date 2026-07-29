@@ -23,6 +23,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
       brand: { ...current.brand, ...(body.brand ?? {}) },
       channels: Array.isArray(body.channels) ? body.channels : current.channels,
       program: body.program ?? current.program,
+      xAccounts: Array.isArray(body.xAccounts) ? body.xAccounts : current.xAccounts,
     });
     return NextResponse.json(saved);
   } catch (error) {

@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { PenLine, ShieldCheck } from "lucide-react";
-import type { Genre, Idea } from "@/app/lib/note/types";
+import type { Genre, Idea, XAccount } from "@/app/lib/note/types";
 import { Card, CardHeader, Badge, Skeleton } from "@/components/ui/primitives";
 
 type ComposeResponse = {
   article: string;
   xPosts: string[];
+  xAccount: XAccount | null;
   lineMessage: string;
   usedAffiliateIds: string[];
   needsDisclosure: boolean;
@@ -197,7 +198,14 @@ export function Composer({
           {result.xPosts.length > 0 && (
             <Card padded={false}>
               <div className="px-5 pt-5">
-                <CardHeader title="X投稿案" />
+                <CardHeader
+                  title="X投稿案"
+                  hint={
+                    result.xAccount
+                      ? `${result.xAccount.label}${result.xAccount.handle ? `（@${result.xAccount.handle}）` : ""} 向け`
+                      : "このジャンルはまだXアカウントに割り当てられていません（ブランディング画面で設定できます）"
+                  }
+                />
               </div>
               <ul className="divide-y divide-hairline/60">
                 {result.xPosts.map((post, i) => (

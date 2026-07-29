@@ -8,7 +8,16 @@
  */
 
 import { callAI } from "../ai/client";
-import { AffiliateLink, Brand, Channel, Genre, LessonStep, TeachingProgram } from "./types";
+import {
+  AffiliateLink,
+  Brand,
+  Channel,
+  Genre,
+  LessonStep,
+  TeachingProgram,
+  XAccount,
+  accountForGenre,
+} from "./types";
 
 export type ComposeInput = {
   title: string;
@@ -18,6 +27,8 @@ export type ComposeInput = {
   context?: string;
   brand: Brand;
   channels: Channel[];
+  /** 運用中のXアカウント一覧（ジャンルでどこに出すかはここから機械的に決める） */
+  xAccounts: XAccount[];
   /** そのジャンルで使える、URL登録済みの案件だけ */
   affiliates: AffiliateLink[];
 };
@@ -27,6 +38,8 @@ export type ComposeResult = {
   article: string;
   /** X用の投稿案 */
   xPosts: string[];
+  /** このジャンルが自動振り分けされたXアカウントのid。未割り当てならnull */
+  xAccountId: string | null;
   /** 公式LINEの配信文 */
   lineMessage: string;
   /** 使ったアフィリエイト案件のID */
@@ -35,7 +48,7 @@ export type ComposeResult = {
   needsDisclosure: boolean;
 };
 
-function buildSystemPrompt(input: ComposeInput): string {
+function buildSystemPrompt(input: ComposeInput, account: XAccount | undefined): string {
   const { brand, affiliates, channels } = input;
 
   const affiliateBlock =
@@ -51,6 +64,10 @@ function buildSystemPrompt(input: ComposeInput): string {
   const channelBlock = channels
     .map((c) => `- ${c.label}: ${c.role} → ${c.nextStep}`)
     .join("\n");
+
+  const xAccountBlock = account
+    ? `このジャンルは **${account.label}**${account.handle ? `（@${account.handle}）` : ""} に投稿する。\nこのアカウントの役割・トーン: ${account.role || "（未設定。ブランド全体のトーンに合わせる）"}\n次の導線: ${account.nextStep}`
+    : "このジャンルはまだどのXアカウントにも割り当てられていない。ブランド全体のトーンで、一般的なX投稿として書く。";
 
   return `あなたは「副業で稼ぎたい人」に教えるメディアの編集者兼ライターです。
 
@@ -81,6 +98,9 @@ ${brand.funnel.map((f, i) => `${i + 1}. ${f}`).join("\n")}
 ## チャネルの役割
 ${channelBlock}
 
+## この記事のX投稿先
+${xAccountBlock}
+
 ## 使えるアフィリエイト案件
 ${affiliateBlock}
 
@@ -105,6 +125,9 @@ ${affiliateBlock}
 }
 
 export async function composeContent(input: ComposeInput): Promise<ComposeResult | null> {
+  // どのXアカウント向けかはAIに判断させず、ジャンルの割り当てから機械的に決める
+  const account = accountForGenre(input.xAccounts, input.genre.id);
+
   const message = `【記事タイトル】${input.title}
 【ジャンル】${input.genre.label}（${input.genre.description}）
 【読者が持ち帰ること】${input.takeaway ?? "（未設定）"}
@@ -112,7 +135,7 @@ export async function composeContent(input: ComposeInput): Promise<ComposeResult
 ${input.context?.trim() || "（未入力。実体験が無いため、一般論の範囲で手順を書くこと。成果や金額は書かないこと）"}`;
 
   try {
-    const response = await callAI(message, buildSystemPrompt(input), { provider: "auto" });
+    const response = await callAI(message, buildSystemPrompt(input, account), { provider: "auto" });
     const match = response.match(/\{[\s\S]*\}/);
     if (!match) return null;
 
@@ -145,6 +168,7 @@ ${input.context?.trim() || "（未入力。実体験が無いため、一般論�
     return {
       article: cleaned,
       xPosts: Array.isArray(parsed.xPosts) ? parsed.xPosts.map(String).slice(0, 5) : [],
+      xAccountId: account?.id ?? null,
       lineMessage: String(parsed.lineMessage ?? ""),
       usedAffiliateIds,
       needsDisclosure,

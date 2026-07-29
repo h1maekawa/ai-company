@@ -8,6 +8,7 @@ import type {
   Genre,
   Idea,
   TeachingProgram,
+  XAccount,
 } from "@/app/lib/note/types";
 
 /* ─── ネタ帳 ───────────────────────────────────────── */
@@ -158,14 +159,21 @@ export function useBrand() {
   const [brand, setBrand] = useState<Brand | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [program, setProgram] = useState<TeachingProgram | null>(null);
+  const [xAccounts, setXAccounts] = useState<XAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const apply = (data: { brand?: Brand; channels?: Channel[]; program?: TeachingProgram }) => {
+  const apply = (data: {
+    brand?: Brand;
+    channels?: Channel[];
+    program?: TeachingProgram;
+    xAccounts?: XAccount[];
+  }) => {
     if (data.brand) setBrand(data.brand);
     if (data.channels) setChannels(data.channels);
     if (data.program) setProgram(data.program);
+    if (data.xAccounts) setXAccounts(data.xAccounts);
   };
 
   useEffect(() => {
@@ -180,6 +188,7 @@ export function useBrand() {
     brand?: Partial<Brand>;
     channels?: Channel[];
     program?: TeachingProgram;
+    xAccounts?: XAccount[];
   }) {
     setSaving(true);
     setError("");
@@ -223,5 +232,5 @@ export function useBrand() {
     }
   }
 
-  return { brand, channels, program, loading, saving, error, save, generateLesson };
+  return { brand, channels, program, xAccounts, loading, saving, error, save, generateLesson };
 }

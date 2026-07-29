@@ -2,22 +2,24 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Lightbulb, Link2, PenLine, Smartphone, Sparkles, Target } from "lucide-react";
+import { AtSign, Lightbulb, Link2, PenLine, Smartphone, Sparkles, Target } from "lucide-react";
 import { IdeaInbox } from "@/components/note/IdeaInbox";
 import { Composer } from "@/components/note/Composer";
 import { AffiliateManager } from "@/components/note/AffiliateManager";
 import { BrandEditor } from "@/components/note/BrandEditor";
 import { LineProgram } from "@/components/note/LineProgram";
+import { XAccounts } from "@/components/note/XAccounts";
 import { Card, CardHeader } from "@/components/ui/primitives";
 import type { Idea } from "@/app/lib/note/types";
 import { useAffiliates, useBrand, useIdeas } from "./useNote";
 
-type Tab = "dashboard" | "ideas" | "write" | "line" | "affiliate" | "brand";
+type Tab = "dashboard" | "ideas" | "write" | "x" | "line" | "affiliate" | "brand";
 
 const TABS: { id: Tab; label: string; icon: typeof Lightbulb }[] = [
   { id: "dashboard", label: "ダッシュボード", icon: Target },
   { id: "ideas", label: "ネタ帳", icon: Lightbulb },
   { id: "write", label: "記事を作る", icon: PenLine },
+  { id: "x", label: "Xアカウント", icon: AtSign },
   { id: "line", label: "公式LINE", icon: Smartphone },
   { id: "affiliate", label: "アフィリエイト", icon: Link2 },
   { id: "brand", label: "ブランディング", icon: Sparkles },
@@ -36,6 +38,8 @@ export default function NoteDepartmentPage() {
   const lessonsWritten = brandState.program?.steps.filter((s) => s.content).length ?? 0;
   const lessonsTotal = brandState.program?.steps.length ?? 0;
   const credibilityMissing = (brandState.brand?.credibility.length ?? 0) === 0;
+  const assignedGenreIds = new Set(brandState.xAccounts.flatMap((a) => a.genreIds));
+  const unassignedGenres = ideasState.genres.filter((g) => !assignedGenreIds.has(g.id));
 
   function writeFrom(idea: Idea) {
     setSeed(idea);
@@ -114,6 +118,27 @@ export default function NoteDepartmentPage() {
               </Card>
             )}
 
+            {!brandState.loading && unassignedGenres.length > 0 && (
+              <Card>
+                <CardHeader title="Xアカウントの割り当てが未完了です" />
+                <p className="text-sm leading-relaxed text-slate-300">
+                  次のジャンルがまだどちらのXアカウントにも割り当てられていません:{" "}
+                  <span className="font-semibold text-white">
+                    {unassignedGenres.map((g) => g.label).join("、")}
+                  </span>
+                </p>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-sub">
+                  割り当てるまで、このジャンルの記事を作ってもX投稿案がどちらのアカウント向けか決まりません。
+                </p>
+                <button
+                  onClick={() => setTab("x")}
+                  className="mt-3 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white hover:bg-brand/85"
+                >
+                  Xアカウントを設定する
+                </button>
+              </Card>
+            )}
+
             <Card>
               <CardHeader title="収益までの流れ" hint="どこで集めて、どこで教えて、どこで収益化するか" />
               <ol className="space-y-2">
@@ -168,6 +193,17 @@ export default function NoteDepartmentPage() {
 
         {tab === "write" && (
           <Composer genres={ideasState.genres} seed={seed} onUsed={() => setSeed(null)} />
+        )}
+
+        {tab === "x" && (
+          <XAccounts
+            genres={ideasState.genres}
+            accounts={brandState.xAccounts}
+            loading={brandState.loading}
+            saving={brandState.saving}
+            error={brandState.error}
+            onSave={(xAccounts) => brandState.save({ xAccounts })}
+          />
         )}
 
         {tab === "line" && (

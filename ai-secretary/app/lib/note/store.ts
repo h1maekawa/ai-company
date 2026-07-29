@@ -12,11 +12,14 @@ import {
   DEFAULT_CHANNELS,
   DEFAULT_GENRES,
   Genre,
+  genreOf,
   Idea,
   IDEA_STATUS_LABELS,
   TeachingProgram,
+  XAccount,
   defaultBrand,
   defaultProgram,
+  defaultXAccounts,
 } from "./types";
 
 const NOTE_ROOT = "memory/personal/note";
@@ -165,11 +168,19 @@ export async function saveAffiliates(links: AffiliateLink[]): Promise<AffiliateL
 
 /* ─── ブランディング ───────────────────────────────── */
 
-type BrandFile = { brand: Brand; channels: Channel[]; program: TeachingProgram };
+type BrandFile = { brand: Brand; channels: Channel[]; program: TeachingProgram; xAccounts: XAccount[] };
 
 function buildBrandMarkdown(file: BrandFile): string {
   const list = (items: string[]) =>
     items.length > 0 ? items.map((i) => `- ${i}`).join("\n") : "- （未記入）";
+
+  const genreLabel = (id: string) => genreOf(DEFAULT_GENRES, id)?.label ?? id;
+  const accountBlock = file.xAccounts
+    .map((a, i) => {
+      const genres = a.genreIds.length > 0 ? a.genreIds.map(genreLabel).join("、") : "（未割り当て）";
+      return `${i + 1}. **${a.label}**${a.handle ? ` (@${a.handle})` : ""} — ${a.role || "（役割未設定）"}\n   担当ジャンル: ${genres}\n   → ${a.nextStep}`;
+    })
+    .join("\n");
 
   return `---
 type: note_brand
@@ -213,6 +224,12 @@ ${file.brand.funnel.map((step, i) => `${i + 1}. ${step}`).join("\n")}
 ## チャネルの役割
 ${file.channels.map((c) => `- **${c.icon} ${c.label}** — ${c.role} → ${c.nextStep}`).join("\n")}
 
+## Xアカウント（複数運用）
+
+Xは複数アカウントを運用し、ジャンルで自動振り分けする。
+
+${accountBlock}
+
 ## 公式LINEで教えるプログラム
 
 **${file.program.name}**（${file.program.duration}）
@@ -233,15 +250,28 @@ ${JSON.stringify(file, null, 2)}
 export async function loadBrand(): Promise<BrandFile> {
   const { data } = await readJson<BrandFile>(PATHS.brand);
   if (data?.brand) {
+    // 旧バージョンではXも単一チャネルとしてここに含まれていた。
+    // 複数アカウント化に伴い分離したため、古いファイルに残っていれば取り除く
+    const channels = (Array.isArray(data.channels) ? data.channels : []).filter(
+      (c) => c.id === "note" || c.id === "line"
+    );
     return {
       brand: { ...defaultBrand(), ...data.brand },
-      channels:
-        Array.isArray(data.channels) && data.channels.length > 0 ? data.channels : DEFAULT_CHANNELS,
+      channels: channels.length > 0 ? channels : DEFAULT_CHANNELS,
       program:
         data.program && Array.isArray(data.program.steps) ? data.program : defaultProgram(),
+      xAccounts:
+        Array.isArray(data.xAccounts) && data.xAccounts.length > 0
+          ? data.xAccounts
+          : defaultXAccounts(),
     };
   }
-  return { brand: defaultBrand(), channels: DEFAULT_CHANNELS, program: defaultProgram() };
+  return {
+    brand: defaultBrand(),
+    channels: DEFAULT_CHANNELS,
+    program: defaultProgram(),
+    xAccounts: defaultXAccounts(),
+  };
 }
 
 export async function saveBrand(file: BrandFile): Promise<BrandFile> {
@@ -249,6 +279,7 @@ export async function saveBrand(file: BrandFile): Promise<BrandFile> {
     brand: { ...file.brand, updatedAt: new Date().toISOString() },
     channels: file.channels,
     program: file.program,
+    xAccounts: file.xAccounts,
   };
   await write(PATHS.brand, buildBrandMarkdown(next));
   return next;
