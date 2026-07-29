@@ -53,10 +53,13 @@ export default function NoteDepartmentPage() {
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold tracking-widest text-gain">NOTE事業部</p>
-            <h1 className="mt-1 text-2xl font-bold">📝 副業を教えるメディア</h1>
+            <h1 className="mt-1 text-2xl font-bold">{brandState.brand?.identity.name ?? "まえみち"}</h1>
+            <p className="mt-1 text-sm font-medium text-slate-300">
+              {brandState.brand?.identity.primaryTagline ?? "人生を、ちょっと豊かに。"}
+            </p>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-sub">
-              X・noteで集めて、公式LINEで教える。記事もアフィリエイトも、
-              ブランディングを前提にAIが作ります。
+              AI・副業・読書・資産形成・習慣。
+              実際に試して学んだことから、毎日を少し豊かにするヒントを発信します。
             </p>
           </div>
           <Link href="/" className="text-sm text-sub hover:text-white">

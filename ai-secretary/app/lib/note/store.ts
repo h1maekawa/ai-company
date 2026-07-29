@@ -7,6 +7,8 @@
 import { getVaultFile, saveVaultFile } from "../vault";
 import {
   AffiliateLink,
+  ALL_GENRE_IDS,
+  BRAND_VERSION,
   Brand,
   Channel,
   DEFAULT_CHANNELS,
@@ -15,6 +17,7 @@ import {
   genreOf,
   Idea,
   IDEA_STATUS_LABELS,
+  LEGACY_DEFAULT_BRAND_TEXT,
   TeachingProgram,
   XAccount,
   defaultBrand,
@@ -60,7 +63,7 @@ async function write(path: string, markdown: string): Promise<void> {
 
 /* ─── ネタ帳 ───────────────────────────────────────── */
 
-type IdeaFile = { genres: Genre[]; ideas: Idea[] };
+type IdeaFile = { genresVersion?: string; genres: Genre[]; ideas: Idea[] };
 
 function buildIdeasMarkdown(file: IdeaFile): string {
   const byStatus = (["inbox", "planned", "drafted", "published"] as const).flatMap((status) => {
@@ -109,12 +112,21 @@ ${JSON.stringify(file, null, 2)}
 export async function loadIdeas(): Promise<IdeaFile> {
   const { data } = await readJson<IdeaFile>(PATHS.ideas);
   if (data && Array.isArray(data.ideas)) {
+    if (data.genresVersion !== BRAND_VERSION) {
+      // 旧ジャンル体系（副業教育メディア期）から「まえみち」の5ジャンルへ一回だけ移行。
+      // 既存のネタ（ideas）はgenreIdが旧idのままでも削除しない
+      // （genreOfが見つからない場合はUI側で「未分類」表示になり、書き直せば再割り当てできる）
+      const migrated: IdeaFile = { genresVersion: BRAND_VERSION, genres: DEFAULT_GENRES, ideas: data.ideas };
+      await saveIdeas(migrated);
+      return migrated;
+    }
     return {
+      genresVersion: data.genresVersion,
       genres: Array.isArray(data.genres) && data.genres.length > 0 ? data.genres : DEFAULT_GENRES,
       ideas: data.ideas,
     };
   }
-  return { genres: DEFAULT_GENRES, ideas: [] };
+  return { genresVersion: BRAND_VERSION, genres: DEFAULT_GENRES, ideas: [] };
 }
 
 export async function saveIdeas(file: IdeaFile): Promise<IdeaFile> {
@@ -170,6 +182,13 @@ export async function saveAffiliates(links: AffiliateLink[]): Promise<AffiliateL
 
 type BrandFile = { brand: Brand; channels: Channel[]; program: TeachingProgram; xAccounts: XAccount[] };
 
+const BRAND_ASSET_PATHS = [
+  "/brand/maemichi/icon.png",
+  "/brand/maemichi/x-header.png",
+  "/brand/maemichi/note-profile.png",
+  "/brand/maemichi/og-default.png",
+] as const;
+
 function buildBrandMarkdown(file: BrandFile): string {
   const list = (items: string[]) =>
     items.length > 0 ? items.map((i) => `- ${i}`).join("\n") : "- （未記入）";
@@ -186,18 +205,57 @@ function buildBrandMarkdown(file: BrandFile): string {
     })
     .join("\n");
 
+  const { identity, personality, visualIdentity } = file.brand;
+
   return `---
 type: note_brand
 updated: ${file.brand.updatedAt}
 ---
 
-# ブランディング / マーケティング戦略
+# ${identity.name} — ブランディング
+
+${identity.primaryTagline}
 
 記事・X投稿・LINE配信を作るとき、AIは必ずこのファイルを前提にします。
 
-## コンセプト
+## ブランド基本情報
 
-${file.brand.concept}
+- **ブランド名**: ${identity.name}
+- **メインキャッチコピー**: ${identity.primaryTagline}
+- **ブランドストーリーコピー**: ${identity.storyTagline}
+- **サブコピー**
+${list(identity.alternateTaglines)}
+- **コンセプト**: ${file.brand.concept}
+
+## プロフィール
+
+### Xプロフィール
+${identity.xProfile}
+
+### Xプロフィール（短縮版）
+${identity.xProfileShort}
+
+### noteプロフィール
+${identity.noteProfile}
+
+### 固定ポスト
+${identity.fixedPost}
+
+## 人格・口調
+
+**性格**: ${personality.traits.join("、")}
+
+**基本姿勢**
+${list(personality.basicStance)}
+
+**使用したい表現**
+${list(personality.preferredExpressions)}
+
+**避ける表現**
+${list(personality.avoidedExpressions)}
+
+**文章ルール**
+${list(personality.writingRules)}
 
 ## 読者
 
@@ -212,10 +270,10 @@ ${list(file.brand.teaches)}
 ## 語れる根拠（実体験・実績）
 ${list(file.brand.credibility)}
 
-> ここが空だと、AIは具体的な成果を書けません（書かせません）。
-> 実際にやったこと・数字を入れるほど記事の説得力が上がります。
+> 具体的な売上・投資利益・フォロワー数などの数値は、ここに本人が登録した場合のみ使います。
+> 上記が数字を含まない実践事実だけの間は、AIは収益額や成果の数字を一切書きません。
 
-## トーン
+## トーン（要約）
 
 ${file.brand.tone}
 
@@ -245,41 +303,137 @@ ${file.program.steps
   .map((step) => `${step.order}. **${step.title}** — ${step.goal}${step.content ? "（配信文あり）" : "（未作成）"}`)
   .join("\n")}
 
+## ビジュアル方針
+
+**ブランドカラー**
+- ベース: ${visualIdentity.baseColor}
+- サーフェス: ${visualIdentity.surfaceColor}
+- アクセント: ${visualIdentity.accentColor}
+- テキスト: ${visualIdentity.textColor}
+- サブテキスト: ${visualIdentity.subTextColor}
+- セカンダリ: ${visualIdentity.secondaryColor}
+
+**イラストの方針**
+${list(visualIdentity.illustrationStyle)}
+
+**アイコンの方針**
+${list(visualIdentity.iconGuidelines)}
+
+**ヘッダーの方針**
+${list(visualIdentity.headerGuidelines)}
+
+**アセット配置先**（画像は未生成でも画面は壊れません）
+${BRAND_ASSET_PATHS.map((p) => `- ${p}`).join("\n")}
+
 \`\`\`json
 ${JSON.stringify(file, null, 2)}
 \`\`\`
 `;
 }
 
+/** 値が旧デフォルトのままか（＝前川さんが編集していないか）を判定する */
+function unchanged<T>(value: T, legacy: T): boolean {
+  return JSON.stringify(value) === JSON.stringify(legacy);
+}
+
+/**
+ * 旧ブランド（副業教育メディア期）から「まえみち」への一回限りの移行。
+ * 前川さんが実際に編集した項目（旧デフォルトと一致しない項目）は上書きしない。
+ * identity/personality/visualIdentityは今回新設したフィールドなので必ず新規に埋める。
+ */
+function migrateBrandToMaemichi(old: Brand): Brand {
+  const fresh = defaultBrand();
+  return {
+    ...old,
+    identity: fresh.identity,
+    personality: fresh.personality,
+    visualIdentity: fresh.visualIdentity,
+    concept: unchanged(old.concept, LEGACY_DEFAULT_BRAND_TEXT.concept) ? fresh.concept : old.concept,
+    targetReader: unchanged(old.targetReader, LEGACY_DEFAULT_BRAND_TEXT.targetReader)
+      ? fresh.targetReader
+      : old.targetReader,
+    painPoints: unchanged(old.painPoints, LEGACY_DEFAULT_BRAND_TEXT.painPoints)
+      ? fresh.painPoints
+      : old.painPoints,
+    teaches: unchanged(old.teaches, LEGACY_DEFAULT_BRAND_TEXT.teaches) ? fresh.teaches : old.teaches,
+    // 旧デフォルトのcredibilityは空配列だった。前川さんが何か登録済みなら残す
+    credibility: old.credibility.length === 0 ? fresh.credibility : old.credibility,
+    tone: unchanged(old.tone, LEGACY_DEFAULT_BRAND_TEXT.tone) ? fresh.tone : old.tone,
+    ngList: unchanged(old.ngList, LEGACY_DEFAULT_BRAND_TEXT.ngList) ? fresh.ngList : old.ngList,
+    funnel: unchanged(old.funnel, LEGACY_DEFAULT_BRAND_TEXT.funnel) ? fresh.funnel : old.funnel,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Xアカウントの移行。
+ * 全アカウントが未入力（空のデフォルト）なら1つの「まえみち」アカウントへ統合する。
+ * 実データが入っているアカウントがあれば、先頭を「まえみち」に変えて新ジャンルを全部割り当て、
+ * 他のアカウントはデータを消さずジャンル割り当てだけ解除する（後から再設定できる）。
+ */
+function migrateXAccountsToMaemichi(existing: XAccount[]): XAccount[] {
+  const isUntouched = (a: XAccount) =>
+    !a.handle && !a.role && a.genreIds.length === 0 && a.monetization.length === 0;
+
+  if (existing.length === 0 || existing.every(isUntouched)) {
+    return defaultXAccounts();
+  }
+
+  const [first, ...rest] = existing;
+  const maemichi: XAccount = {
+    ...first,
+    label: "まえみち",
+    genreIds: [...ALL_GENRE_IDS],
+  };
+  const others = rest.map((a) => ({ ...a, genreIds: [] }));
+  return [maemichi, ...others];
+}
+
 export async function loadBrand(): Promise<BrandFile> {
   const { data } = await readJson<BrandFile>(PATHS.brand);
-  if (data?.brand) {
-    // 旧バージョンではXも単一チャネルとしてここに含まれていた。
-    // 複数アカウント化に伴い分離したため、古いファイルに残っていれば取り除く
-    const channels = (Array.isArray(data.channels) ? data.channels : []).filter(
-      (c) => c.id === "note" || c.id === "line"
-    );
+
+  // 旧バージョンではXも単一チャネルとしてここに含まれていた。
+  // 複数アカウント化に伴い分離したため、古いファイルに残っていれば取り除く
+  const channels = (Array.isArray(data?.channels) ? data.channels : []).filter(
+    (c) => c.id === "note" || c.id === "line"
+  );
+  const program = data?.program && Array.isArray(data.program.steps) ? data.program : defaultProgram();
+  const savedXAccounts: XAccount[] =
+    Array.isArray(data?.xAccounts) && data.xAccounts.length > 0
+      ? ((data.xAccounts as Partial<XAccount>[]).map((a) => ({
+          monetization: [],
+          directAffiliate: false,
+          ...a,
+        })) as XAccount[])
+      : [];
+
+  if (!data?.brand) {
+    return {
+      brand: defaultBrand(),
+      channels: channels.length > 0 ? channels : DEFAULT_CHANNELS,
+      program,
+      xAccounts: savedXAccounts.length > 0 ? savedXAccounts : defaultXAccounts(),
+    };
+  }
+
+  if (data.brand.identity?.version === BRAND_VERSION) {
     return {
       brand: { ...defaultBrand(), ...data.brand },
       channels: channels.length > 0 ? channels : DEFAULT_CHANNELS,
-      program:
-        data.program && Array.isArray(data.program.steps) ? data.program : defaultProgram(),
-      xAccounts:
-        Array.isArray(data.xAccounts) && data.xAccounts.length > 0
-          ? (data.xAccounts as Partial<XAccount>[]).map((a) => ({
-              monetization: [],
-              directAffiliate: false,
-              ...a,
-            })) as XAccount[]
-          : defaultXAccounts(),
+      program,
+      xAccounts: savedXAccounts.length > 0 ? savedXAccounts : defaultXAccounts(),
     };
   }
-  return {
-    brand: defaultBrand(),
-    channels: DEFAULT_CHANNELS,
-    program: defaultProgram(),
-    xAccounts: defaultXAccounts(),
+
+  // 「まえみち」ブランドへの一回限りの移行。移行後は保存して以後は再実行しない
+  const migrated: BrandFile = {
+    brand: migrateBrandToMaemichi(data.brand),
+    channels: channels.length > 0 ? channels : DEFAULT_CHANNELS,
+    program,
+    xAccounts: migrateXAccountsToMaemichi(savedXAccounts),
   };
+  await saveBrand(migrated);
+  return migrated;
 }
 
 export async function saveBrand(file: BrandFile): Promise<BrandFile> {
