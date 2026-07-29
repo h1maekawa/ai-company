@@ -17,8 +17,9 @@ export async function GET(): Promise<NextResponse> {
     const history = await recordSnapshot(portfolio.summary.totalValueJpy);
     const { todayPnlJpy, todayPnlPct } = computeTodayChange(history);
 
-    // 現金残高は家計簿の口座残高を正とする（capacity.md の手入力より新しい）
-    const capacity = await loadCapacity();
+    // 現金残高は家計簿の口座残高を正とする。
+    // 保存は capacity API 側に任せる（同時書き込みでSHAが競合するため）
+    const capacity = await loadCapacity(undefined, { persist: false });
     const cashJpy = capacity?.available_cash ?? portfolio.summary.cashJpy;
 
     return NextResponse.json({

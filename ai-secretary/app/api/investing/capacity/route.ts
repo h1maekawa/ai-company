@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const month = req.nextUrl.searchParams.get("month") ?? undefined;
-    const capacity = await loadCapacity(month);
+    const capacity = await loadCapacity(month, { persist: true });
     return NextResponse.json({
       capacity,
       configured: isCapacityConfigured(),

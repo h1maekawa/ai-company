@@ -203,13 +203,18 @@ ${JSON.stringify(capacity, null, 2)}
 
 /**
  * 当月の投資可能額を取得する。
- * 家計簿から取れればそれを使い、Vaultへ保存して記録として残す。
  * 取れなければ手入力値、それも無ければ null。
+ *
+ * persist=true のときだけVaultへ記録する。同じ画面から複数のAPIが
+ * 同時に呼ぶため、書き込むのは1経路（capacity API）だけに限定している。
  */
-export async function loadCapacity(month = currentMonthJst()): Promise<Capacity | null> {
+export async function loadCapacity(
+  month = currentMonthJst(),
+  options: { persist?: boolean } = {}
+): Promise<Capacity | null> {
   const fetched = await fetchFromFlowPlus(month);
 
-  if (fetched) {
+  if (fetched && options.persist) {
     let sha: string | undefined;
     try {
       sha = (await getVaultFile(CAPACITY_PATH)).sha;
@@ -223,6 +228,7 @@ export async function loadCapacity(month = currentMonthJst()): Promise<Capacity 
     }
     return fetched;
   }
+  if (fetched) return fetched;
 
   return loadManual(month);
 }

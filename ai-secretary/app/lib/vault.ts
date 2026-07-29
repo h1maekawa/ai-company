@@ -93,16 +93,35 @@ export async function saveVaultFile(
       body.sha = sha;
     }
 
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${GITHUB_TOKEN}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json',
-        'User-Agent': 'Vault-API',
-      },
-      body: JSON.stringify(body),
-    });
+    const put = () =>
+      fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'Vault-API',
+        },
+        body: JSON.stringify(body),
+      });
+
+    let response = await put();
+
+    // 409 = 別の書き込みが先に入ってSHAが古くなった状態。
+    // 同じ画面から複数のAPIが同時に同じファイルへ書くと起きるため、
+    // 最新のSHAを取り直して一度だけやり直す。
+    if (response.status === 409) {
+      console.warn(`[vault] 書き込み競合を検出。SHAを取り直して再試行します: ${filePath}`);
+      try {
+        const latest = await getVaultFile(filePath);
+        if (latest.sha) {
+          body.sha = latest.sha;
+          response = await put();
+        }
+      } catch (e) {
+        console.error('[vault] 再試行用のSHA取得に失敗:', e);
+      }
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
