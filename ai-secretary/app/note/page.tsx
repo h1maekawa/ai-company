@@ -1,389 +1,219 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { Lightbulb, Link2, PenLine, Smartphone, Sparkles, Target } from "lucide-react";
+import { IdeaInbox } from "@/components/note/IdeaInbox";
+import { Composer } from "@/components/note/Composer";
+import { AffiliateManager } from "@/components/note/AffiliateManager";
+import { BrandEditor } from "@/components/note/BrandEditor";
+import { LineProgram } from "@/components/note/LineProgram";
+import { Card, CardHeader } from "@/components/ui/primitives";
+import type { Idea } from "@/app/lib/note/types";
+import { useAffiliates, useBrand, useIdeas } from "./useNote";
 
-type Artifact = { kind: string; path: string; markdown: string };
-type Status = {
-  counts: { research: number; content: number; x: number };
-  todayContent: number;
-  files: { research: string[]; content: string[]; x: string[] };
-  dirs: { research: string; content: string; x: string };
-};
+type Tab = "dashboard" | "ideas" | "write" | "line" | "affiliate" | "brand";
 
-type Tab = "dashboard" | "workflow" | "drafts" | "knowledge";
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "workflow", label: "Creator Workflow" },
-  { id: "drafts", label: "Draft管理" },
-  { id: "knowledge", label: "Knowledge Base" },
+const TABS: { id: Tab; label: string; icon: typeof Lightbulb }[] = [
+  { id: "dashboard", label: "ダッシュボード", icon: Target },
+  { id: "ideas", label: "ネタ帳", icon: Lightbulb },
+  { id: "write", label: "記事を作る", icon: PenLine },
+  { id: "line", label: "公式LINE", icon: Smartphone },
+  { id: "affiliate", label: "アフィリエイト", icon: Link2 },
+  { id: "brand", label: "ブランディング", icon: Sparkles },
 ];
-
-/** "2026-07-19-ai-agent.md" → { date, title } */
-function parseFileName(name: string): { date: string; title: string } {
-  const match = name.match(/^(\d{4}-\d{2}-\d{2})-(.*)\.md$/);
-  if (!match) return { date: "", title: name.replace(/\.md$/, "") };
-  return { date: match[1], title: match[2].replace(/-/g, " ") };
-}
 
 export default function NoteDepartmentPage() {
   const [tab, setTab] = useState<Tab>("dashboard");
-  const [status, setStatus] = useState<Status | null>(null);
+  const [seed, setSeed] = useState<Idea | null>(null);
 
-  // Creator Workflow（/piro からそのまま移設）
-  const [workflow, setWorkflow] = useState("full");
-  const [topic, setTopic] = useState("");
-  const [audience, setAudience] = useState("");
-  const [context, setContext] = useState("");
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const ideasState = useIdeas();
+  const affiliateState = useAffiliates();
+  const brandState = useBrand();
 
-  // ファイルプレビュー
-  const [preview, setPreview] = useState<{ path: string; content: string } | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const inboxCount = ideasState.ideas.filter((i) => i.status === "inbox").length;
+  const readyLinks = affiliateState.links.filter((l) => l.active && l.url).length;
+  const lessonsWritten = brandState.program?.steps.filter((s) => s.content).length ?? 0;
+  const lessonsTotal = brandState.program?.steps.length ?? 0;
+  const credibilityMissing = (brandState.brand?.credibility.length ?? 0) === 0;
 
-  const refreshStatus = useCallback(() => {
-    fetch("/api/piro/run")
-      .then((r) => r.json())
-      .then(setStatus)
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    refreshStatus();
-  }, [refreshStatus]);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setLoading(true);
-    setError("");
-    setArtifacts([]);
-    try {
-      const response = await fetch("/api/piro/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workflow, topic, audience, context }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "実行に失敗しました");
-      setArtifacts(data.artifacts || []);
-      refreshStatus();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "実行に失敗しました");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function openFile(dir: string, name: string) {
-    const path = `${dir}/${name}`;
-    setPreviewLoading(true);
-    setPreview({ path, content: "" });
-    try {
-      const response = await fetch(`/api/vault/${path}`);
-      const data = await response.json();
-      setPreview({ path, content: data.content || "(空のファイルです)" });
-    } catch {
-      setPreview({ path, content: "読み込みに失敗しました" });
-    } finally {
-      setPreviewLoading(false);
-    }
+  function writeFrom(idea: Idea) {
+    setSeed(idea);
+    setTab("write");
   }
 
   return (
-    <main className="min-h-screen bg-[#0f1117] px-5 py-8 text-slate-100">
-      <div className="mx-auto max-w-5xl">
+    <main className="min-h-screen bg-ink-base px-4 py-7 text-white sm:px-6">
+      <div className="mx-auto max-w-4xl">
         {/* Header */}
-        <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold tracking-widest text-emerald-400">NOTE事業部</p>
-            <h1 className="mt-1 text-2xl font-bold">📝 Note事業部</h1>
-            <p className="mt-2 text-sm text-slate-400">
-              調査から記事・X投稿までを生成し、Knowledge Baseへ保存します。
+            <p className="text-xs font-semibold tracking-widest text-gain">NOTE事業部</p>
+            <h1 className="mt-1 text-2xl font-bold">📝 副業を教えるメディア</h1>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-sub">
+              X・noteで集めて、公式LINEで教える。記事もアフィリエイトも、
+              ブランディングを前提にAIが作ります。
             </p>
           </div>
-          <Link href="/" className="text-sm text-slate-400 hover:text-white">
+          <Link href="/" className="text-sm text-sub hover:text-white">
             ← AI Company
           </Link>
         </div>
 
         {/* Tabs */}
-        <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60 p-1">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                tab === t.id
-                  ? "bg-emerald-600 text-white"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-hairline bg-ink-card p-1">
+          {TABS.map((t) => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+                  tab === t.id ? "bg-gain text-ink-base" : "text-sub hover:bg-white/5 hover:text-white"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* ─── Dashboard ─────────────────────────── */}
+        {/* ─── ダッシュボード ───────────────────── */}
         {tab === "dashboard" && (
-          <div className="space-y-5">
+          <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatCard label="今日の記事数" value={status ? String(status.todayContent) : "–"} accent="#34d399" />
-              <StatCard label="下書き累計" value={status ? String(status.counts.content) : "–"} accent="#e2e8f0" />
-              <StatCard label="Research" value={status ? String(status.counts.research) : "–"} accent="#38bdf8" />
-              <StatCard label="X投稿案" value={status ? String(status.counts.x) : "–"} accent="#a78bfa" />
+              <Stat label="ネタの在庫" value={`${inboxCount}件`} accent="#f59e0b" />
+              <Stat
+                label="使えるリンク"
+                value={`${readyLinks}件`}
+                accent={readyLinks > 0 ? "#22c55e" : "#94A3B8"}
+              />
+              <Stat label="LINE配信文" value={`${lessonsWritten}/${lessonsTotal}`} accent="#4f8cff" />
+              <Stat label="ネタ総数" value={`${ideasState.ideas.length}件`} accent="#e2e8f0" />
             </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-              <h2 className="text-sm font-bold">今月PV / 収益</h2>
-              <p className="mt-2 text-sm text-slate-500">
-                note Analytics との連携は未実装です（Phase 3）。実数が取れるまでは表示しません。
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-              <h2 className="mb-3 text-sm font-bold">最近の下書き</h2>
-              {status && status.files.content.length > 0 ? (
-                <ul className="space-y-1.5">
-                  {status.files.content.slice(0, 5).map((name) => {
-                    const { date, title } = parseFileName(name);
-                    return (
-                      <li key={name}>
-                        <button
-                          onClick={() => {
-                            setTab("drafts");
-                            openFile(status.dirs.content, name);
-                          }}
-                          className="flex w-full gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-slate-800"
-                        >
-                          <span className="shrink-0 text-xs text-slate-500">{date}</span>
-                          <span className="truncate text-sm text-slate-300">{title}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <p className="text-sm text-slate-600">まだ下書きがありません。</p>
-              )}
-            </div>
-
-            <button
-              onClick={() => setTab("workflow")}
-              className="w-full rounded-xl bg-emerald-600 py-3 font-semibold hover:bg-emerald-500"
-            >
-              ✍️ Creator Workflowを実行する
-            </button>
-          </div>
-        )}
-
-        {/* ─── Creator Workflow（/piro から移設・UIそのまま） ─── */}
-        {tab === "workflow" && (
-          <div>
-            <h2 className="mb-1 text-lg font-bold">Creator Workflow</h2>
-            <p className="mb-5 text-sm text-slate-400">
-              調査から記事・X投稿までを生成し、Knowledge Baseへ保存します。
-            </p>
-
-            {status && (
-              <div className="mb-6 grid grid-cols-3 gap-3">
-                {[
-                  ["Research", status.counts.research],
-                  ["Drafts", status.counts.content],
-                  ["X Posts", status.counts.x],
-                ].map(([label, count]) => (
-                  <div key={String(label)} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-                    <p className="text-xs text-slate-500">{label}</p>
-                    <p className="mt-1 text-2xl font-bold">{count}</p>
-                  </div>
-                ))}
-              </div>
+            {credibilityMissing && (
+              <Card>
+                <CardHeader title="最初にやること" />
+                <p className="text-sm leading-relaxed text-slate-300">
+                  ブランディングの
+                  <span className="mx-1 font-semibold text-white">「語れる根拠（実体験・実績）」</span>
+                  がまだ空です。
+                </p>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-sub">
+                  ここが空の間、AIは収益額や成果を一切書きません（根拠のない実績を書かせないためです）。
+                  実際にやったこと・数字を入れるほど、記事とLINE配信の説得力が上がります。
+                </p>
+                <button
+                  onClick={() => setTab("brand")}
+                  className="mt-3 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white hover:bg-brand/85"
+                >
+                  ブランディングを編集する
+                </button>
+              </Card>
             )}
 
-            <form onSubmit={submit} className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-              <div>
-                <label className="text-xs text-slate-400">実行内容</label>
-                <select
-                  value={workflow}
-                  onChange={(e) => setWorkflow(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
-                >
-                  <option value="full">Research → 記事 → X（フル実行）</option>
-                  <option value="research">Researchのみ</option>
-                  <option value="content">記事下書きのみ</option>
-                  <option value="x">X投稿案のみ</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-400">テーマ *</label>
-                <input
-                  required
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="例：AIエージェントで個人の仕事を自動化する方法"
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400">想定読者</label>
-                <input
-                  value={audience}
-                  onChange={(e) => setAudience(e.target.value)}
-                  placeholder="空欄ならPiroのPrimary Targetを使用"
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400">前川さんの経験・前提・材料</label>
-                <textarea
-                  value={context}
-                  onChange={(e) => setContext(e.target.value)}
-                  rows={5}
-                  placeholder="実体験や検証結果を入力すると、Piroらしい内容になります。"
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
-                />
-              </div>
-              <button
-                disabled={loading}
-                className="w-full rounded-lg bg-emerald-600 py-3 font-semibold hover:bg-emerald-500 disabled:opacity-50"
-              >
-                {loading ? "AIチームが実行中…" : "ワークフローを実行"}
-              </button>
-              {error && <p className="text-sm text-red-400">{error}</p>}
-            </form>
+            <Card>
+              <CardHeader title="収益までの流れ" hint="どこで集めて、どこで教えて、どこで収益化するか" />
+              <ol className="space-y-2">
+                {(brandState.brand?.funnel ?? []).map((step, i) => (
+                  <li key={i} className="flex gap-3 text-sm">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-[10px] font-bold text-sub">
+                      {i + 1}
+                    </span>
+                    <span className="text-slate-300">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </Card>
 
-            <div className="mt-8 space-y-5">
-              {artifacts.map((artifact) => (
-                <section
-                  key={artifact.path}
-                  className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/60"
-                >
-                  <div className="flex justify-between gap-4 border-b border-slate-800 px-4 py-3">
-                    <span className="font-semibold capitalize">{artifact.kind}</span>
-                    <span className="break-all text-xs text-emerald-400">保存: {artifact.path}</span>
-                  </div>
-                  <pre className="overflow-x-auto whitespace-pre-wrap p-4 text-sm leading-6 text-slate-300">
-                    {artifact.markdown}
-                  </pre>
-                </section>
-              ))}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                onClick={() => setTab("ideas")}
+                className="rounded-2xl border border-hairline bg-ink-card p-4 text-left transition-colors hover:border-brand/40"
+              >
+                <p className="text-sm font-semibold text-white">💡 朝会からネタを拾う</p>
+                <p className="mt-1 text-[11px] text-sub">
+                  実際に終わらせたタスクから、記事になりそうなものをAIが選びます
+                </p>
+              </button>
+              <button
+                onClick={() => setTab("line")}
+                className="rounded-2xl border border-hairline bg-ink-card p-4 text-left transition-colors hover:border-gain/40"
+              >
+                <p className="text-sm font-semibold text-white">🎓 公式LINEの教材を作る</p>
+                <p className="mt-1 text-[11px] text-sub">
+                  {brandState.program?.name ?? "プログラム"}の配信文を1回ずつ作れます
+                </p>
+              </button>
             </div>
           </div>
         )}
 
-        {/* ─── Draft管理 ─────────────────────────── */}
-        {tab === "drafts" && (
-          <FileBrowser
-            title="Draft管理"
-            description="生成された記事下書きの一覧です。公開予定・予約投稿の管理はPhase 3で追加します。"
-            files={status?.files.content ?? []}
-            dir={status?.dirs.content ?? ""}
-            onOpen={openFile}
-            preview={preview}
-            previewLoading={previewLoading}
-            onClose={() => setPreview(null)}
-            emptyText="まだ下書きがありません。Creator Workflowで生成してください。"
+        {tab === "ideas" && (
+          <IdeaInbox
+            genres={ideasState.genres}
+            ideas={ideasState.ideas}
+            loading={ideasState.loading}
+            busy={ideasState.busy}
+            error={ideasState.error}
+            notice={ideasState.notice}
+            onHarvest={ideasState.harvest}
+            onAdd={ideasState.addIdea}
+            onSave={ideasState.saveIdeas}
+            onWrite={writeFrom}
           />
         )}
 
-        {/* ─── Knowledge Base ───────────────────── */}
-        {tab === "knowledge" && (
-          <div className="space-y-6">
-            <FileBrowser
-              title="Research"
-              description="調査データ。記事の材料として蓄積されます。"
-              files={status?.files.research ?? []}
-              dir={status?.dirs.research ?? ""}
-              onOpen={openFile}
-              preview={preview}
-              previewLoading={previewLoading}
-              onClose={() => setPreview(null)}
-              emptyText="まだ調査データがありません。"
-            />
-            <FileBrowser
-              title="X Posts"
-              description="生成済みのX投稿案。"
-              files={status?.files.x ?? []}
-              dir={status?.dirs.x ?? ""}
-              onOpen={openFile}
-              preview={preview}
-              previewLoading={previewLoading}
-              onClose={() => setPreview(null)}
-              emptyText="まだX投稿案がありません。"
-            />
-          </div>
+        {tab === "write" && (
+          <Composer genres={ideasState.genres} seed={seed} onUsed={() => setSeed(null)} />
+        )}
+
+        {tab === "line" && (
+          <LineProgram
+            program={brandState.program}
+            channels={brandState.channels}
+            loading={brandState.loading}
+            saving={brandState.saving}
+            error={brandState.error}
+            onSave={(program) => brandState.save({ program })}
+            onGenerate={brandState.generateLesson}
+          />
+        )}
+
+        {tab === "affiliate" && (
+          <AffiliateManager
+            genres={ideasState.genres}
+            links={affiliateState.links}
+            loading={affiliateState.loading}
+            saving={affiliateState.saving}
+            error={affiliateState.error}
+            onSave={affiliateState.save}
+          />
+        )}
+
+        {tab === "brand" && (
+          <BrandEditor
+            brand={brandState.brand}
+            loading={brandState.loading}
+            saving={brandState.saving}
+            error={brandState.error}
+            onSave={(brand) => brandState.save({ brand })}
+          />
         )}
       </div>
     </main>
   );
 }
 
-function StatCard({ label, value, accent }: { label: string; value: string; accent: string }) {
+function Stat({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-bold" style={{ color: accent }}>
+    <div className="rounded-2xl border border-hairline bg-ink-card p-4">
+      <p className="text-[11px] text-sub">{label}</p>
+      <p className="mt-1 text-xl font-semibold tabular-nums" style={{ color: accent }}>
         {value}
       </p>
     </div>
-  );
-}
-
-function FileBrowser({
-  title,
-  description,
-  files,
-  dir,
-  onOpen,
-  preview,
-  previewLoading,
-  onClose,
-  emptyText,
-}: {
-  title: string;
-  description: string;
-  files: string[];
-  dir: string;
-  onOpen: (dir: string, name: string) => void;
-  preview: { path: string; content: string } | null;
-  previewLoading: boolean;
-  onClose: () => void;
-  emptyText: string;
-}) {
-  return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-      <h2 className="text-sm font-bold">{title}</h2>
-      <p className="mt-1 text-xs text-slate-500">{description}</p>
-
-      {files.length === 0 ? (
-        <p className="py-6 text-center text-sm text-slate-600">{emptyText}</p>
-      ) : (
-        <ul className="mt-3 divide-y divide-slate-800">
-          {files.map((name) => {
-            const { date, title: fileTitle } = parseFileName(name);
-            const isOpen = preview?.path === `${dir}/${name}`;
-            return (
-              <li key={name}>
-                <button
-                  onClick={() => (isOpen ? onClose() : onOpen(dir, name))}
-                  className="flex w-full items-center gap-3 py-2.5 text-left hover:bg-slate-800/50"
-                >
-                  <span className="shrink-0 text-xs text-slate-500">{date}</span>
-                  <span className="flex-1 truncate text-sm text-slate-300">{fileTitle}</span>
-                  <span className="shrink-0 text-xs text-slate-600">{isOpen ? "閉じる" : "開く"}</span>
-                </button>
-                {isOpen && (
-                  <pre className="mb-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-xs leading-6 text-slate-300">
-                    {previewLoading ? "読み込み中…" : preview.content}
-                  </pre>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
   );
 }
