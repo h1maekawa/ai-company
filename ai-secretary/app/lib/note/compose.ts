@@ -1,0 +1,288 @@
+/**
+ * ブランディングとアフィリエイト案件を前提にした記事・X投稿・LINE配信の生成。
+ *
+ * 収益を扱う題材のため、生成物には次を必ず守らせる:
+ *  - 実績のない収益額・成果を書かない（景表法の優良誤認/有利誤認）
+ *  - アフィリエイトを含むならPR表記を冒頭に置く（ステマ規制・2023年10月〜）
+ *  - URLは登録済みのものだけを使う。AIにURLを作らせない
+ */
+
+import { callAI } from "../ai/client";
+import { AffiliateLink, Brand, Channel, Genre, LessonStep, TeachingProgram } from "./types";
+
+export type ComposeInput = {
+  title: string;
+  genre: Genre;
+  takeaway?: string;
+  /** 筆者の実体験・材料 */
+  context?: string;
+  brand: Brand;
+  channels: Channel[];
+  /** そのジャンルで使える、URL登録済みの案件だけ */
+  affiliates: AffiliateLink[];
+};
+
+export type ComposeResult = {
+  /** note記事の本文（Markdown） */
+  article: string;
+  /** X用の投稿案 */
+  xPosts: string[];
+  /** 公式LINEの配信文 */
+  lineMessage: string;
+  /** 使ったアフィリエイト案件のID */
+  usedAffiliateIds: string[];
+  /** PR表記が必要かどうか */
+  needsDisclosure: boolean;
+};
+
+function buildSystemPrompt(input: ComposeInput): string {
+  const { brand, affiliates, channels } = input;
+
+  const affiliateBlock =
+    affiliates.length > 0
+      ? affiliates
+          .map(
+            (a) =>
+              `- id: ${a.id} / ${a.programName}（${a.serviceName}）\n  URL: ${a.url}\n  CTA文言: ${a.ctaText}\n  出す文脈: ${a.placement}`
+          )
+          .join("\n")
+      : "（このジャンルに使える案件はありません。リンクは一切入れないでください）";
+
+  const channelBlock = channels
+    .map((c) => `- ${c.label}: ${c.role} → ${c.nextStep}`)
+    .join("\n");
+
+  return `あなたは「副業で稼ぎたい人」に教えるメディアの編集者兼ライターです。
+
+## このメディアのコンセプト
+${brand.concept}
+
+## 読者
+${brand.targetReader}
+
+読者の悩み:
+${brand.painPoints.map((p) => `- ${p}`).join("\n")}
+
+## 教えていること
+${brand.teaches.map((t) => `- ${t}`).join("\n")}
+
+## 筆者が語れる根拠
+${brand.credibility.length > 0 ? brand.credibility.map((c) => `- ${c}`).join("\n") : "（未登録。具体的な実績・数字を書いてはいけません）"}
+
+## トーン
+${brand.tone}
+
+## 絶対に書かないこと
+${brand.ngList.map((n) => `- ${n}`).join("\n")}
+
+## 収益導線
+${brand.funnel.map((f, i) => `${i + 1}. ${f}`).join("\n")}
+
+## チャネルの役割
+${channelBlock}
+
+## 使えるアフィリエイト案件
+${affiliateBlock}
+
+# 厳守事項（違反した出力は破棄されます）
+
+1. **URLは上に列挙されたものだけを使う。** 自分でURLを組み立てたり、記憶から書いたりしない
+2. **収益額・成果を書くのは「筆者が語れる根拠」にある内容だけ。** 無い場合は金額を一切書かない
+3. **「誰でも」「必ず」「簡単に」など再現性を保証する表現を使わない**
+4. アフィリエイトリンクを1つでも入れるなら、記事の**冒頭に「※本記事にはプロモーションが含まれます」**を置く
+5. 読者が今日から動ける**具体的な手順**を必ず含める。精神論で終わらせない
+6. 筆者がやっていないことを、やったかのように書かない
+
+# 出力（JSONのみ。コードブロックや説明文は不要）
+
+{
+  "article": "note記事の本文（Markdown。見出し・手順・まとめを含む。2000〜3500文字）",
+  "xPosts": ["X投稿案（140文字以内）", "別angleの案", "別angleの案"],
+  "lineMessage": "公式LINEの配信文（300文字以内。記事へ誘導し、次の行動を1つ示す）",
+  "usedAffiliateIds": ["実際に本文へ入れた案件のid"],
+  "needsDisclosure": true または false
+}`;
+}
+
+export async function composeContent(input: ComposeInput): Promise<ComposeResult | null> {
+  const message = `【記事タイトル】${input.title}
+【ジャンル】${input.genre.label}（${input.genre.description}）
+【読者が持ち帰ること】${input.takeaway ?? "（未設定）"}
+【筆者の材料・実体験】
+${input.context?.trim() || "（未入力。実体験が無いため、一般論の範囲で手順を書くこと。成果や金額は書かないこと）"}`;
+
+  try {
+    const response = await callAI(message, buildSystemPrompt(input), { provider: "auto" });
+    const match = response.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+
+    const parsed = JSON.parse(match[0]) as Partial<ComposeResult>;
+    if (!parsed.article) return null;
+
+    // 登録済みURL以外が本文に混ざっていないか検証する
+    const allowedUrls = new Set(input.affiliates.map((a) => a.url));
+    const article = String(parsed.article);
+    const urlsInArticle = article.match(/https?:\/\/[^\s)\]"'）]+/g) ?? [];
+    const foreign = urlsInArticle.filter((url) => !allowedUrls.has(url));
+
+    let cleaned = article;
+    for (const url of foreign) {
+      // 未登録のURLは本文から除去する（AIが作ったリンクを世に出さない）
+      console.warn(`[note/compose] 未登録URLを除去しました: ${url}`);
+      cleaned = cleaned.split(url).join("（リンク未登録）");
+    }
+
+    const usedAffiliateIds = Array.isArray(parsed.usedAffiliateIds)
+      ? parsed.usedAffiliateIds.map(String).filter((id) => input.affiliates.some((a) => a.id === id))
+      : [];
+
+    const needsDisclosure = usedAffiliateIds.length > 0;
+    // PR表記が抜けていたら補う（規制対応を生成AIの気分に任せない）
+    if (needsDisclosure && !cleaned.includes("プロモーション")) {
+      cleaned = `※本記事にはプロモーションが含まれます\n\n${cleaned}`;
+    }
+
+    return {
+      article: cleaned,
+      xPosts: Array.isArray(parsed.xPosts) ? parsed.xPosts.map(String).slice(0, 5) : [],
+      lineMessage: String(parsed.lineMessage ?? ""),
+      usedAffiliateIds,
+      needsDisclosure,
+    };
+  } catch (error) {
+    console.error("[note/compose] 生成に失敗:", error);
+    return null;
+  }
+}
+
+/* ─── 公式LINEのステップ配信 ───────────────────────── */
+
+const LESSON_PROMPT = `あなたは「副業で稼ぎたい人」に教える講師です。
+公式LINEで1日1通ずつ届ける教材の、指定された回の文面を書いてください。
+
+## プログラム
+{{program}}
+
+## 読者
+{{target}}
+
+読者の悩み:
+{{pains}}
+
+## 講師が語れる根拠
+{{credibility}}
+
+## トーン
+{{tone}}
+
+## 書かないこと
+{{ng}}
+
+## 使えるアフィリエイト案件
+{{affiliates}}
+
+# 厳守事項（違反した出力は破棄されます）
+
+1. **URLは上に列挙されたものだけを使う。** 自分で組み立てない
+2. **収益額・成果は「講師が語れる根拠」にある内容だけ。** 無ければ金額を書かない
+3. 「誰でも」「必ず」「簡単に」など再現性を保証する表現を使わない
+4. アフィリエイトを入れるなら、冒頭に「※プロモーションを含みます」を置く
+5. LINEで読む前提。1通1テーマで、**500文字以内**。長い説明は削る
+6. 必ず**その日のうちに手を動かせる課題を1つ**出す。読んで終わりにさせない
+7. 前回までの内容を踏まえ、次回への引きで終える
+
+# 出力（JSONのみ）
+{
+  "content": "配信文（500文字以内。改行で読みやすく）",
+  "assignment": "今日の課題（1文・具体的な行動）",
+  "usedAffiliateId": "使った案件のid。使わないなら空文字"
+}`;
+
+export type LessonInput = {
+  program: TeachingProgram;
+  step: LessonStep;
+  brand: Brand;
+  affiliates: AffiliateLink[];
+};
+
+export type LessonResult = {
+  content: string;
+  assignment: string;
+  usedAffiliateId?: string;
+};
+
+/** 指定した回の配信文を生成する */
+export async function composeLesson(input: LessonInput): Promise<LessonResult | null> {
+  const { program, step, brand, affiliates } = input;
+
+  const programText = [
+    `${program.name}（${program.duration}）`,
+    `完走時のゴール: ${program.promise}`,
+    "",
+    "全体の流れ:",
+    ...program.steps
+      .sort((a, b) => a.order - b.order)
+      .map((s) => `${s.order}. ${s.title} — ${s.goal}${s.id === step.id ? "  ← 今回はここ" : ""}`),
+  ].join("\n");
+
+  const affiliateText =
+    affiliates.length > 0
+      ? affiliates
+          .map((a) => `- id: ${a.id} / ${a.serviceName}\n  URL: ${a.url}\n  CTA: ${a.ctaText}`)
+          .join("\n")
+      : "（使える案件はありません。リンクは入れないでください）";
+
+  const prompt = LESSON_PROMPT.replace("{{program}}", programText)
+    .replace("{{target}}", brand.targetReader)
+    .replace("{{pains}}", brand.painPoints.map((p) => `- ${p}`).join("\n"))
+    .replace(
+      "{{credibility}}",
+      brand.credibility.length > 0
+        ? brand.credibility.map((c) => `- ${c}`).join("\n")
+        : "（未登録。具体的な成果・金額を書いてはいけません）"
+    )
+    .replace("{{tone}}", brand.tone)
+    .replace("{{ng}}", brand.ngList.map((n) => `- ${n}`).join("\n"))
+    .replace("{{affiliates}}", affiliateText);
+
+  const message = `【今回の回】${step.order}. ${step.title}
+【この回のゴール】${step.goal}`;
+
+  try {
+    const response = await callAI(message, prompt, { provider: "auto" });
+    const match = response.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+
+    const parsed = JSON.parse(match[0]) as Partial<LessonResult>;
+    if (!parsed.content) return null;
+
+    // 記事と同じく、未登録URLは配信文から取り除く
+    const allowed = new Set(affiliates.map((a) => a.url));
+    let content = String(parsed.content);
+    for (const url of content.match(/https?:\/\/[^\s)\]"'）]+/g) ?? []) {
+      if (!allowed.has(url)) {
+        console.warn(`[note/compose] 配信文の未登録URLを除去: ${url}`);
+        content = content.split(url).join("（リンク未登録）");
+      }
+    }
+
+    const usedAffiliateId =
+      typeof parsed.usedAffiliateId === "string" &&
+      affiliates.some((a) => a.id === parsed.usedAffiliateId)
+        ? parsed.usedAffiliateId
+        : undefined;
+
+    if (usedAffiliateId && !content.includes("プロモーション")) {
+      content = `※プロモーションを含みます\n\n${content}`;
+    }
+
+    return {
+      content,
+      assignment: String(parsed.assignment ?? ""),
+      usedAffiliateId,
+    };
+  } catch (error) {
+    console.error("[note/compose] 配信文の生成に失敗:", error);
+    return null;
+  }
+}
