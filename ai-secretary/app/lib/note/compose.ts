@@ -66,8 +66,12 @@ function buildSystemPrompt(input: ComposeInput, account: XAccount | undefined): 
     .join("\n");
 
   const xAccountBlock = account
-    ? `このジャンルは **${account.label}**${account.handle ? `（@${account.handle}）` : ""} に投稿する。\nこのアカウントの役割・トーン: ${account.role || "（未設定。ブランド全体のトーンに合わせる）"}\n次の導線: ${account.nextStep}`
-    : "このジャンルはまだどのXアカウントにも割り当てられていない。ブランド全体のトーンで、一般的なX投稿として書く。";
+    ? `このジャンルは **${account.label}**${account.handle ? `（@${account.handle}）` : ""} に投稿する。
+このアカウントの役割・トーン: ${account.role || "（未設定。ブランド全体のトーンに合わせる）"}
+このアカウントでの収益化方法: ${account.monetization.length > 0 ? account.monetization.join("、") : "（未設定）"}
+アフィリエイトリンクを投稿本文に直接入れてよいか: ${account.directAffiliate ? "よい（使うなら必ず投稿の冒頭に[PR]を付ける）" : "ダメ。投稿には誘導文言だけを書き、URLは一切書かない"}
+次の導線: ${account.nextStep}`
+    : "このジャンルはまだどのXアカウントにも割り当てられていない。ブランド全体のトーンで、一般的なX投稿として書く（リンクは入れない）。";
 
   return `あなたは「副業で稼ぎたい人」に教えるメディアの編集者兼ライターです。
 
@@ -112,6 +116,7 @@ ${affiliateBlock}
 4. アフィリエイトリンクを1つでも入れるなら、記事の**冒頭に「※本記事にはプロモーションが含まれます」**を置く
 5. 読者が今日から動ける**具体的な手順**を必ず含める。精神論で終わらせない
 6. 筆者がやっていないことを、やったかのように書かない
+7. X投稿にURLを書いてよいのは「アフィリエイトリンクを投稿本文に直接入れてよい」場合だけ。それ以外は絶対にURLを書かない
 
 # 出力（JSONのみ。コードブロックや説明文は不要）
 
@@ -165,9 +170,30 @@ ${input.context?.trim() || "（未入力。実体験が無いため、一般論�
       cleaned = `※本記事にはプロモーションが含まれます\n\n${cleaned}`;
     }
 
+    // X投稿は、directAffiliateがtrueの時だけ登録済みURLを許可する。それ以外は一切URLを残さない
+    const allowedInXPosts = account?.directAffiliate ? allowedUrls : new Set<string>();
+    const rawXPosts = Array.isArray(parsed.xPosts) ? parsed.xPosts.map(String).slice(0, 5) : [];
+    const xPosts = rawXPosts.map((post) => {
+      let text = post;
+      const urls = text.match(/https?:\/\/[^\s)\]"'）]+/g) ?? [];
+      let hasAllowedUrl = false;
+      for (const url of urls) {
+        if (allowedInXPosts.has(url)) {
+          hasAllowedUrl = true;
+        } else {
+          console.warn(`[note/compose] X投稿から未許可のURLを除去しました: ${url}`);
+          text = text.split(url).join("（リンク未登録）");
+        }
+      }
+      if (hasAllowedUrl && !text.includes("[PR]") && !text.includes("プロモーション")) {
+        text = `[PR] ${text}`;
+      }
+      return text;
+    });
+
     return {
       article: cleaned,
-      xPosts: Array.isArray(parsed.xPosts) ? parsed.xPosts.map(String).slice(0, 5) : [],
+      xPosts,
       xAccountId: account?.id ?? null,
       lineMessage: String(parsed.lineMessage ?? ""),
       usedAffiliateIds,

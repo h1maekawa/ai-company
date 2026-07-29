@@ -46,6 +46,8 @@ export function XAccounts({
       role: "",
       genreIds: [],
       nextStep: "note記事へ誘導",
+      monetization: [],
+      directAffiliate: false,
     };
     onSave([...accounts, created]);
   }
@@ -169,6 +171,36 @@ export function XAccounts({
                   placeholder="次の導線（例：note記事へ誘導 / 公式LINEへ誘導）"
                   className="w-full rounded-lg border border-hairline bg-white/[0.03] px-2.5 py-1.5 text-xs text-white outline-none placeholder:text-sub/70 focus:border-brand/50"
                 />
+
+                <div className="border-t border-hairline pt-3">
+                  <label className="text-[10px] text-sub">
+                    このアカウント自体での収益化方法（1行に1つ。例：X Premium収益分配、自分の教材紹介）
+                  </label>
+                  <textarea
+                    value={account.monetization.join("\n")}
+                    onChange={(e) =>
+                      update(account.id, {
+                        monetization: e.target.value.split("\n").filter((v) => v.trim() !== ""),
+                      })
+                    }
+                    rows={2}
+                    className="mt-1 w-full rounded-lg border border-hairline bg-white/[0.03] px-2.5 py-1.5 text-xs text-white outline-none placeholder:text-sub/70 focus:border-brand/50"
+                  />
+                  <label className="mt-2 flex items-start gap-2 text-[11px] text-sub">
+                    <input
+                      type="checkbox"
+                      checked={account.directAffiliate}
+                      onChange={(e) => update(account.id, { directAffiliate: e.target.checked })}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      投稿本文に登録済みアフィリエイトリンクを直接入れることを許可する
+                      <span className="block text-[10px] text-sub/70">
+                        使った投稿には自動で「[PR]」を付けます。オフの間は誘導文言だけにし、URLは書きません
+                      </span>
+                    </span>
+                  </label>
+                </div>
               </div>
             </Card>
           ))}

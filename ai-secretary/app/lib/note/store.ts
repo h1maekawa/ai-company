@@ -178,7 +178,11 @@ function buildBrandMarkdown(file: BrandFile): string {
   const accountBlock = file.xAccounts
     .map((a, i) => {
       const genres = a.genreIds.length > 0 ? a.genreIds.map(genreLabel).join("、") : "（未割り当て）";
-      return `${i + 1}. **${a.label}**${a.handle ? ` (@${a.handle})` : ""} — ${a.role || "（役割未設定）"}\n   担当ジャンル: ${genres}\n   → ${a.nextStep}`;
+      const monetization = a.monetization.length > 0 ? a.monetization.join("、") : "（未設定）";
+      const directAffiliate = a.directAffiliate
+        ? "投稿本文に直接アフィリエイトリンクを含める（PR表記を自動付与）"
+        : "投稿本文にはリンクを含めない（誘導のみ）";
+      return `${i + 1}. **${a.label}**${a.handle ? ` (@${a.handle})` : ""} — ${a.role || "（役割未設定）"}\n   担当ジャンル: ${genres}\n   収益化方法: ${monetization}\n   ${directAffiliate}\n   → ${a.nextStep}`;
     })
     .join("\n");
 
@@ -262,7 +266,11 @@ export async function loadBrand(): Promise<BrandFile> {
         data.program && Array.isArray(data.program.steps) ? data.program : defaultProgram(),
       xAccounts:
         Array.isArray(data.xAccounts) && data.xAccounts.length > 0
-          ? data.xAccounts
+          ? (data.xAccounts as Partial<XAccount>[]).map((a) => ({
+              monetization: [],
+              directAffiliate: false,
+              ...a,
+            })) as XAccount[]
           : defaultXAccounts(),
     };
   }

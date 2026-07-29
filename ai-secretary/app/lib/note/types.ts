@@ -155,6 +155,14 @@ export type XAccount = {
   genreIds: string[];
   /** 次にどこへ送るか（自由記述） */
   nextStep: string;
+  /** このアカウント自体での収益化方法（自由記述。例：X Premium収益分配、自分の教材紹介） */
+  monetization: string[];
+  /**
+   * 投稿本文に直接アフィリエイトリンクを含めることを許可するか。
+   * falseの間はリンクへ誘導する文言だけにし、URLそのものは記事側に留める。
+   * trueでも登録済みURL以外は使わせず、使ったらPR表記をその投稿にも自動で付ける。
+   */
+  directAffiliate: boolean;
 };
 
 export function defaultXAccounts(): XAccount[] {
@@ -166,6 +174,8 @@ export function defaultXAccounts(): XAccount[] {
       role: "",
       genreIds: [],
       nextStep: "note記事へ誘導",
+      monetization: [],
+      directAffiliate: false,
     },
     {
       id: "x2",
@@ -174,6 +184,8 @@ export function defaultXAccounts(): XAccount[] {
       role: "",
       genreIds: [],
       nextStep: "note記事へ誘導",
+      monetization: [],
+      directAffiliate: false,
     },
   ];
 }
