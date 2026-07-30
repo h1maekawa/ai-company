@@ -7,10 +7,28 @@ export const config = {
   ],
 };
 
+/**
+ * ブラウザのセッションCookieを持たない呼び出し元。
+ * これらは各ルート側で固有の認証を行う:
+ *   Slack   → リクエスト署名（SLACK_SIGNING_SECRET）
+ *   cron    → CRON_SECRET
+ *   runner  → LOCAL_RUNNER_TOKEN
+ * ここを素通しにしてもルート側で必ず検証するため、認証は外れない。
+ */
+const MACHINE_ROUTES = [
+  "/api/integrations/slack/",
+  "/api/cron/",
+  "/api/local-runner/",
+];
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (pathname === "/login" || pathname === "/api/auth/login") {
+    return NextResponse.next();
+  }
+
+  if (MACHINE_ROUTES.some((prefix) => pathname.startsWith(prefix))) {
     return NextResponse.next();
   }
 

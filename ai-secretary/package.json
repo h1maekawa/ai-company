@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test:fund": "bash scripts/test-fund.sh"
+    "test:fund": "bash scripts/test-fund.sh",
+    "test:maemichi": "bash scripts/test-maemichi.sh"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",

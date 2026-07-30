@@ -1,0 +1,13 @@
+{
+  "name": "note-playwright-publisher",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "login": "node --env-file=.env runner.mjs login",
+    "once": "node --env-file=.env runner.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

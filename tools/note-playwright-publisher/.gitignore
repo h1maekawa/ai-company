@@ -1,0 +1,7 @@
+# ログイン済みセッション。絶対にコミットしない
+.auth/
+storageState.json
+
+.env
+node_modules/
+screenshots/

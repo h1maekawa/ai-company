@@ -1,0 +1,206 @@
+/**
+ * noteの公開情報リサーチ。
+ *
+ * 取得するのは公開ページに出ている情報だけ:
+ *   タイトル / 公開日時 / スキ数 / 有料無料 / タグ / 著者
+ * 公開されていない閲覧数・売上は取得も推測もしない。
+ *
+ * 1つのページが落ちてもリサーチ全体は止めない。
+ */
+
+import { DEFAULT_GENRES } from "../../types";
+import { fetchPage, hashId, stripTags } from "../fetcher";
+import { ReferenceNoteCreator, ResearchItem, ResearchSourceType } from "../types";
+
+/**
+ * noteの公開APIから、必要な公開項目だけ拾う。
+ *
+ * 注意: エンドポイントによって命名規則が違う。
+ *   /api/v2/creators/... → camelCase（noteUrl あり）
+ *   /api/v3/hashtags/... → snake_case（noteUrl 無し。key と user.urlname から組み立てる）
+ * どちらでも読めるよう両方を受け付ける。
+ */
+type NoteApiNote = {
+  key?: string;
+  name?: string;
+  noteUrl?: string;
+  publishAt?: string;
+  publish_at?: string;
+  likeCount?: number;
+  like_count?: number;
+  price?: number;
+  body?: string;
+  user?: { nickname?: string; name?: string; urlname?: string };
+  hashtags?: { hashtag?: { name?: string } }[];
+};
+
+type NoteApiListResponse = {
+  data?: { notes?: NoteApiNote[]; contents?: NoteApiNote[] };
+};
+
+/** noteUrl が無い応答（v3）でも記事URLを組み立てる */
+function noteUrlOf(note: NoteApiNote): string | null {
+  if (note.noteUrl) return note.noteUrl;
+  const urlname = note.user?.urlname;
+  if (urlname && note.key) return `https://note.com/${urlname}/n/${note.key}`;
+  return null;
+}
+
+const MAX_PER_SOURCE = 10;
+
+/** 本文の全文は保持しない。判断に必要な冒頭だけ */
+function excerpt(text: string, max = 220): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
+
+/** タイトル・タグ・抜粋から、まえみちの5ジャンルに当てはまるものを推定する */
+export function detectGenres(text: string): string[] {
+  const hits: string[] = [];
+  const table: Record<string, string[]> = {
+    ai: ["AI", "ChatGPT", "Claude", "Gemini", "生成AI", "プロンプト", "自動化", "LLM"],
+    "side-business": ["副業", "複業", "個人開発", "マネタイズ", "フリーランス", "受注"],
+    reading: ["読書", "本", "書評", "要約", "積読"],
+    "asset-building": ["資産", "投資", "NISA", "積立", "家計", "貯金", "株"],
+    habits: ["習慣", "継続", "ルーティン", "朝活", "時間術", "生産性"],
+  };
+  for (const [genreId, words] of Object.entries(table)) {
+    if (words.some((w) => text.includes(w))) hits.push(genreId);
+  }
+  return hits;
+}
+
+function toResearchItem(
+  note: NoteApiNote,
+  sourceType: ResearchSourceType,
+  sourceAccountId?: string
+): ResearchItem | null {
+  const title = note.name?.trim();
+  const url = noteUrlOf(note);
+  if (!title || !url) return null;
+
+  const tags = (note.hashtags ?? [])
+    .map((h) => h.hashtag?.name)
+    .filter((n): n is string => Boolean(n));
+
+  const body = note.body ? stripTags(note.body) : "";
+  const haystack = [title, tags.join(" "), body.slice(0, 400)].join(" ");
+
+  // エンドポイントによって camelCase / snake_case が混在する
+  const likes = note.likeCount ?? note.like_count;
+
+  return {
+    id: hashId("r", url),
+    platform: "note",
+    sourceType,
+    sourceAccountId,
+    sourceUrl: url,
+    title,
+    textExcerpt: excerpt(body || title),
+    authorName: note.user?.nickname ?? note.user?.name,
+    publishedAt: note.publishAt ?? note.publish_at,
+    // note が公開しているのはスキ数まで。閲覧数・売上は取らない
+    publicMetrics: typeof likes === "number" ? { likes } : undefined,
+    detectedGenreIds: detectGenres(haystack),
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+function parseNotes(body: string): NoteApiNote[] {
+  try {
+    const json = JSON.parse(body) as NoteApiListResponse;
+    return json.data?.notes ?? json.data?.contents ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export type NoteResearchResult = {
+  items: ResearchItem[];
+  /** 取得に失敗したソース。全体は失敗させず、ここに理由を残す */
+  failures: { source: string; error: string }[];
+};
+
+/** 参考クリエイターの新着・人気記事 */
+async function fetchCreator(creator: ReferenceNoteCreator): Promise<NoteResearchResult> {
+  const urlname = creator.creatorUrl.replace(/\/+$/, "").split("/").pop();
+  if (!urlname) {
+    return { items: [], failures: [{ source: creator.name, error: "URLからユーザー名を判別できません" }] };
+  }
+
+  const items: ResearchItem[] = [];
+  const failures: { source: string; error: string }[] = [];
+
+  for (const [label, url] of [
+    ["新着", `https://note.com/api/v2/creators/${encodeURIComponent(urlname)}/contents?kind=note&page=1`],
+    ["人気", `https://note.com/api/v2/creators/${encodeURIComponent(urlname)}/contents?kind=note&page=1&sort=popular`],
+  ] as const) {
+    const res = await fetchPage(url);
+    if (!res.ok) {
+      failures.push({ source: `${creator.name}(${label})`, error: res.error });
+      continue;
+    }
+    for (const note of parseNotes(res.body).slice(0, MAX_PER_SOURCE)) {
+      const item = toResearchItem(note, "reference-account", creator.id);
+      if (item) items.push(item);
+    }
+  }
+
+  return { items, failures };
+}
+
+/** タグの人気・新着記事（ハッシュタグは v3 のみ提供されている） */
+async function fetchTag(tag: string): Promise<NoteResearchResult> {
+  const url = `https://note.com/api/v3/hashtags/${encodeURIComponent(tag)}/notes?order=popular&page=1`;
+  const res = await fetchPage(url);
+  if (!res.ok) return { items: [], failures: [{ source: `タグ:${tag}`, error: res.error }] };
+
+  const items: ResearchItem[] = [];
+  for (const note of parseNotes(res.body).slice(0, MAX_PER_SOURCE)) {
+    const item = toResearchItem(note, "trend");
+    if (item) items.push(item);
+  }
+  return { items, failures: [] };
+}
+
+/**
+ * noteリサーチ本体。
+ * 参考クリエイターと対象タグを巡回し、取得できたものだけを返す。
+ */
+export async function researchNote(
+  creators: ReferenceNoteCreator[],
+  tags: string[]
+): Promise<NoteResearchResult> {
+  const items: ResearchItem[] = [];
+  const failures: { source: string; error: string }[] = [];
+
+  const activeCreators = creators
+    .filter((c) => c.active)
+    .sort((a, b) => a.priority - b.priority)
+    .slice(0, 10);
+
+  for (const creator of activeCreators) {
+    const result = await fetchCreator(creator);
+    items.push(...result.items);
+    failures.push(...result.failures);
+  }
+
+  for (const tag of tags.slice(0, 12)) {
+    const result = await fetchTag(tag);
+    items.push(...result.items);
+    failures.push(...result.failures);
+  }
+
+  // 同じURLは1件にまとめる
+  const byUrl = new Map<string, ResearchItem>();
+  for (const item of items) {
+    if (!byUrl.has(item.sourceUrl)) byUrl.set(item.sourceUrl, item);
+  }
+
+  return { items: [...byUrl.values()], failures };
+}
+
+/** ジャンルidから表示名 */
+export function genreLabel(id: string): string {
+  return DEFAULT_GENRES.find((g) => g.id === id)?.label ?? id;
+}

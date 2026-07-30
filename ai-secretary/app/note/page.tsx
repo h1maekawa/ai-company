@@ -2,21 +2,52 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { AtSign, Lightbulb, Link2, PenLine, Smartphone, Sparkles, Target } from "lucide-react";
+import {
+  AtSign,
+  BookOpen,
+  Lightbulb,
+  Link2,
+  PenLine,
+  Search,
+  Send,
+  Smartphone,
+  Sparkles,
+  Target,
+  Users,
+} from "lucide-react";
 import { IdeaInbox } from "@/components/note/IdeaInbox";
 import { Composer } from "@/components/note/Composer";
 import { AffiliateManager } from "@/components/note/AffiliateManager";
 import { BrandEditor } from "@/components/note/BrandEditor";
 import { LineProgram } from "@/components/note/LineProgram";
 import { XAccounts } from "@/components/note/XAccounts";
+import { ResearchPanel, ResearchSummaryCard } from "@/components/note/ResearchPanel";
+import { ReferenceAccounts } from "@/components/note/ReferenceAccounts";
+import { ExperienceLibrary } from "@/components/note/ExperienceLibrary";
+import { PublishQueue } from "@/components/note/PublishQueue";
 import { Card, CardHeader } from "@/components/ui/primitives";
 import type { Idea } from "@/app/lib/note/types";
 import { useAffiliates, useBrand, useIdeas } from "./useNote";
 
-type Tab = "dashboard" | "ideas" | "write" | "x" | "line" | "affiliate" | "brand";
+type Tab =
+  | "dashboard"
+  | "research"
+  | "references"
+  | "experiences"
+  | "queue"
+  | "ideas"
+  | "write"
+  | "x"
+  | "line"
+  | "affiliate"
+  | "brand";
 
 const TABS: { id: Tab; label: string; icon: typeof Lightbulb }[] = [
   { id: "dashboard", label: "ダッシュボード", icon: Target },
+  { id: "research", label: "リサーチ候補", icon: Search },
+  { id: "references", label: "参考アカウント", icon: Users },
+  { id: "experiences", label: "体験ライブラリ", icon: BookOpen },
+  { id: "queue", label: "投稿キュー", icon: Send },
   { id: "ideas", label: "ネタ帳", icon: Lightbulb },
   { id: "write", label: "記事を作る", icon: PenLine },
   { id: "x", label: "Xアカウント", icon: AtSign },
@@ -157,6 +188,16 @@ export default function NoteDepartmentPage() {
             </Card>
 
             <div className="grid gap-3 sm:grid-cols-2">
+              <ResearchSummaryCard onOpen={() => setTab("research")} />
+              <button
+                onClick={() => setTab("experiences")}
+                className="rounded-2xl border border-hairline bg-ink-card p-4 text-left transition-colors hover:border-gain/40"
+              >
+                <p className="text-sm font-semibold text-white">📗 体験ライブラリ</p>
+                <p className="mt-1 text-[11px] text-sub">
+                  実際にやったことを貯めるほど、記事もX投稿も具体的になります
+                </p>
+              </button>
               <button
                 onClick={() => setTab("ideas")}
                 className="rounded-2xl border border-hairline bg-ink-card p-4 text-left transition-colors hover:border-brand/40"
@@ -178,6 +219,11 @@ export default function NoteDepartmentPage() {
             </div>
           </div>
         )}
+
+        {tab === "research" && <ResearchPanel />}
+        {tab === "references" && <ReferenceAccounts />}
+        {tab === "experiences" && <ExperienceLibrary />}
+        {tab === "queue" && <PublishQueue />}
 
         {tab === "ideas" && (
           <IdeaInbox
