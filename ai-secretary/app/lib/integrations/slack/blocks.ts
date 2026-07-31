@@ -6,7 +6,7 @@
  */
 
 import { genreLabel } from "../../note/research/sources/note";
-import { ResearchItem, SocialDraft, TrendCluster } from "../../note/research/types";
+import { ResearchItem, SocialDraft, TrendCluster, NoteArticleDraft } from "../../note/research/types";
 
 export type SlackBlock = Record<string, unknown>;
 
@@ -129,6 +129,38 @@ export function candidateBlocks(
 
   blocks.push({ type: "divider" });
   return blocks;
+}
+
+/** 生成されたnote記事の確認カード */
+export function articleBlocks(article: NoteArticleDraft): SlackBlock[] {
+  const summary = article.subtitle || article.freeSection.slice(0, 100).replace(/\n/g, " ");
+
+  return [
+    { type: "header", text: { type: "plain_text", text: article.title.slice(0, 150), emoji: true } },
+    { type: "section", text: { type: "mrkdwn", text: `*説明*\n${summary}` } },
+    {
+      type: "section",
+      fields: [
+        { type: "mrkdwn", text: `*種類*\n${article.articleType === "paid" ? "🔒 有料" : "🆓 無料"}` },
+        {
+          type: "mrkdwn",
+          text: article.articleType === "paid"
+            ? `*価格*\n¥${article.price ?? "未設定"}`
+            : "*公開*\n全体",
+        },
+      ],
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: `*タグ*\n${article.tags.join(" / ") || "—"}` },
+    },
+    {
+      type: "actions",
+      block_id: `article:${article.id}`,
+      elements: [button("確認・公開", ACTIONS.noteFinalize, article.id, "primary")],
+    },
+    { type: "divider" },
+  ];
 }
 
 /** 生成されたX投稿の確認カード */

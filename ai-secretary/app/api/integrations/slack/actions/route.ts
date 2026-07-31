@@ -1,5 +1,5 @@
 import { verifySlackRequest } from "@/app/lib/integrations/slack/verify";
-import { ACTIONS, draftBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
+import { ACTIONS, draftBlocks, articleBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
 import { claimOnce } from "@/app/lib/note/publishing/queue";
 import {
   loadClusters,
@@ -7,6 +7,7 @@ import {
   saveClusters,
   saveSocialDrafts,
 } from "@/app/lib/note/research/store";
+import { createPost, countScheduled } from "@/app/lib/note/publishing/buffer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -123,20 +124,26 @@ export async function POST(req: Request): Promise<Response> {
         return ok("リンクとPR表記を外しました。");
       }
 
-      case ACTIONS.bufferQueue:
-      case ACTIONS.bufferNow:
-      case ACTIONS.bufferSchedule:
-        return ok(
-          "Bufferへの送信はNote事業部の投稿キュー画面から実行してください（安全確認のため、Slackからの即時投稿は無効にしています）。"
-        );
+      case ACTIONS.bufferQueue: {
+        return await handleBufferQueue(value, user);
+      }
+
+      case ACTIONS.bufferNow: {
+        return await handleBufferNow(value, user);
+      }
+
+      case ACTIONS.bufferSchedule: {
+        return await handleBufferSchedule(value, user, payload.trigger_id);
+      }
 
       case ACTIONS.moreConcrete:
       case ACTIONS.moreMaemichi:
       case ACTIONS.regenerate:
         return ok("作り直しはNote事業部の画面から行えます。");
 
-      case ACTIONS.noteFinalize:
-        return ok("note記事の確定は、価格と有料境界を確認したうえで画面から行ってください。");
+      case ACTIONS.noteFinalize: {
+        return await handleNoteFinalizeRequest(value, payload.trigger_id);
+      }
 
       default:
         return ok("未対応の操作です。");
@@ -146,6 +153,135 @@ export async function POST(req: Request): Promise<Response> {
     console.error("[slack/actions] 失敗:", error);
     return ok(`エラー: ${message}`);
   }
+}
+
+/** X投稿を Buffer のキューに追加 */
+async function handleBufferQueue(draftId: string, user: string): Promise<Response> {
+  const drafts = await loadSocialDrafts();
+  const draft = drafts.find((d) => d.id === draftId);
+  if (!draft) return ok("その下書きが見つかりませんでした。");
+  if (draft.failureReason) return ok("エラーのある下書きは送信できません。");
+
+  const maxScheduled = 20; // 無料プランの枠（環境変数化も検討）
+  const result = await createPost({
+    text: draft.text,
+    mode: "addToQueue",
+    maxScheduled,
+  });
+
+  if (!result.ok) {
+    const hint = result.error.hint ? `\n💡 ${result.error.hint}` : "";
+    return ok(`投稿をキューに追加できませんでした: ${result.error.message}${hint}`);
+  }
+
+  await saveSocialDrafts(
+    drafts.map((d) =>
+      d.id === draftId
+        ? { ...d, status: "queued" as const, updatedAt: new Date().toISOString() }
+        : d
+    )
+  );
+
+  return ok(`✅ Bufferのキューに追加しました（投稿ID: ${result.data.id}）`);
+}
+
+/** X投稿を Buffer の下書きに保存（人間が確認後に投稿） */
+async function handleBufferNow(draftId: string, user: string): Promise<Response> {
+  const drafts = await loadSocialDrafts();
+  const draft = drafts.find((d) => d.id === draftId);
+  if (!draft) return ok("その下書きが見つかりませんでした。");
+  if (draft.failureReason) return ok("エラーのある下書きは送信できません。");
+
+  const result = await createPost({
+    text: draft.text,
+    mode: "saveToDraft",
+  });
+
+  if (!result.ok) {
+    const hint = result.error.hint ? `\n💡 ${result.error.hint}` : "";
+    return ok(`Buffer下書きに保存できませんでした: ${result.error.message}${hint}`);
+  }
+
+  await saveSocialDrafts(
+    drafts.map((d) =>
+      d.id === draftId
+        ? { ...d, status: "scheduled" as const, updatedAt: new Date().toISOString() }
+        : d
+    )
+  );
+
+  return ok(`✅ Bufferの下書きに保存しました（投稿ID: ${result.data.id}）\nBuffer上で確認＆投稿してください。`);
+}
+
+/** X投稿を Buffer に日時指定予約（モーダルで日時入力） */
+async function handleBufferSchedule(
+  draftId: string,
+  user: string,
+  triggerId?: string
+): Promise<Response> {
+  const drafts = await loadSocialDrafts();
+  const draft = drafts.find((d) => d.id === draftId);
+  if (!draft) return ok("その下書きが見つかりませんでした。");
+  if (draft.failureReason) return ok("エラーのある下書きは送信できません。");
+
+  // 現在は使える情報から最適な時間を提案して、Note事業部の画面で編集させる
+  // （Slack モーダルは複雑なので、まずはシンプルに）
+  return ok(
+    "日時指定予約はNote事業部の投稿キュー画面で行ってください。\n" +
+      "そこで投稿を選択して「日時を指定」から設定できます。"
+  );
+}
+
+/** note記事の公開・下書き保存承認 */
+async function handleNoteFinalizeRequest(articleId: string, triggerId?: string): Promise<Response> {
+  const { loadNoteQueue } = await import("@/app/lib/note/research/store");
+  const queue = await loadNoteQueue();
+  const article = queue.articles.find((a) => a.id === articleId);
+
+  if (!article) {
+    return ok("その記事が見つかりませんでした。");
+  }
+
+  const base = process.env.APP_BASE_URL;
+  if (!base) {
+    return ok("APP_BASE_URL が未設定のため、処理できませんでした。");
+  }
+
+  // 記事の詳細メッセージを送信
+  const lines = [
+    `*記事タイトル*\n${article.title}`,
+    "",
+    `*種類*: ${article.articleType === "paid" ? "有料" : "無料"}`,
+    "",
+    `*プレビュー*\n<${base}/note?view=queue&id=${articleId}|Note事業部で確認>`,
+  ];
+
+  if (article.articleType === "paid") {
+    lines.push(`*価格*: ¥${article.price ?? "未設定"}`);
+    lines.push(`*有料開始*: ${article.paywallAfterHeading ?? "本文最初"}`);
+  }
+
+  lines.push("");
+  lines.push("以下から選んでください:");
+  lines.push("• 下書きで保存（Slackボタンは無効。Note事業部の画面から実行ください）");
+  lines.push("• 下書き保存後に公開するなら、設定画面で `note自動公開: ON / 下書きのみ: OFF` にしてください");
+
+  await postToSlack(lines.join("\n"), [
+    {
+      type: "actions",
+      block_id: `article:${article.id}`,
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Note事業部で確認・設定", emoji: true },
+          url: `${base}/note?view=queue&id=${articleId}`,
+          action_id: "open_ui",
+        },
+      ],
+    },
+  ]);
+
+  return ok("Note事業部のUIで確認してください（Slackからの直接公開は設定のためスキップしています）");
 }
 
 /** 生成して結果をSlackへ返す */
@@ -236,16 +372,14 @@ async function generateInBackground(
     } else if (result.article) {
       const queue = await store.loadNoteQueue();
       await store.saveNoteQueue({ ...queue, articles: [result.article, ...queue.articles] });
-      await postToSlack(
-        [
-          `note記事の下書きができました（${result.article.articleType}）`,
-          `*${result.article.title}*`,
-          result.warning ? `注意: ${result.warning}` : "",
-          "価格と公開はNote事業部の画面から確認してください。",
-        ]
-          .filter(Boolean)
-          .join("\n")
-      );
+      const blocks = articleBlocks(result.article);
+      if (result.warning) {
+        blocks.unshift({
+          type: "section",
+          text: { type: "mrkdwn", text: `⚠️ ${result.warning}` },
+        });
+      }
+      await postToSlack("note記事の下書きができました（Slackから確認・公開できます）", blocks);
     }
   }
 
