@@ -5,7 +5,7 @@
  * 投稿に失敗しても下書き（SocialDraft.text）は残す。
  */
 
-const BUFFER_ENDPOINT = "https://graph.buffer.com/";
+const BUFFER_ENDPOINT = "https://api.buffer.com";
 
 export type BufferMode = "saveToDraft" | "addToQueue" | "customScheduled";
 
@@ -134,21 +134,19 @@ export async function getChannels(): Promise<BufferResult<BufferChannel[]>> {
     };
   }
 
-  const result = await graphql<{ account?: { channels?: BufferChannel[] } }>(
-    `query Channels($organizationId: String!) {
-      account {
-        channels(input: { organizationId: $organizationId }) {
-          id
-          service
-          name
-        }
+  const result = await graphql<{ channels?: BufferChannel[] }>(
+    `query Channels($organizationId: OrganizationId!) {
+      channels(input: { organizationId: $organizationId }) {
+        id
+        service
+        name
       }
     }`,
     { organizationId: cfg.org }
   );
 
   if (!result.ok) return result;
-  return { ok: true, data: result.data.account?.channels ?? [] };
+  return { ok: true, data: result.data.channels ?? [] };
 }
 
 /* ─── 予約中の件数 ───────────────────────── */
@@ -161,8 +159,14 @@ export async function countScheduled(): Promise<BufferResult<number>> {
   if (!cfg) return { ok: false, error: { kind: "config", message: "Bufferの環境変数が未設定です" } };
 
   const result = await graphql<{ posts?: { edges?: { node: BufferPostNode }[] } }>(
-    `query Posts($organizationId: String!, $channelIds: [String!]) {
-      posts(input: { organizationId: $organizationId, channelIds: $channelIds, status: pending }) {
+    `query Posts($organizationId: OrganizationId!, $channelIds: [ChannelId!]) {
+      posts(
+        first: 100
+        input: {
+          organizationId: $organizationId
+          filter: { channelIds: $channelIds, status: [scheduled] }
+        }
+      ) {
         edges { node { id status dueAt } }
       }
     }`,
@@ -207,20 +211,30 @@ export async function createPost(
     }
   }
 
-  const result = await graphql<{ createPost?: { id?: string; status?: string; dueAt?: string } }>(
+  const result = await graphql<{
+    createPost?: {
+      post?: { id?: string; status?: string; dueAt?: string };
+      message?: string;
+    };
+  }>(
     `mutation CreatePost($input: CreatePostInput!) {
       createPost(input: $input) {
-        id
-        status
-        dueAt
+        ... on PostActionSuccess {
+          post { id status dueAt }
+        }
+        ... on MutationError {
+          message
+        }
       }
     }`,
     {
       input: {
-        organizationId: cfg.org,
-        channelIds: [cfg.channel],
+        channelId: cfg.channel,
         text: input.text,
-        mode: input.mode,
+        schedulingType: "automatic",
+        mode: input.mode === "saveToDraft" ? "addToQueue" : input.mode,
+        saveToDraft: input.mode === "saveToDraft",
+        aiAssisted: true,
         ...(input.mode === "customScheduled" && input.scheduledAt
           ? { dueAt: input.scheduledAt }
           : {}),
@@ -229,7 +243,13 @@ export async function createPost(
   );
 
   if (!result.ok) return result;
-  const post = result.data.createPost;
+  if (result.data.createPost?.message) {
+    return {
+      ok: false,
+      error: { kind: "mutation", message: result.data.createPost.message, hint: "下書きは保持しています" },
+    };
+  }
+  const post = result.data.createPost?.post;
   if (!post?.id) {
     return { ok: false, error: { kind: "mutation", message: "Bufferが投稿IDを返しませんでした" } };
   }
