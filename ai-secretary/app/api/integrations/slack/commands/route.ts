@@ -1,6 +1,7 @@
 import { verifySlackRequest, slackText } from "@/app/lib/integrations/slack/verify";
 import { candidateBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
 import { runResearch } from "@/app/lib/note/research/run";
+import { runDailyXAutomation } from "@/app/lib/note/automation/dailyX";
 import { withLock } from "@/app/lib/note/publishing/queue";
 import {
   loadClusters,
@@ -50,9 +51,11 @@ export async function POST(req: Request): Promise<Response> {
         return await handlePerformance();
       case "settings":
         return await handleSettings();
+      case "autopost":
+        return handleAutoPost();
       default:
         return slackText(
-          "使い方: `/maemichi research | candidates | queue | performance | settings`"
+          "使い方: `/maemichi research | candidates | autopost | queue | performance | settings`"
         );
     }
   } catch (error) {
@@ -60,6 +63,13 @@ export async function POST(req: Request): Promise<Response> {
     console.error("[slack/commands] 失敗:", error);
     return slackText(`エラー: ${message}`);
   }
+}
+
+function handleAutoPost(): Response {
+  void withLock("daily-x-publish", runDailyXAutomation).catch((error) =>
+    console.error("[slack/commands] autopost失敗:", error)
+  );
+  return slackText("X投稿案の生成を開始しました。完了後、このチャンネルに確認カードを送ります。");
 }
 
 async function handleResearch(): Promise<Response> {
