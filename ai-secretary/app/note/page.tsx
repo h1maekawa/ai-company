@@ -10,6 +10,7 @@ import {
   PenLine,
   Search,
   Send,
+  Settings,
   Smartphone,
   Sparkles,
   Target,
@@ -25,6 +26,7 @@ import { ResearchPanel, ResearchSummaryCard } from "@/components/note/ResearchPa
 import { ReferenceAccounts } from "@/components/note/ReferenceAccounts";
 import { ExperienceLibrary } from "@/components/note/ExperienceLibrary";
 import { PublishQueue } from "@/components/note/PublishQueue";
+import { AutomationSettings } from "@/components/note/AutomationSettings";
 import { Card, CardHeader } from "@/components/ui/primitives";
 import type { Idea } from "@/app/lib/note/types";
 import { useAffiliates, useBrand, useIdeas } from "./useNote";
@@ -35,6 +37,7 @@ type Tab =
   | "references"
   | "experiences"
   | "queue"
+  | "settings"
   | "ideas"
   | "write"
   | "x"
@@ -48,6 +51,7 @@ const TABS: { id: Tab; label: string; icon: typeof Lightbulb }[] = [
   { id: "references", label: "参考アカウント", icon: Users },
   { id: "experiences", label: "体験ライブラリ", icon: BookOpen },
   { id: "queue", label: "投稿キュー", icon: Send },
+  { id: "settings", label: "自動化設定", icon: Settings },
   { id: "ideas", label: "ネタ帳", icon: Lightbulb },
   { id: "write", label: "記事を作る", icon: PenLine },
   { id: "x", label: "Xアカウント", icon: AtSign },
@@ -224,6 +228,7 @@ export default function NoteDepartmentPage() {
         {tab === "references" && <ReferenceAccounts />}
         {tab === "experiences" && <ExperienceLibrary />}
         {tab === "queue" && <PublishQueue />}
+        {tab === "settings" && <AutomationSettings />}
 
         {tab === "ideas" && (
           <IdeaInbox

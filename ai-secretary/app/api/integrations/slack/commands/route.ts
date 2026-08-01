@@ -172,7 +172,7 @@ async function handleSettings(): Promise<Response> {
     `*note自動公開*: ${s.flags.noteAutoPublish ? "ON" : "OFF"}（下書きのみ: ${s.flags.noteDraftOnly ? "はい" : "いいえ"}）`,
     `*1日のX上限*: ${s.flags.maxXPostsPerDay}件 / *Buffer予約上限*: ${s.flags.maxBufferScheduled}件`,
     "",
-    "変更は Note事業部 の設定画面から行えます。",
+    "変更は Note事業部 → 自動化設定 から行えます。",
   ];
   return slackText(lines.join("\n"));
 }
