@@ -189,3 +189,29 @@ test("ランナートークンも同様に検証される", () => {
   assert.equal(machineAuth.verifyRunnerToken(reqWith({ "x-runner-token": "runner-xyz" })).ok, true);
   assert.equal(machineAuth.verifyRunnerToken(reqWith({ authorization: "Bearer nope" })).ok, false);
 });
+
+test("Local AI Workerトークンは未設定時にfail-closeする", () => {
+  delete process.env.MAEMICHI_LOCAL_AI_WORKER_TOKEN;
+  assert.equal(
+    machineAuth.verifyLocalAiWorkerToken(reqWith({ authorization: "Bearer x" })).ok,
+    false
+  );
+
+  process.env.MAEMICHI_LOCAL_AI_WORKER_TOKEN = "local-ai-secret";
+  assert.equal(
+    machineAuth.verifyLocalAiWorkerToken(
+      reqWith({ authorization: "Bearer local-ai-secret" })
+    ).ok,
+    true
+  );
+  assert.equal(
+    machineAuth.verifyLocalAiWorkerToken(
+      reqWith({ "x-local-ai-worker-token": "local-ai-secret" })
+    ).ok,
+    true
+  );
+  assert.equal(
+    machineAuth.verifyLocalAiWorkerToken(reqWith({ authorization: "Bearer wrong" })).ok,
+    false
+  );
+});

@@ -50,6 +50,10 @@ export type LocalAiReviewJob = {
   id: string;
   status: LocalAiReviewJobStatus;
   input: LocalAiReviewInput;
+  context: {
+    brandRules: string;
+    verifiedExperiences: string[];
+  };
   result?: LocalAiReviewResult;
   errorCode?: string;
   attempt: number;
@@ -62,4 +66,3 @@ export type LocalAiReviewJob = {
   adoptedAt?: string;
   rejectedAt?: string;
 };
-

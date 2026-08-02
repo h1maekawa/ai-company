@@ -17,6 +17,7 @@ npx tsc \
   app/lib/note/editor/brandRules.ts \
   app/lib/note/editor/preservation.ts \
   app/lib/note/editor/jobs.ts \
+  app/lib/note/editor/review.ts \
   app/lib/note/publishing/queue.ts \
   app/lib/integrations/slack/verify.ts \
   app/lib/integrations/machine-auth.ts \
