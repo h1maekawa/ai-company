@@ -410,6 +410,8 @@ export type PublishJob = {
 /* ─── フィーチャーフラグ / 停止スイッチ ─────────────── */
 
 export type FeatureFlags = {
+  /** 本人原稿をMac上のローカルAIで添削する。初期OFF */
+  localAiEditorEnabled: boolean;
   /** 全体の停止スイッチ。false ならどのチャネルにも投稿しない */
   publishingEnabled: boolean;
   /** X自動投稿（Buffer予約）。初期OFF */
@@ -430,6 +432,7 @@ export type FeatureFlags = {
 
 export function defaultFeatureFlags(): FeatureFlags {
   return {
+    localAiEditorEnabled: false,
     publishingEnabled: false,
     xAutoPublish: false,
     noteAutoPublish: false,
