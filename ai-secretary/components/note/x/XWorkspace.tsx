@@ -51,7 +51,7 @@ export function XWorkspace({ accounts, onOpenLocalEditor }: { accounts: XAccount
       : "ポップアップがブロックされました。ブラウザでこのサイトのポップアップを許可してください。");
   }
 
-  async function markPosted() {
+  async function markPosted(source: "ai-secretary" | "manual" = "ai-secretary") {
     if (!draft.trim()) return;
     if (finalUrl && !parseXPostUrl(finalUrl)) {
       setError("投稿URLの形式が不正です"); return;
@@ -59,7 +59,7 @@ export function XWorkspace({ accounts, onOpenLocalEditor }: { accounts: XAccount
     const now = new Date().toISOString();
     const post: OwnedXPost = {
       id: `ox_${Date.now().toString(36)}`, accountId: accountId || "maemichi", text: draft.trim(),
-      url: finalUrl.trim() || undefined, postedAt: now, source: "ai-secretary", genreIds: [],
+      url: finalUrl.trim() || undefined, postedAt: now, source, genreIds: [],
       verifiedByUser: true, finalTextConfirmed: true, createdAt: now, updatedAt: now,
     };
     await save({ ...data, ownedPosts: [post, ...data.ownedPosts] });
@@ -111,7 +111,10 @@ export function XWorkspace({ accounts, onOpenLocalEditor }: { accounts: XAccount
             <label className="text-xs text-sub">X側で投稿した後のURL（任意）</label>
             <input value={finalUrl} onChange={(e) => setFinalUrl(e.target.value)} placeholder="https://x.com/.../status/..."
               className="mt-1 w-full rounded-lg border border-hairline bg-white/[0.03] px-3 py-2 text-xs" />
-            <button onClick={markPosted} className="mt-2 rounded-lg border border-gain/40 px-3 py-2 text-xs text-gain">本人が投稿済みにする</button>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button onClick={() => markPosted("ai-secretary")} className="rounded-lg border border-gain/40 px-3 py-2 text-xs text-gain">本人が投稿済みにする</button>
+              <button onClick={() => markPosted("manual")} className="rounded-lg border border-hairline px-3 py-2 text-xs">過去投稿を手動登録</button>
+            </div>
           </div>
         </Card>
         <Card><CardHeader title="本人投稿履歴" hint={`${data.ownedPosts.length}件`} />
@@ -136,7 +139,13 @@ export function XWorkspace({ accounts, onOpenLocalEditor }: { accounts: XAccount
           <input value={postUrl} onChange={(e) => setPostUrl(e.target.value)} placeholder="https://x.com/handle/status/123..."
             className="w-full rounded-lg border border-hairline bg-white/[0.03] px-3 py-2 text-xs" />
           <div className="mt-3"><XEmbeddedPost url={postUrl} /></div>
-          {parseXPostUrl(postUrl) && <button onClick={saveReference} className="mt-2 rounded-lg border border-hairline px-3 py-2 text-xs">参考ポイントを記録</button>}
+          {parseXPostUrl(postUrl) && <div className="mt-2 flex flex-wrap gap-2">
+            <button onClick={saveReference} className="rounded-lg border border-hairline px-3 py-2 text-xs">参考ポイントを記録</button>
+            <button onClick={() => { setFinalUrl(postUrl); setNotice("本人投稿として保存する場合は、左側へ本人が確認した本文を入力してください。"); }}
+              className="rounded-lg border border-hairline px-3 py-2 text-xs">自分の投稿として登録</button>
+            <button onClick={() => { setDraft(""); setNotice("他者の本文は自動取得しません。参考ポイントを見て、自分の言葉で左側へ下書きを作成してください。"); }}
+              className="rounded-lg border border-hairline px-3 py-2 text-xs">この投稿を元に下書き</button>
+          </div>}
         </Card>
       </div>
     </div>
