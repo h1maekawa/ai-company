@@ -15,6 +15,7 @@ const VALID_RULES = `
 実体験を捏造しない
 投稿品質スコア
 `;
+const TEST_CONTEXT = { brandRules: VALID_RULES, verifiedExperiences: [] };
 
 function input(overrides = {}) {
   return {
@@ -94,6 +95,17 @@ test("元文章にないURLを追加すると拒否する", () => {
   assert.ok(issues.some((issue) => issue.field === "url"));
 });
 
+test("元文章にない英数字の固有表記を追加すると拒否する", () => {
+  const issues = preservation.validatePreservation(
+    input(),
+    result({
+      revisedText:
+        "ChatGPTとGeminiを3日間使いました。料金は1,000円でした。https://example.com を確認しました。焦らず、一歩ずつ。",
+    })
+  );
+  assert.ok(issues.some((issue) => issue.field === "identifier" && issue.value === "Gemini"));
+});
+
 test("残したい表現を削除すると拒否する", () => {
   const issues = preservation.validatePreservation(
     input(),
@@ -166,7 +178,7 @@ class FakeRedis {
 
 test("同じ添削ジョブを2つのWorkerが同時に取得しない", async () => {
   const redis = new FakeRedis();
-  await jobs.createLocalAiReviewJob(input(), undefined, redis);
+  await jobs.createLocalAiReviewJob(input(), TEST_CONTEXT, redis);
   const first = await jobs.claimNextLocalAiReviewJob("worker-a", 300, redis);
   const second = await jobs.claimNextLocalAiReviewJob("worker-b", 300, redis);
   assert.equal(first?.status, "running");
@@ -175,7 +187,7 @@ test("同じ添削ジョブを2つのWorkerが同時に取得しない", async (
 
 test("claim tokenが一致するWorkerだけ完了報告できる", async () => {
   const redis = new FakeRedis();
-  await jobs.createLocalAiReviewJob(input(), undefined, redis);
+  await jobs.createLocalAiReviewJob(input(), TEST_CONTEXT, redis);
   const claimed = await jobs.claimNextLocalAiReviewJob("worker-a", 300, redis);
   assert.ok(claimed?.claimToken);
   await assert.rejects(
@@ -193,7 +205,7 @@ test("claim tokenが一致するWorkerだけ完了報告できる", async () => 
 
 test("期限切れrunningジョブはpendingへ戻る", async () => {
   const redis = new FakeRedis();
-  const created = await jobs.createLocalAiReviewJob(input(), undefined, redis);
+  const created = await jobs.createLocalAiReviewJob(input(), TEST_CONTEXT, redis);
   await jobs.claimNextLocalAiReviewJob("worker-a", 1, redis);
   const count = await jobs.requeueExpiredLocalAiJobs(Date.now() + 2000, redis);
   assert.equal(count, 1);
@@ -204,7 +216,7 @@ test("期限切れrunningジョブはpendingへ戻る", async () => {
 
 test("完了した添削だけ採用・却下できる", async () => {
   const redis = new FakeRedis();
-  const created = await jobs.createLocalAiReviewJob(input(), undefined, redis);
+  const created = await jobs.createLocalAiReviewJob(input(), TEST_CONTEXT, redis);
   await assert.rejects(jobs.decideLocalAiReviewJob(created.id, "adopted", redis));
   const claimed = await jobs.claimNextLocalAiReviewJob("worker-a", 300, redis);
   const completed = await jobs.completeLocalAiReviewJob(

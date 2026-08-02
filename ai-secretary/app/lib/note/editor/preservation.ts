@@ -1,7 +1,7 @@
 import type { LocalAiReviewInput, LocalAiReviewResult } from "./types";
 
 export type PreservationIssue = {
-  field: "number" | "url" | "expression" | "score";
+  field: "number" | "url" | "identifier" | "expression" | "score";
   severity: "error" | "warning";
   value: string;
   message: string;
@@ -10,6 +10,8 @@ export type PreservationIssue = {
 const URL_PATTERN = /https?:\/\/[^\s)\]"'）]+/g;
 const NUMBER_PATTERN =
   /(?:[$¥￥]\s*)?\d[\d,]*(?:\.\d+)?(?:\s*(?:円|万円|億円|%|％|時間|分|秒|件|人|冊|回|日|月|年|株))?/g;
+/** 商品名・サービス名・銘柄で使われやすい英数字表記。新規追加を保守的に止める。 */
+const IDENTIFIER_PATTERN = /[A-Za-z][A-Za-z0-9.+#_-]{1,}/g;
 
 function tokens(text: string, pattern: RegExp): string[] {
   return Array.from(new Set(text.match(pattern) ?? []));
@@ -21,7 +23,7 @@ function normalizedFacts(input: LocalAiReviewInput): string {
 
 /**
  * Local AIが元原稿や明示された事実にない数値・URLを追加していないか検証する。
- * 固有名詞は機械判定が不安定なため、「残したい表現」を完全一致で保護する。
+ * 英数字の固有表記は新規追加を拒否し、日本語固有名詞は「残したい表現」で完全一致保護する。
  */
 export function validatePreservation(
   input: LocalAiReviewInput,
@@ -51,6 +53,20 @@ export function validatePreservation(
         severity: "error",
         value,
         message: `元原稿・追加事実にないURL「${value}」が追加されています`,
+      });
+    }
+  }
+
+  const allowedIdentifiers = new Set(
+    tokens(source, IDENTIFIER_PATTERN).map((value) => value.toLowerCase())
+  );
+  for (const value of tokens(revised.replace(URL_PATTERN, ""), IDENTIFIER_PATTERN)) {
+    if (!allowedIdentifiers.has(value.toLowerCase())) {
+      issues.push({
+        field: "identifier",
+        severity: "error",
+        value,
+        message: `元原稿・追加事実にない英数字の固有表記「${value}」が追加されています`,
       });
     }
   }
@@ -87,4 +103,3 @@ export function validatePreservation(
 
   return issues;
 }
-

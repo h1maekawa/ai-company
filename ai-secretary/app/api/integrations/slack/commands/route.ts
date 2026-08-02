@@ -92,7 +92,7 @@ async function handleEdit(triggerId: string | null): Promise<Response> {
       },
       {
         type: "input", block_id: "original", label: { type: "plain_text", text: "元になる文章" },
-        element: { type: "plain_text_input", action_id: "value", multiline: true, min_length: 10, max_length: 20000 },
+        element: { type: "plain_text_input", action_id: "value", multiline: true, min_length: 10, max_length: 3000 },
       },
       {
         type: "input", block_id: "strength", label: { type: "plain_text", text: "修正の強さ" },

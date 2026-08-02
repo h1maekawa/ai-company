@@ -5,10 +5,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "typecheck": "tsc --noEmit",
     "start": "next start",
     "worker:maemichi-local-ai": "bash scripts/run-maemichi-local-ai-worker.sh",
     "test:fund": "bash scripts/test-fund.sh",
-    "test:maemichi": "bash scripts/test-maemichi.sh"
+    "test:maemichi": "bash scripts/test-maemichi.sh",
+    "test": "npm run test:maemichi && npm run test:fund"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
