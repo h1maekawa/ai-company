@@ -64,7 +64,7 @@ export function Composer({
   const [result, setResult] = useState<ComposeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [mode, setMode] = useState<"generate" | "edit">("generate");
+  const [mode, setMode] = useState<"generate" | "edit" | "import">("generate");
 
   // ネタ帳から渡ってきたら入力欄へ流し込む
   useEffect(() => {
@@ -104,15 +104,18 @@ export function Composer({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 rounded-xl border border-hairline bg-ink-card p-1">
+      <div className="grid grid-cols-3 gap-2 rounded-xl border border-hairline bg-ink-card p-1">
         <button onClick={() => setMode("generate")} className={`rounded-lg px-3 py-2 text-sm ${mode === "generate" ? "bg-brand font-bold text-white" : "text-sub"}`}>
           AIで大枠から生成
         </button>
         <button onClick={() => setMode("edit")} className={`rounded-lg px-3 py-2 text-sm ${mode === "edit" ? "bg-brand font-bold text-white" : "text-sub"}`}>
           本人原稿を添削
         </button>
+        <button onClick={() => setMode("import")} className={`rounded-lg px-3 py-2 text-sm ${mode === "import" ? "bg-brand font-bold text-white" : "text-sub"}`}>
+          完成原稿を登録
+        </button>
       </div>
-      {mode === "edit" ? <LocalAiEditor /> : <>
+      {mode === "edit" ? <LocalAiEditor /> : mode === "import" ? <CompletedDraftImporter /> : <>
       <Card>
         <CardHeader
           title="記事を作る"
@@ -242,4 +245,75 @@ export function Composer({
       </>}
     </div>
   );
+}
+
+function CompletedDraftImporter() {
+  const [title, setTitle] = useState("");
+  const [article, setArticle] = useState("");
+  const [xText, setXText] = useState("");
+  const [needsDisclosure, setNeedsDisclosure] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function saveDraft() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/note/content/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          article,
+          needsDisclosure,
+          genreId: "reading",
+          xPosts: xText.split(/\n-{3,}\n/).map((text) => text.trim()).filter(Boolean),
+        }),
+      });
+      const result = await response.json() as { error?: string; message?: string };
+      if (!response.ok) throw new Error(result.error);
+      setMessage(result.message ?? "下書きへ保存しました");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "保存に失敗しました");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="完成した原稿を下書きへ登録"
+        hint="AIで書き換えず、入力した文章をそのまま保存します。自動公開はしません"
+      />
+      <div className="space-y-3">
+        <FieldLabel label="noteタイトル">
+          <input value={title} onChange={(event) => setTitle(event.target.value)}
+            className="mt-1 w-full rounded-xl border border-hairline bg-white/[0.03] px-3 py-2 text-sm outline-none" />
+        </FieldLabel>
+        <FieldLabel label="note本文">
+          <textarea value={article} onChange={(event) => setArticle(event.target.value)} rows={18}
+            placeholder="完成した本文を貼り付けます"
+            className="mt-1 w-full rounded-xl border border-hairline bg-white/[0.03] p-3 text-sm leading-6 outline-none" />
+        </FieldLabel>
+        <FieldLabel label="X投稿案（複数ある場合は --- だけの行で区切る）">
+          <textarea value={xText} onChange={(event) => setXText(event.target.value)} rows={8}
+            className="mt-1 w-full rounded-xl border border-hairline bg-white/[0.03] p-3 text-sm outline-none" />
+        </FieldLabel>
+        <label className="flex items-center gap-2 text-xs text-slate-300">
+          <input type="checkbox" checked={needsDisclosure} onChange={(event) => setNeedsDisclosure(event.target.checked)} />
+          アフィリエイト広告を含む（PR表記が必要）
+        </label>
+        <button onClick={saveDraft} disabled={busy || !title.trim() || !article.trim()}
+          className="w-full rounded-xl bg-brand py-3 text-sm font-bold text-white disabled:opacity-40">
+          {busy ? "保存しています…" : "note・Xの下書きへ保存"}
+        </button>
+        {message && <p className="text-xs text-gain">{message}</p>}
+      </div>
+    </Card>
+  );
+}
+
+function FieldLabel({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="block text-[11px] text-sub">{label}{children}</label>;
 }
