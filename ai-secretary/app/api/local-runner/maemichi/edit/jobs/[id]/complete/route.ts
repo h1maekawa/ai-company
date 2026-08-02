@@ -7,7 +7,7 @@ import {
 } from "@/app/lib/note/editor/jobs";
 import { validatePreservation } from "@/app/lib/note/editor/preservation";
 import type { LocalAiReviewResult } from "@/app/lib/note/editor/types";
-import { postToSlack } from "@/app/lib/integrations/slack/blocks";
+import { localAiReviewBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +46,8 @@ export async function POST(
       body.result
     );
     await postToSlack(
-      `Local AIの添削が完了しました。（ジョブ: ${job.id}）\nNote事業部で添削前後を確認してください。`
+      `Local AIの添削が完了しました。（ジョブ: ${job.id}）`,
+      localAiReviewBlocks(job)
     );
     return NextResponse.json({ ok: true, job: { id: job.id, status: job.status } });
   } catch (error) {
@@ -57,4 +58,3 @@ export async function POST(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

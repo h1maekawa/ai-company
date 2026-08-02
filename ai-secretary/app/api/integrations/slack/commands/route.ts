@@ -1,5 +1,5 @@
 import { verifySlackRequest, slackText } from "@/app/lib/integrations/slack/verify";
-import { candidateBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
+import { candidateBlocks, openSlackView, postToSlack } from "@/app/lib/integrations/slack/blocks";
 import { runResearch } from "@/app/lib/note/research/run";
 import { runDailyXAutomation } from "@/app/lib/note/automation/dailyX";
 import { withLock } from "@/app/lib/note/publishing/queue";
@@ -53,9 +53,11 @@ export async function POST(req: Request): Promise<Response> {
         return await handleSettings();
       case "autopost":
         return handleAutoPost();
+      case "edit":
+        return await handleEdit(params.get("trigger_id"));
       default:
         return slackText(
-          "使い方: `/maemichi research | candidates | autopost | queue | performance | settings`"
+          "使い方: `/maemichi edit | research | candidates | autopost | queue | performance | settings`"
         );
     }
   } catch (error) {
@@ -63,6 +65,51 @@ export async function POST(req: Request): Promise<Response> {
     console.error("[slack/commands] 失敗:", error);
     return slackText(`エラー: ${message}`);
   }
+}
+
+async function handleEdit(triggerId: string | null): Promise<Response> {
+  if (!triggerId) return slackText("Slackの入力画面を開けませんでした。もう一度実行してください。");
+  const option = (text: string, value: string) => ({
+    text: { type: "plain_text", text },
+    value,
+  });
+  const result = await openSlackView(triggerId, {
+    type: "modal",
+    callback_id: "maemichi_local_edit_submit",
+    title: { type: "plain_text", text: "まえみち原稿添削" },
+    submit: { type: "plain_text", text: "添削を依頼" },
+    close: { type: "plain_text", text: "キャンセル" },
+    blocks: [
+      {
+        type: "input", block_id: "destination", label: { type: "plain_text", text: "投稿先" },
+        element: { type: "static_select", action_id: "value", initial_option: option("Xとnote両方", "both"),
+          options: [option("X", "x"), option("note", "note"), option("Xとnote両方", "both")] },
+      },
+      {
+        type: "input", block_id: "purpose", label: { type: "plain_text", text: "記事の目的" },
+        element: { type: "static_select", action_id: "value", initial_option: option("体験共有", "experience"),
+          options: [option("認知", "awareness"), option("体験共有", "experience"), option("ノウハウ", "howto"), option("商品紹介", "product"), option("価値観", "values")] },
+      },
+      {
+        type: "input", block_id: "original", label: { type: "plain_text", text: "元になる文章" },
+        element: { type: "plain_text_input", action_id: "value", multiline: true, min_length: 10, max_length: 20000 },
+      },
+      {
+        type: "input", block_id: "strength", label: { type: "plain_text", text: "修正の強さ" },
+        element: { type: "static_select", action_id: "value", initial_option: option("軽く整える", "light"),
+          options: [option("軽く整える", "light"), option("読みやすく構成変更", "structure"), option("大幅に書き直す", "rewrite")] },
+      },
+      {
+        type: "input", optional: true, block_id: "keep", label: { type: "plain_text", text: "残したい表現（1行に1つ）" },
+        element: { type: "plain_text_input", action_id: "value", multiline: true },
+      },
+      {
+        type: "input", optional: true, block_id: "facts", label: { type: "plain_text", text: "確認済みの追加事実（1行に1つ）" },
+        element: { type: "plain_text_input", action_id: "value", multiline: true },
+      },
+    ],
+  });
+  return result.ok ? new Response("", { status: 200 }) : slackText(`入力画面を開けません: ${result.error}`);
 }
 
 function handleAutoPost(): Response {
@@ -168,6 +215,7 @@ async function handleSettings(): Promise<Response> {
     `*Xリサーチ*: ${s.x.mode} / ${s.x.enabled ? "有効" : "無効"}`,
     `*API予算*: $${s.x.currentEstimatedSpendUsd} / $${s.x.monthlyBudgetUsd}`,
     `*投稿全体*: ${s.flags.publishingEnabled ? "有効" : "停止中"}`,
+    `*Local AI添削*: ${s.flags.localAiEditorEnabled ? "ON" : "OFF"}`,
     `*X自動投稿*: ${s.flags.xAutoPublish ? "ON" : "OFF"}`,
     `*note自動公開*: ${s.flags.noteAutoPublish ? "ON" : "OFF"}（下書きのみ: ${s.flags.noteDraftOnly ? "はい" : "いいえ"}）`,
     `*1日のX上限*: ${s.flags.maxXPostsPerDay}件 / *Buffer予約上限*: ${s.flags.maxBufferScheduled}件`,
