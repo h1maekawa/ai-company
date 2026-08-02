@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "start": "next start",
     "worker:maemichi-local-ai": "bash scripts/run-maemichi-local-ai-worker.sh",
+    "import:x-archive": "bash scripts/run-x-archive-import.sh",
     "test:fund": "bash scripts/test-fund.sh",
     "test:maemichi": "bash scripts/test-maemichi.sh",
     "test": "npm run test:maemichi && npm run test:fund"
