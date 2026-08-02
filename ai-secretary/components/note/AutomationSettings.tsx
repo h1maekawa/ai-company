@@ -32,6 +32,15 @@ export function AutomationSettings() {
         />
         <div className="grid gap-3 sm:grid-cols-2">
           <Toggle
+            label="本人原稿のLocal AI添削"
+            hint="MacのWorkerで添削します。ONでも外部公開は行いません"
+            checked={flags.localAiEditorEnabled}
+            disabled={settings.saving}
+            onChange={(localAiEditorEnabled) =>
+              settings.save({ flags: { localAiEditorEnabled } })
+            }
+          />
+          <Toggle
             label="Xリサーチを有効にする"
             hint="OFFの間は /maemichi research を実行してもXを調査しません"
             checked={x.enabled}

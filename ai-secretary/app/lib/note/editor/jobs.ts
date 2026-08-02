@@ -41,11 +41,7 @@ async function saveJob(redis: JobRedis, job: LocalAiReviewJob): Promise<void> {
 
 export async function createLocalAiReviewJob(
   input: LocalAiReviewInput,
-  context: LocalAiReviewJob["context"] = {
-    brandRules:
-      "# まえみち ブランド・投稿生成ルール\nブランド\n実体験\n投稿品質スコア",
-    verifiedExperiences: [],
-  },
+  context: LocalAiReviewJob["context"],
   redis: JobRedis = requireRedis()
 ): Promise<LocalAiReviewJob> {
   const now = new Date().toISOString();

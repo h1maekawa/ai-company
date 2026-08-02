@@ -10,10 +10,10 @@ export async function GET(
   try {
     const job = await getLocalAiReviewJob(params.id);
     if (!job) return NextResponse.json({ error: "ジョブが見つかりません" }, { status: 404 });
-    return NextResponse.json({ job });
+    const { context: _privateContext, claimToken: _claimToken, ...publicJob } = job;
+    return NextResponse.json({ job: publicJob });
   } catch (error) {
     const message = error instanceof Error ? error.message : "ジョブを取得できませんでした";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

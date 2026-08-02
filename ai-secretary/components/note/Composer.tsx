@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { PenLine, ShieldCheck } from "lucide-react";
 import type { Genre, Idea, XAccount } from "@/app/lib/note/types";
 import { Card, CardHeader, Badge, Skeleton } from "@/components/ui/primitives";
+import { LocalAiEditor } from "./LocalAiEditor";
 
 type ComposeResponse = {
   article: string;
@@ -63,6 +64,7 @@ export function Composer({
   const [result, setResult] = useState<ComposeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [mode, setMode] = useState<"generate" | "edit">("generate");
 
   // ネタ帳から渡ってきたら入力欄へ流し込む
   useEffect(() => {
@@ -102,6 +104,15 @@ export function Composer({
 
   return (
     <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2 rounded-xl border border-hairline bg-ink-card p-1">
+        <button onClick={() => setMode("generate")} className={`rounded-lg px-3 py-2 text-sm ${mode === "generate" ? "bg-brand font-bold text-white" : "text-sub"}`}>
+          AIで大枠から生成
+        </button>
+        <button onClick={() => setMode("edit")} className={`rounded-lg px-3 py-2 text-sm ${mode === "edit" ? "bg-brand font-bold text-white" : "text-sub"}`}>
+          本人原稿を添削
+        </button>
+      </div>
+      {mode === "edit" ? <LocalAiEditor /> : <>
       <Card>
         <CardHeader
           title="記事を作る"
@@ -228,6 +239,7 @@ export function Composer({
           {result.lineMessage && <CopyBlock label="公式LINE配信文" text={result.lineMessage} />}
         </>
       )}
+      </>}
     </div>
   );
 }
