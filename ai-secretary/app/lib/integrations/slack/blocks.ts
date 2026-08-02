@@ -291,14 +291,15 @@ export async function openSlackView(
 /** Incoming Webhook があればそこへ、無ければ chat.postMessage を使う */
 export async function postToSlack(
   text: string,
-  blocks?: SlackBlock[]
+  blocks?: SlackBlock[],
+  options?: { channel?: string; threadTs?: string }
 ): Promise<{ ok: boolean; error?: string }> {
   const webhook = process.env.SLACK_WEBHOOK_URL;
   const botToken = process.env.SLACK_BOT_TOKEN;
   const channel = process.env.SLACK_CHANNEL_ID;
 
   try {
-    if (webhook) {
+    if (webhook && !options?.channel && !options?.threadTs) {
       const res = await fetch(webhook, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -307,14 +308,20 @@ export async function postToSlack(
       return res.ok ? { ok: true } : { ok: false, error: `Slack Webhook: HTTP ${res.status}` };
     }
 
-    if (botToken && channel) {
+    const destination = options?.channel || channel;
+    if (botToken && destination) {
       const res = await fetch("https://slack.com/api/chat.postMessage", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${botToken}`,
         },
-        body: JSON.stringify({ channel, text, blocks }),
+        body: JSON.stringify({
+          channel: destination,
+          text,
+          blocks,
+          ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
+        }),
       });
       const body = (await res.json()) as { ok?: boolean; error?: string };
       return body.ok ? { ok: true } : { ok: false, error: body.error ?? "Slack APIエラー" };

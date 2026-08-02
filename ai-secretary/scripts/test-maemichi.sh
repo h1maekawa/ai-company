@@ -25,6 +25,7 @@ npx tsc \
   app/lib/note/x/types.ts \
   app/lib/note/publishing/queue.ts \
   app/lib/integrations/slack/verify.ts \
+  app/lib/integrations/slack/conversation.ts \
   app/lib/integrations/machine-auth.ts \
   app/lib/integrations/vercel-background.ts \
   --outDir "$DIST" --module commonjs --target es2020 \
