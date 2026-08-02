@@ -1,9 +1,13 @@
 "use client";
 
 import { Search, Sparkles, TriangleAlert } from "lucide-react";
+import { useMemo, useState } from "react";
 import { genreLabel } from "@/app/lib/note/research/sources/note";
 import { Card, CardHeader, EmptyState, Skeleton } from "@/components/ui/primitives";
 import { useCandidates } from "@/app/note/useResearch";
+
+type ResultView = "recommended" | "review" | "excluded";
+const INITIAL_RESULT_COUNT = 8;
 
 /**
  * リサーチ候補。
@@ -12,7 +16,29 @@ import { useCandidates } from "@/app/note/useResearch";
  */
 export function ResearchPanel() {
   const state = useCandidates();
-  const visible = state.clusters.filter((c) => c.status === "candidate" || c.status === "selected");
+  const [view, setView] = useState<ResultView>("recommended");
+  const [resultCount, setResultCount] = useState(INITIAL_RESULT_COUNT);
+  const resultGroups = useMemo(() => {
+    const candidates = state.clusters.filter(
+      (c) => c.status === "candidate" || c.status === "selected"
+    );
+    return {
+      recommended: candidates.filter(
+        (c) => !c.blocked && c.brandFitScore >= 7 && c.totalScore >= 25
+      ),
+      review: candidates.filter(
+        (c) => !c.blocked && (c.brandFitScore < 7 || c.totalScore < 25)
+      ),
+      excluded: candidates.filter((c) => c.blocked),
+    };
+  }, [state.clusters]);
+  const selectedResults = resultGroups[view];
+  const visible = selectedResults.slice(0, resultCount);
+
+  function changeView(next: ResultView) {
+    setView(next);
+    setResultCount(INITIAL_RESULT_COUNT);
+  }
 
   return (
     <div className="space-y-4">
@@ -48,79 +74,84 @@ export function ResearchPanel() {
         </details>
       </Card>
 
+      {!state.loading && state.clusters.length > 0 && (
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="リサーチ結果の絞り込み">
+          <ResultTab
+            active={view === "recommended"}
+            label="おすすめ"
+            count={resultGroups.recommended.length}
+            onClick={() => changeView("recommended")}
+          />
+          <ResultTab
+            active={view === "review"}
+            label="要確認"
+            count={resultGroups.review.length}
+            onClick={() => changeView("review")}
+          />
+          <ResultTab
+            active={view === "excluded"}
+            label="対象外"
+            count={resultGroups.excluded.length}
+            onClick={() => changeView("excluded")}
+          />
+        </div>
+      )}
+
       {state.loading ? (
         <Skeleton className="h-64 rounded-2xl" />
       ) : visible.length === 0 ? (
         <Card>
           <EmptyState
             icon={<Search className="h-7 w-7" />}
-            title="候補がまだありません"
-            description="上の「新しい話題を探す」を押してください。見つかったテーマがここに並びます。"
+            title={state.clusters.length === 0 ? "候補がまだありません" : "この分類には候補がありません"}
+            description={
+              state.clusters.length === 0
+                ? "上の「新しい話題を探す」を押してください。見つかったテーマがここに並びます。"
+                : "別の分類を選ぶか、新しい話題を探してください。"
+            }
           />
         </Card>
       ) : (
         <div className="space-y-3">
+          <p className="px-1 text-[11px] leading-relaxed text-sub">
+            {view === "recommended" &&
+              "まえみちの発信テーマに合い、一定の根拠がある候補です。気になるものだけ文章にできます。"}
+            {view === "review" &&
+              "発信テーマとの一致や根拠が弱い候補です。使う前に内容を確認してください。"}
+            {view === "excluded" &&
+              "競艇など、まえみちの発信対象ではない話題です。文章作成や公開には使われません。"}
+          </p>
           {visible.map((c) => (
-            <Card key={c.id}>
+            <Card key={c.id} className={c.blocked ? "opacity-70" : undefined}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-lg bg-gain/15 px-2 py-0.5 text-xs font-bold text-gain tabular-nums">
-                      {c.totalScore}点
+                  <div className="flex items-start gap-2">
+                    <span
+                      className={`shrink-0 rounded-lg px-2 py-0.5 text-xs font-bold tabular-nums ${
+                        c.blocked ? "bg-amber-500/15 text-amber-300" : "bg-gain/15 text-gain"
+                      }`}
+                    >
+                      {c.blocked ? "対象外" : `${c.totalScore}点`}
                     </span>
-                    <p className="min-w-0 truncate text-sm font-semibold text-white">{c.title}</p>
+                    <p className="min-w-0 break-words text-sm font-semibold leading-snug text-white">
+                      {c.title}
+                    </p>
                   </div>
-                  <p className="mt-1 text-[11px] text-sub">{c.summary}</p>
+                  <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-sub">{c.summary}</p>
                 </div>
-                <span className="text-[10px] text-sub">
+                <span className="rounded-full border border-hairline px-2 py-0.5 text-[10px] text-sub">
                   {c.genreIds.map(genreLabel).join("、") || "ジャンル未判定"}
                 </span>
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-1.5 text-[10px] text-sub sm:grid-cols-5">
-                <Score label="話題性" value={c.trendScore} max={25} />
-                <Score label="まえみち適合" value={c.brandFitScore} max={25} />
-                <Score label="体験一致" value={c.experienceFitScore} max={20} />
-                <Score label="収益導線" value={c.monetizationFitScore} max={15} />
-                <Score label="オリジナル化" value={c.originalityScore} max={15} />
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                <span className={c.brandFitScore >= 7 ? "text-gain" : "text-amber-300"}>
+                  {c.brandFitScore >= 7 ? "✓ 発信テーマに合う" : "△ 発信テーマとの一致が弱い"}
+                </span>
+                <span className={c.experiences.length > 0 ? "text-gain" : "text-sub"}>
+                  {c.experiences.length > 0 ? "✓ 本人の体験あり" : "体験なし（解説向け）"}
+                </span>
               </div>
-
-              <div className="mt-3">
-                <p className="text-[10px] text-sub">使える本人の体験</p>
-                {c.experiences.length > 0 ? (
-                  <ul className="mt-1 space-y-0.5">
-                    {c.experiences.map((e) => (
-                      <li key={e.id} className="text-[11px] text-slate-300">
-                        {e.verifiedByUser ? "✅" : "⏳"} {e.title}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-1 text-[11px] text-amber-300">
-                    このテーマに使える登録済みの体験がありません（体験談としては書けません）
-                  </p>
-                )}
-              </div>
-
-              {c.items.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-[10px] text-sub">参考にしたソース</p>
-                  <ul className="mt-1 space-y-0.5">
-                    {c.items.slice(0, 3).map((i) => (
-                      <li key={i.id}>
-                        <a
-                          href={i.sourceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[11px] text-brand hover:underline"
-                        >
-                          [{i.platform}] {(i.title ?? i.sourceUrl).slice(0, 48)}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
 
               {(c.blocked || c.penalties.length > 0) && (
                 <div className="mt-3 space-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
@@ -137,6 +168,50 @@ export function ResearchPanel() {
                   ))}
                 </div>
               )}
+
+              <details className="mt-3 rounded-lg border border-hairline bg-white/[0.02] px-3 py-2">
+                <summary className="cursor-pointer text-[11px] font-medium text-slate-300">
+                  判断の内訳・参考元を見る
+                </summary>
+                <div className="mt-3 grid grid-cols-2 gap-1.5 text-[10px] text-sub sm:grid-cols-5">
+                  <Score label="話題性" value={c.trendScore} max={25} />
+                  <Score label="まえみち適合" value={c.brandFitScore} max={25} />
+                  <Score label="体験一致" value={c.experienceFitScore} max={20} />
+                  <Score label="収益導線" value={c.monetizationFitScore} max={15} />
+                  <Score label="オリジナル化" value={c.originalityScore} max={15} />
+                </div>
+                {c.experiences.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-[10px] text-sub">使える本人の体験</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {c.experiences.map((e) => (
+                        <li key={e.id} className="text-[11px] text-slate-300">
+                          {e.verifiedByUser ? "✅" : "⏳"} {e.title}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {c.items.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-[10px] text-sub">参考にしたソース</p>
+                    <ul className="mt-1 space-y-1">
+                      {c.items.slice(0, 3).map((i) => (
+                        <li key={i.id}>
+                          <a
+                            href={i.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="break-words text-[11px] text-brand hover:underline"
+                          >
+                            [{i.platform}] {(i.title ?? i.sourceUrl).slice(0, 72)}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </details>
 
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {!c.blocked && (
@@ -180,9 +255,45 @@ export function ResearchPanel() {
               </div>
             </Card>
           ))}
+          {selectedResults.length > visible.length && (
+            <button
+              onClick={() => setResultCount((count) => count + INITIAL_RESULT_COUNT)}
+              className="w-full rounded-xl border border-hairline py-2.5 text-xs font-medium text-slate-300 hover:bg-white/5"
+            >
+              続きを表示（残り{selectedResults.length - visible.length}件）
+            </button>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function ResultTab({
+  active,
+  label,
+  count,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+        active
+          ? "bg-brand text-white"
+          : "border border-hairline bg-ink-card text-sub hover:text-white"
+      }`}
+    >
+      {label} {count}
+    </button>
   );
 }
 

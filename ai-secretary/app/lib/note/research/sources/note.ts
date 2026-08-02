@@ -10,7 +10,10 @@
 
 import { DEFAULT_GENRES } from "../../types";
 import { fetchPage, hashId, stripTags } from "../fetcher";
+import { detectGenres } from "../genres";
 import { ReferenceNoteCreator, ResearchItem, ResearchSourceType } from "../types";
+
+export { detectGenres } from "../genres";
 
 /**
  * noteの公開APIから、必要な公開項目だけ拾う。
@@ -52,22 +55,6 @@ const MAX_PER_SOURCE = 10;
 function excerpt(text: string, max = 220): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
-}
-
-/** タイトル・タグ・抜粋から、まえみちの5ジャンルに当てはまるものを推定する */
-export function detectGenres(text: string): string[] {
-  const hits: string[] = [];
-  const table: Record<string, string[]> = {
-    ai: ["AI", "ChatGPT", "Claude", "Gemini", "生成AI", "プロンプト", "自動化", "LLM"],
-    "side-business": ["副業", "複業", "個人開発", "マネタイズ", "フリーランス", "受注"],
-    reading: ["読書", "本", "書評", "要約", "積読"],
-    "asset-building": ["資産", "投資", "NISA", "積立", "家計", "貯金", "株"],
-    habits: ["習慣", "継続", "ルーティン", "朝活", "時間術", "生産性"],
-  };
-  for (const [genreId, words] of Object.entries(table)) {
-    if (words.some((w) => text.includes(w))) hits.push(genreId);
-  }
-  return hits;
 }
 
 function toResearchItem(

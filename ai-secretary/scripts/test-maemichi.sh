@@ -10,6 +10,7 @@ export MAEMICHI_DIST="$DIST"
 # 外部I/Oを持たない純粋モジュールだけをコンパイルする
 npx tsc \
   app/lib/note/research/cluster.ts \
+  app/lib/note/research/genres.ts \
   app/lib/note/research/similarity.ts \
   app/lib/note/research/types.ts \
   app/lib/note/editor/types.ts \
