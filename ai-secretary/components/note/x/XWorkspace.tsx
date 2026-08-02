@@ -12,7 +12,7 @@ import { XEmbeddedTimeline } from "./XEmbeddedTimeline";
 
 const empty: XWorkspaceData = { ownedPosts: [], referenceNotes: [] };
 
-export function XWorkspace({ accounts }: { accounts: XAccount[] }) {
+export function XWorkspace({ accounts, onOpenLocalEditor }: { accounts: XAccount[]; onOpenLocalEditor: () => void }) {
   const settings = useResearchSettings();
   const references = useReferences();
   const [data, setData] = useState<XWorkspaceData>(empty);
@@ -92,6 +92,10 @@ export function XWorkspace({ accounts }: { accounts: XAccount[] }) {
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="space-y-4">
         <Card><CardHeader title="AI投稿エディタ" hint="まず本人の文章を中心に作成・確認します" />
+          <button onClick={onOpenLocalEditor} className="mb-3 rounded-lg border border-brand/40 px-3 py-2 text-xs text-brand">
+            Ollamaで本人原稿を添削（第一優先）
+          </button>
+          <p className="mb-3 text-[10px] text-sub">Geminiは明示設定した無料モデルだけ利用可能です。入力がサービス改善に利用される可能性があります。有料fallbackはありません。</p>
           <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="mb-2 w-full rounded-lg border border-hairline bg-ink-card px-3 py-2 text-sm">
             {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
           </select>

@@ -233,7 +233,7 @@ export default function NoteDepartmentPage() {
         {tab === "experiences" && <ExperienceLibrary />}
         {tab === "queue" && <PublishQueue />}
         {tab === "settings" && <AutomationSettings />}
-        {tab === "x-workspace" && <XWorkspace accounts={brandState.xAccounts} />}
+        {tab === "x-workspace" && <XWorkspace accounts={brandState.xAccounts} onOpenLocalEditor={() => setTab("write")} />}
 
         {tab === "ideas" && (
           <IdeaInbox
