@@ -36,4 +36,11 @@ ln -s "$(pwd)/node_modules" "$DIST/node_modules"
 # note/types.ts は cluster.ts が参照するので一緒に出力される
 node --test tests/maemichi/*.test.mjs
 
+# 無料Xワークスペースから課金・自動操作経路を参照していないことを固定する
+if rg -n "publishing/buffer|research/sources/x|api\\.x\\.com|serpapi\\.com|playwright|puppeteer|selenium" \
+  components/note/x app/api/note/x app/lib/note/x; then
+  echo "❌ 無料Xワークスペースが禁止された連携を参照しています"
+  exit 1
+fi
+
 echo "✅ まえみち基盤のテストが通りました"

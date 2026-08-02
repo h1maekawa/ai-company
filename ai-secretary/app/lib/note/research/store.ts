@@ -174,10 +174,13 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
     x.currentEstimatedSpendUsd = 0;
   }
 
+  const flags = { ...defaultFeatureFlags(), ...(data?.flags ?? {}) };
+  flags.xBrowserAutomationEnabled = false;
+  if (process.env.X_API_ENABLED !== "true") flags.xPaidApiEnabled = false;
   return {
     x,
     purposeMix: { ...defaultPurposeMix(), ...(data?.purposeMix ?? {}) },
-    flags: { ...defaultFeatureFlags(), ...(data?.flags ?? {}) },
+    flags,
     noteTags:
       Array.isArray(data?.noteTags) && data.noteTags.length > 0
         ? data.noteTags
@@ -188,7 +191,13 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
 export async function saveResearchSettings(
   file: ResearchSettingsFile
 ): Promise<ResearchSettingsFile> {
-  const { x, flags, purposeMix } = file;
+  const flags = {
+    ...file.flags,
+    xBrowserAutomationEnabled: false as const,
+    xPaidApiEnabled: process.env.X_API_ENABLED === "true" && file.flags.xPaidApiEnabled,
+  };
+  const safeFile = { ...file, flags };
+  const { x, purposeMix } = safeFile;
   const human = [
     "## Xリサーチ",
     `- モード: **${x.mode}**${x.mode === "free" ? "（X APIを使わないため精度は限定的）" : ""}`,
@@ -199,7 +208,7 @@ export async function saveResearchSettings(
     `- キーワード: ${x.keywords.join("、") || "（未設定）"}`,
     "",
     "## noteリサーチ対象タグ",
-    file.noteTags.map((t) => `- ${t}`).join("\n"),
+    safeFile.noteTags.map((t) => `- ${t}`).join("\n"),
     "",
     "## 投稿目的の比率",
     `- 認知（reach）: ${purposeMix.reach}%`,
@@ -221,10 +230,10 @@ export async function saveResearchSettings(
       "note_research_settings",
       "リサーチと投稿の設定です。フラグがOFFの間はどのチャネルにも投稿しません。",
       human,
-      file
+      safeFile
     )
   );
-  return file;
+  return safeFile;
 }
 
 /* ─── リサーチ結果（inbox） ───────────────────── */
