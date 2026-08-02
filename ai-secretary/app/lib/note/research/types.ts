@@ -69,7 +69,7 @@ export function defaultXResearchSettings(): XResearchSettings {
     enabled: false,
     maxReferenceAccountsPerRun: 10,
     maxPostsPerAccount: 3,
-    monthlyBudgetUsd: 5,
+    monthlyBudgetUsd: 0,
     currentEstimatedSpendUsd: 0,
     spendPeriod: new Date().toISOString().slice(0, 7),
     lookbackHours: 72,
@@ -410,6 +410,14 @@ export type PublishJob = {
 /* ─── フィーチャーフラグ / 停止スイッチ ─────────────── */
 
 export type FeatureFlags = {
+  xFreeWorkspaceEnabled: boolean;
+  xOfficialEmbedEnabled: boolean;
+  xWebIntentsEnabled: boolean;
+  xManualPostImportEnabled: boolean;
+  xArchiveImportEnabled: boolean;
+  xPaidApiEnabled: boolean;
+  /** 常にfalse。ブラウザ自動操作は禁止 */
+  xBrowserAutomationEnabled: false;
   /** 本人原稿をMac上のローカルAIで添削する。初期OFF */
   localAiEditorEnabled: boolean;
   /** 全体の停止スイッチ。false ならどのチャネルにも投稿しない */
@@ -432,6 +440,13 @@ export type FeatureFlags = {
 
 export function defaultFeatureFlags(): FeatureFlags {
   return {
+    xFreeWorkspaceEnabled: false,
+    xOfficialEmbedEnabled: true,
+    xWebIntentsEnabled: true,
+    xManualPostImportEnabled: true,
+    xArchiveImportEnabled: false,
+    xPaidApiEnabled: false,
+    xBrowserAutomationEnabled: false,
     localAiEditorEnabled: false,
     publishingEnabled: false,
     xAutoPublish: false,

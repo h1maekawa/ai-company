@@ -32,6 +32,13 @@ export function AutomationSettings() {
         />
         <div className="grid gap-3 sm:grid-cols-2">
           <Toggle
+            label="無料Xワークスペース"
+            hint="公式埋め込みとWeb Intentsのみ。X API・SerpAPI・Bufferは使いません"
+            checked={flags.xFreeWorkspaceEnabled}
+            disabled={settings.saving}
+            onChange={(xFreeWorkspaceEnabled) => settings.save({ flags: { xFreeWorkspaceEnabled } })}
+          />
+          <Toggle
             label="本人原稿のLocal AI添削"
             hint="MacのWorkerで添削します。ONでも外部公開は行いません"
             checked={flags.localAiEditorEnabled}

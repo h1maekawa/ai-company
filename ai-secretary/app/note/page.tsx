@@ -15,6 +15,7 @@ import {
   Sparkles,
   Target,
   Users,
+  PanelTop,
 } from "lucide-react";
 import { IdeaInbox } from "@/components/note/IdeaInbox";
 import { Composer } from "@/components/note/Composer";
@@ -27,6 +28,7 @@ import { ReferenceAccounts } from "@/components/note/ReferenceAccounts";
 import { ExperienceLibrary } from "@/components/note/ExperienceLibrary";
 import { PublishQueue } from "@/components/note/PublishQueue";
 import { AutomationSettings } from "@/components/note/AutomationSettings";
+import { XWorkspace } from "@/components/note/x/XWorkspace";
 import { Card, CardHeader } from "@/components/ui/primitives";
 import type { Idea } from "@/app/lib/note/types";
 import { useAffiliates, useBrand, useIdeas } from "./useNote";
@@ -43,7 +45,8 @@ type Tab =
   | "x"
   | "line"
   | "affiliate"
-  | "brand";
+  | "brand"
+  | "x-workspace";
 
 const TABS: { id: Tab; label: string; icon: typeof Lightbulb }[] = [
   { id: "dashboard", label: "ダッシュボード", icon: Target },
@@ -54,6 +57,7 @@ const TABS: { id: Tab; label: string; icon: typeof Lightbulb }[] = [
   { id: "settings", label: "自動化設定", icon: Settings },
   { id: "ideas", label: "ネタ帳", icon: Lightbulb },
   { id: "write", label: "記事を作る", icon: PenLine },
+  { id: "x-workspace", label: "Xワークスペース", icon: PanelTop },
   { id: "x", label: "Xアカウント", icon: AtSign },
   { id: "line", label: "公式LINE", icon: Smartphone },
   { id: "affiliate", label: "アフィリエイト", icon: Link2 },
@@ -229,6 +233,7 @@ export default function NoteDepartmentPage() {
         {tab === "experiences" && <ExperienceLibrary />}
         {tab === "queue" && <PublishQueue />}
         {tab === "settings" && <AutomationSettings />}
+        {tab === "x-workspace" && <XWorkspace accounts={brandState.xAccounts} />}
 
         {tab === "ideas" && (
           <IdeaInbox
