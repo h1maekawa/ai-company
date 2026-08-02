@@ -21,9 +21,43 @@ export function AutomationSettings() {
   return (
     <div className="space-y-4">
       <Card>
+        <CardHeader title="最初は、この2つだけ確認してください" hint="難しい設定は後から変更できます" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Toggle
+            label="無料のX作業画面を使う"
+            hint="おすすめ。Xを見て文章を作り、最後の投稿ボタンだけ本人が押します"
+            checked={flags.xFreeWorkspaceEnabled}
+            disabled={settings.saving}
+            onChange={(xFreeWorkspaceEnabled) => settings.save({ flags: { xFreeWorkspaceEnabled } })}
+          />
+          <Toggle
+            label="MacのAIで文章を整える"
+            hint="前川さんの原稿をOllamaで添削します。勝手に公開はしません"
+            checked={flags.localAiEditorEnabled}
+            disabled={settings.saving}
+            onChange={(localAiEditorEnabled) =>
+              settings.save({ flags: { localAiEditorEnabled } })
+            }
+          />
+        </div>
+        <p className="mt-3 rounded-lg bg-gain/5 px-3 py-2 text-[11px] leading-relaxed text-sub">
+          この2つをONにしても自動投稿はされません。X公式画面で前川さんが確認し、
+          最後に「ポストする」を押す安全な使い方です。
+        </p>
+      </Card>
+
+      <details className="rounded-2xl border border-hairline bg-ink-card">
+        <summary className="cursor-pointer list-none px-5 py-4">
+          <p className="text-sm font-semibold text-white">高度なリサーチ設定</p>
+          <p className="mt-1 text-[11px] text-sub">
+            外部の検索APIやX APIを契約している場合だけ開いてください。通常は変更不要です。
+          </p>
+        </summary>
+        <div className="px-1 pb-1">
+      <Card>
         <CardHeader
-          title="Xリサーチ"
-          hint="毎日の投稿候補を作るための情報収集"
+          title="APIを使った自動リサーチ"
+          hint="無料X作業画面とは別の、外部サービスを使う上級者向け機能です"
           action={
             <span className="text-[10px] text-sub">
               {x.lastRunAt ? `最終実行 ${new Date(x.lastRunAt).toLocaleString("ja-JP")}` : "未実行"}
@@ -32,29 +66,13 @@ export function AutomationSettings() {
         />
         <div className="grid gap-3 sm:grid-cols-2">
           <Toggle
-            label="無料Xワークスペース"
-            hint="公式埋め込みとWeb Intentsのみ。X API・SerpAPI・Bufferは使いません"
-            checked={flags.xFreeWorkspaceEnabled}
-            disabled={settings.saving}
-            onChange={(xFreeWorkspaceEnabled) => settings.save({ flags: { xFreeWorkspaceEnabled } })}
-          />
-          <Toggle
-            label="本人原稿のLocal AI添削"
-            hint="MacのWorkerで添削します。ONでも外部公開は行いません"
-            checked={flags.localAiEditorEnabled}
-            disabled={settings.saving}
-            onChange={(localAiEditorEnabled) =>
-              settings.save({ flags: { localAiEditorEnabled } })
-            }
-          />
-          <Toggle
-            label="Xリサーチを有効にする"
-            hint="OFFの間は /maemichi research を実行してもXを調査しません"
+            label="API自動リサーチを有効にする"
+            hint="契約済みのAPI設定がある場合だけONにします"
             checked={x.enabled}
             disabled={settings.saving}
             onChange={(enabled) => settings.save({ x: { enabled } })}
           />
-          <Field label="リサーチ方式" hint="freeはSERPAPI_KEY、公式APIはX_API_BEARER_TOKENを使用します">
+          <Field label="利用する外部サービス" hint="どちらも別途キーや契約が必要です">
             <select
               value={x.mode}
               disabled={settings.saving}
@@ -63,8 +81,8 @@ export function AutomationSettings() {
               }
               className="w-full rounded-lg border border-hairline bg-ink-base px-3 py-2 text-sm text-white outline-none"
             >
-              <option value="free">free（検索API）</option>
-              <option value="official-api">X公式API</option>
+              <option value="free">検索API（SerpAPI）</option>
+              <option value="official-api">X公式API（有料の場合あり）</option>
             </select>
           </Field>
           <NumberField
@@ -126,11 +144,13 @@ export function AutomationSettings() {
           />
         </div>
       </Card>
+        </div>
+      </details>
 
       <Card>
         <CardHeader
-          title="自動投稿の安全装置"
-          hint="最初は下書きとBuffer予約を確認してから自動投稿を有効にしてください"
+          title="公開の安全設定"
+          hint="通常はすべてOFFのままで、下書きを自分で確認する運用がおすすめです"
           action={<ShieldCheck className="h-4 w-4 text-gain" />}
         />
         <div className="grid gap-3 sm:grid-cols-2">

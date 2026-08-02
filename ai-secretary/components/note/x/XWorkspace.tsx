@@ -89,13 +89,32 @@ export function XWorkspace({ accounts, onOpenLocalEditor }: { accounts: XAccount
   return <div className="space-y-4">
     <Card><div className="flex items-center gap-2 text-sm font-semibold text-gain"><ShieldCheck className="h-4 w-4" />無料モード</div>
       <p className="mt-1 text-xs text-sub">X API・SerpAPI・Buffer・ブラウザ自動操作は使いません。投稿確定は必ず本人がX公式画面で行います。</p></Card>
+    <Card>
+      <CardHeader title="使い方は3ステップです" hint="この画面から勝手に投稿されることはありません" />
+      <div className="grid gap-2 sm:grid-cols-3">
+        {[
+          ["1", "右側で調べる", "参考アカウントの投稿を見て、書くテーマを決めます"],
+          ["2", "左側で文章を作る", "自分の意見や体験を入れ、必要ならMacのAIで整えます"],
+          ["3", "Xで確認して投稿", "X公式画面を開き、内容を確認して本人が投稿します"],
+        ].map(([number, title, text]) => (
+          <div key={number} className="rounded-lg border border-hairline bg-white/[0.02] p-3">
+            <span className="text-xs font-bold text-gain">STEP {number}</span>
+            <p className="mt-1 text-sm font-semibold text-white">{title}</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-sub">{text}</p>
+          </div>
+        ))}
+      </div>
+    </Card>
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="space-y-4">
-        <Card><CardHeader title="AI投稿エディタ" hint="まず本人の文章を中心に作成・確認します" />
+        <Card><CardHeader title="2. Xに載せる文章を作る" hint="前川さん自身の言葉や体験を中心に入力してください" />
           <button onClick={onOpenLocalEditor} className="mb-3 rounded-lg border border-brand/40 px-3 py-2 text-xs text-brand">
-            Ollamaで本人原稿を添削（第一優先）
+            MacのAIで文章を読みやすくする
           </button>
-          <p className="mb-3 text-[10px] text-sub">Geminiは明示設定した無料モデルだけ利用可能です。入力がサービス改善に利用される可能性があります。有料fallbackはありません。</p>
+          <details className="mb-3 text-[10px] text-sub">
+            <summary className="cursor-pointer">使用するAIについて</summary>
+            <p className="mt-1">最初にMac内のOllamaを使います。Geminiは明示設定した無料モデルだけ利用でき、有料サービスへの自動切替はありません。</p>
+          </details>
           <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="mb-2 w-full rounded-lg border border-hairline bg-ink-card px-3 py-2 text-sm">
             {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
           </select>
@@ -105,7 +124,7 @@ export function XWorkspace({ accounts, onOpenLocalEditor }: { accounts: XAccount
           <p className={`mt-1 text-right text-xs ${count > X_POST_LIMIT ? "text-loss" : "text-sub"}`}>{count}/{X_POST_LIMIT}</p>
           <button onClick={openCompose} disabled={!draft.trim() || count > X_POST_LIMIT}
             className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-bold disabled:opacity-40">
-            <ExternalLink className="h-4 w-4" />Xで投稿画面を開く
+            <ExternalLink className="h-4 w-4" />3. X公式画面で内容を確認する
           </button>
           <div className="mt-3 border-t border-hairline pt-3">
             <label className="text-xs text-sub">X側で投稿した後のURL（任意）</label>
@@ -127,7 +146,7 @@ export function XWorkspace({ accounts, onOpenLocalEditor }: { accounts: XAccount
         </Card>
       </div>
       <div className="space-y-4">
-        <Card><CardHeader title="X公式 公開タイムライン" hint="ウィジェット内部をAIは読み取りません" />
+        <Card><CardHeader title="1. Xで話題や書き方を調べる" hint="自分または参考アカウントを選んで投稿を見ます" />
           <select value={timelineHandle} onChange={(e) => setTimelineHandle(e.target.value)}
             className="mb-3 w-full rounded-lg border border-hairline bg-ink-card px-3 py-2 text-sm">
             <option value="">アカウントを選択</option>
@@ -135,7 +154,7 @@ export function XWorkspace({ accounts, onOpenLocalEditor }: { accounts: XAccount
           </select>
           <div className="max-h-[680px] overflow-auto"><XEmbeddedTimeline handle={timelineHandle} /></div>
         </Card>
-        <Card><CardHeader title="個別ポスト" hint="公式oEmbedで表示します" />
+        <Card><CardHeader title="特定の投稿を詳しく見る" hint="参考にしたいX投稿のURLを貼り付けます" />
           <input value={postUrl} onChange={(e) => setPostUrl(e.target.value)} placeholder="https://x.com/handle/status/123..."
             className="w-full rounded-lg border border-hairline bg-white/[0.03] px-3 py-2 text-xs" />
           <div className="mt-3"><XEmbeddedPost url={postUrl} /></div>

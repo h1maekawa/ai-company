@@ -18,8 +18,8 @@ export function ResearchPanel() {
     <div className="space-y-4">
       <Card>
         <CardHeader
-          title="リサーチ候補"
-          hint="X・noteの公開情報から、まえみちと相性の良いテーマを採点して並べます"
+          title="投稿する話題を探す"
+          hint="読まれそうな話題と、まえみちらしく書ける話題を見つけます"
           action={
             <button
               onClick={state.runResearch}
@@ -27,16 +27,25 @@ export function ResearchPanel() {
               className="flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white hover:bg-brand/85 disabled:opacity-40"
             >
               <Search className="h-3.5 w-3.5" />
-              {state.running ? "調べています…" : "リサーチを実行"}
+              {state.running ? "話題を探しています…" : "新しい話題を探す"}
             </button>
           }
         />
         {state.notice && <p className="text-xs text-gain">{state.notice}</p>}
         {state.error && <p className="text-xs text-loss">{state.error}</p>}
-        <p className="mt-2 text-[11px] leading-relaxed text-sub">
-          他者の文章はそのまま保存せず、フック・構成・CTAの「型」だけを取り出しています。
-          生成物は投稿前に必ずコピー判定を通します。
-        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <SimpleStep number="1" title="話題を探す" text="上のボタンを1回押します" />
+          <SimpleStep number="2" title="候補を選ぶ" text="点数と自分の体験を確認します" />
+          <SimpleStep number="3" title="文章を作る" text="Xまたはnoteのボタンを押します" />
+        </div>
+        <details className="mt-3 rounded-lg bg-white/[0.03] px-3 py-2 text-[11px] text-sub">
+          <summary className="cursor-pointer font-medium text-slate-300">リサーチとは？ 点数はどう見る？</summary>
+          <div className="mt-2 space-y-1 leading-relaxed">
+            <p>話題性＝いま注目されているか、まえみち適合＝発信テーマに合うか、体験一致＝前川さん本人の経験を使えるか、を示します。</p>
+            <p>点数が高くても「体験一致」が低い候補は、体験談として書かず、解説や感想として扱います。</p>
+            <p>他者の文章はコピーせず、読まれている理由や構成だけを参考にします。</p>
+          </div>
+        </details>
       </Card>
 
       {state.loading ? (
@@ -46,7 +55,7 @@ export function ResearchPanel() {
           <EmptyState
             icon={<Search className="h-7 w-7" />}
             title="候補がまだありません"
-            description="「リサーチを実行」を押すと、登録した参考アカウントとタグから候補を探します。"
+            description="上の「新しい話題を探す」を押してください。見つかったテーマがここに並びます。"
           />
         </Card>
       ) : (
@@ -137,28 +146,28 @@ export function ResearchPanel() {
                       disabled={state.running}
                       className="rounded-lg bg-brand px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-brand/85 disabled:opacity-40"
                     >
-                      X投稿を作る
+                      X用の短い文章を作る
                     </button>
                     <button
                       onClick={() => state.generate(c.id, "note", "free")}
                       disabled={state.running}
                       className="rounded-lg border border-hairline px-3 py-1.5 text-[11px] text-slate-200 hover:bg-white/5 disabled:opacity-40"
                     >
-                      無料note
+                      無料note記事を作る
                     </button>
                     <button
                       onClick={() => state.generate(c.id, "note", "paid")}
                       disabled={state.running}
                       className="rounded-lg border border-hairline px-3 py-1.5 text-[11px] text-slate-200 hover:bg-white/5 disabled:opacity-40"
                     >
-                      有料note
+                      有料noteの構成を作る
                     </button>
                     <button
                       onClick={() => state.generate(c.id, "both")}
                       disabled={state.running}
                       className="rounded-lg border border-hairline px-3 py-1.5 text-[11px] text-slate-200 hover:bg-white/5 disabled:opacity-40"
                     >
-                      両方
+                      Xとnoteを両方作る
                     </button>
                   </>
                 )}
@@ -173,6 +182,20 @@ export function ResearchPanel() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function SimpleStep({ number, title, text }: { number: string; title: string; text: string }) {
+  return (
+    <div className="flex gap-2 rounded-lg border border-hairline bg-white/[0.02] p-2.5">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand/15 text-[10px] font-bold text-brand">
+        {number}
+      </span>
+      <div>
+        <p className="text-xs font-medium text-white">{title}</p>
+        <p className="mt-0.5 text-[10px] text-sub">{text}</p>
+      </div>
     </div>
   );
 }
