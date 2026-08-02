@@ -15,6 +15,7 @@ import {
 } from "@/app/lib/note/editor/actions";
 import { enqueueLocalAiReview } from "@/app/lib/note/editor/create";
 import { getLocalAiReviewJob } from "@/app/lib/note/editor/jobs";
+import { runInBackground } from "@/app/lib/integrations/vercel-background";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -111,8 +112,15 @@ export async function POST(req: Request): Promise<Response> {
         const articleType = actionId === ACTIONS.makePaidNote ? "paid" : "free";
 
         // 生成は時間がかかるので、先に応答してから裏で走らせる
-        void generateInBackground(value, kind, articleType).catch((error) =>
-          console.error("[slack/actions] 生成失敗:", error)
+        runInBackground(
+          generateInBackground(value, kind, articleType).catch(async (error) => {
+            console.error("[slack/actions] 生成失敗", {
+              errorType: error instanceof Error ? error.name : "unknown",
+            });
+            await postToSlack(
+              "投稿案の生成に失敗しました。Vercelのログを確認してください。"
+            );
+          })
         );
         return ok("作成を開始しました。できたらこのチャンネルへ送ります。");
       }

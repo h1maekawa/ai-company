@@ -12,6 +12,7 @@ import {
   loadResearchSettings,
   loadSocialDrafts,
 } from "@/app/lib/note/research/store";
+import { runInBackground } from "@/app/lib/integrations/vercel-background";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -113,33 +114,45 @@ async function handleEdit(triggerId: string | null): Promise<Response> {
 }
 
 function handleAutoPost(): Response {
-  void withLock("daily-x-publish", runDailyXAutomation).catch((error) =>
-    console.error("[slack/commands] autopost失敗:", error)
+  runInBackground(
+    withLock("daily-x-publish", runDailyXAutomation).catch(async (error) => {
+      console.error("[slack/commands] autopost失敗", {
+        errorType: error instanceof Error ? error.name : "unknown",
+      });
+      await postToSlack("X投稿案の生成に失敗しました。Vercelのログを確認してください。");
+    })
   );
   return slackText("X投稿案の生成を開始しました。完了後、このチャンネルに確認カードを送ります。");
 }
 
 async function handleResearch(): Promise<Response> {
   // Slackは3秒でタイムアウトするので、先に応答してから裏で走らせる
-  void withLock("research-run", async () => {
-    const result = await runResearch();
-    const [items, experiences] = await Promise.all([loadResearchInbox(), loadExperiences()]);
-    const itemById = new Map(items.map((i) => [i.id, i]));
-    const expById = new Map(experiences.map((e) => [e.id, e]));
+  runInBackground(
+    withLock("research-run", async () => {
+      const result = await runResearch();
+      const [items, experiences] = await Promise.all([loadResearchInbox(), loadExperiences()]);
+      const itemById = new Map(items.map((i) => [i.id, i]));
+      const expById = new Map(experiences.map((e) => [e.id, e]));
 
-    const blocks = result.topCandidates.flatMap((c) =>
-      candidateBlocks(
-        c,
-        c.researchItemIds.map((id) => itemById.get(id)).filter((i): i is NonNullable<typeof i> => Boolean(i)),
-        c.matchedExperienceIds.map((id) => expById.get(id)?.title).filter((t): t is string => Boolean(t))
-      )
-    );
+      const blocks = result.topCandidates.flatMap((c) =>
+        candidateBlocks(
+          c,
+          c.researchItemIds.map((id) => itemById.get(id)).filter((i): i is NonNullable<typeof i> => Boolean(i)),
+          c.matchedExperienceIds.map((id) => expById.get(id)?.title).filter((t): t is string => Boolean(t))
+        )
+      );
 
-    await postToSlack(
-      `リサーチが終わりました（新規 ${result.newItems}件 / 候補 ${result.topCandidates.length}件）`,
-      blocks.length > 0 ? blocks : undefined
-    );
-  }).catch((error) => console.error("[slack/commands] research失敗:", error));
+      await postToSlack(
+        `リサーチが終わりました（新規 ${result.newItems}件 / 候補 ${result.topCandidates.length}件）`,
+        blocks.length > 0 ? blocks : undefined
+      );
+    }).catch(async (error) => {
+      console.error("[slack/commands] research失敗", {
+        errorType: error instanceof Error ? error.name : "unknown",
+      });
+      await postToSlack("リサーチに失敗しました。Vercelのログを確認してください。");
+    })
+  );
 
   return slackText("リサーチを開始しました。終わったらこのチャンネルへ候補を送ります。");
 }
