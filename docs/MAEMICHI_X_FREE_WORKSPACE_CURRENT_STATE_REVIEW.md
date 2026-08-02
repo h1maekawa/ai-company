@@ -1,7 +1,7 @@
 # まえみち Xワークスペース 現状レビュー
 
-作成日: 2026-08-03  
-対象: `h1maekawa/ai-company/ai-secretary`  
+作成日: 2026-08-03
+対象: `h1maekawa/ai-company/ai-secretary`
 基点: `feature/maemichi-local-ai-editor` (`ffaf594`)
 
 ## 結論
