@@ -209,6 +209,12 @@ test("具体的なAI・読書の話題は判定し、一般的な「本当に」
   assert.deepEqual(genres.detectGenres("読書で学んだこと"), ["reading"]);
 });
 
+test("半導体と主要企業の話題は資産形成として判定する", () => {
+  assert.deepEqual(genres.detectGenres("ラピダスの2ナノ半導体量産計画"), ["asset-building"]);
+  assert.deepEqual(genres.detectGenres("キオクシアとマイクロンのメモリー市況"), ["asset-building"]);
+  assert.deepEqual(genres.detectGenres("TSMCとNVIDIAのデータセンター需要"), ["asset-building"]);
+});
+
 test("通常のテーマはブロックされない", () => {
   const [c] = cluster.buildClusters([item()], baseCtx);
   assert.equal(c.blocked, false);
