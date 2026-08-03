@@ -315,3 +315,54 @@ export function buildClusters(
 
   return clusters.sort((a, b) => b.totalScore - a.totalScore);
 }
+
+/**
+ * Slackなどでテーマを指定した場合、そのテーマに関係する候補だけを返す。
+ * 通常実行では従来どおり総合点順。テーマ指定時は今回新しく取得した記事を優先する。
+ */
+export function selectTopCandidates(
+  clusters: TrendCluster[],
+  items: ResearchItem[],
+  focusTopic?: string,
+  freshItemIds: string[] = [],
+  platform?: "x" | "note"
+): TrendCluster[] {
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const candidates = clusters.filter(
+    (cluster) =>
+      cluster.status === "candidate" &&
+      !cluster.blocked &&
+      (!platform ||
+        cluster.researchItemIds.some((id) => itemById.get(id)?.platform === platform))
+  );
+  if (!focusTopic?.trim()) return candidates.slice(0, 5);
+
+  const topicTokens = tokenize(focusTopic);
+  const freshIds = new Set(freshItemIds);
+
+  return candidates
+    .map((cluster) => {
+      const clusterItems = cluster.researchItemIds
+        .map((id) => itemById.get(id))
+        .filter((item): item is ResearchItem => Boolean(item));
+      const text = [
+        cluster.title,
+        cluster.summary,
+        ...clusterItems.map((item) => `${item.title ?? ""} ${item.textExcerpt}`),
+      ].join(" ");
+      return {
+        cluster,
+        relevance: overlapCoefficient(topicTokens, tokenize(text)),
+        hasFreshItem: cluster.researchItemIds.some((id) => freshIds.has(id)),
+      };
+    })
+    .filter((entry) => entry.relevance >= 0.5)
+    .sort(
+      (a, b) =>
+        Number(b.hasFreshItem) - Number(a.hasFreshItem) ||
+        b.relevance - a.relevance ||
+        b.cluster.totalScore - a.cluster.totalScore
+    )
+    .slice(0, 5)
+    .map((entry) => entry.cluster);
+}

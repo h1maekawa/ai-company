@@ -1,5 +1,6 @@
 import { candidateBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
 import { classifyConversation } from "@/app/lib/integrations/slack/conversation";
+import { generateCandidateInBackground } from "@/app/lib/integrations/slack/generate";
 import { verifySlackRequest } from "@/app/lib/integrations/slack/verify";
 import { runInBackground } from "@/app/lib/integrations/vercel-background";
 import { latestDraftLink } from "@/app/lib/note/drafts/mobile";
@@ -92,26 +93,76 @@ async function reply(text: string, channel: string, threadTs?: string) {
 
 async function handleConversation(text: string, channel: string, threadTs?: string) {
   const intent = classifyConversation(text);
+  if (intent.type === "generate") {
+    const clusters = (await loadClusters()).filter(
+      (candidate) =>
+        (candidate.status === "candidate" || candidate.status === "selected") &&
+        !candidate.blocked
+    );
+    const topic = intent.topic?.toLowerCase();
+    const matching = topic
+      ? clusters.filter((candidate) =>
+          `${candidate.title} ${candidate.summary}`.toLowerCase().includes(topic)
+        )
+      : clusters;
+    const index = (intent.candidateNumber ?? 1) - 1;
+    const selected = matching[index];
+
+    if (!selected) {
+      const subject = intent.topic ? `「${intent.topic}」` : "指定された";
+      return reply(
+        `${subject}候補がまだありません。\n先に「${intent.topic ?? "半導体"}について調べて」と話しかけてください。候補が届いたら「一番上でX案を作って」のように続けられます。`,
+        channel,
+        threadTs
+      );
+    }
+
+    const destination =
+      intent.kind === "x" ? "X投稿案" : intent.kind === "note" ? "note下書き" : "Xとnoteの下書き";
+    await reply(
+      `✍️ 受付しました。「${selected.title}」から${destination}を作っています。\n外部公開はせず、確認用の下書きとして保存します。`,
+      channel,
+      threadTs
+    );
+    await generateCandidateInBackground(
+      selected.id,
+      intent.kind,
+      intent.articleType,
+      { channel, threadTs }
+    );
+    return;
+  }
+
   if (intent.type === "research") {
     if (intent.topic) {
       const settings = await loadResearchSettings();
       await saveResearchSettings({
         ...settings,
-        noteTags: [...new Set([intent.topic, ...settings.noteTags])].slice(0, 20),
+        noteTags:
+          intent.destination === "x"
+            ? settings.noteTags
+            : [...new Set([intent.topic, ...settings.noteTags])].slice(0, 20),
         x: {
           ...settings.x,
-          keywords: [...new Set([intent.topic, ...settings.x.keywords])].slice(0, 20),
+          keywords:
+            intent.destination === "note"
+              ? settings.x.keywords
+              : [...new Set([intent.topic, ...settings.x.keywords])].slice(0, 20),
         },
       });
     }
+    const destinationLabel =
+      intent.destination === "x" ? "X投稿用" : intent.destination === "note" ? "note記事用" : "X・note両方";
     await reply(
       intent.topic
-        ? `🔎 受付しました。「${intent.topic}」を調べています。\n通常1〜3分ほどです。終わったら候補をここへ表示します。`
-        : "🔎 受付しました。リサーチ中です。\n通常1〜3分ほどです。終わったら候補をここへ表示します。",
+        ? `🔎 受付しました。${destinationLabel}に「${intent.topic}」を調べています。\n通常1〜3分ほどです。終わったら候補をここへ表示します。`
+        : `🔎 受付しました。${destinationLabel}のリサーチ中です。\n通常1〜3分ほどです。終わったら候補をここへ表示します。`,
       channel,
       threadTs
     );
-    const result = await withLock("research-run", runResearch);
+    const result = await withLock("research-run", () =>
+      runResearch({ focusTopic: intent.topic, platform: intent.destination })
+    );
     if (!result) return reply("別のリサーチが進行中です。終わってから結果を確認してください。", channel, threadTs);
     const [items, experiences] = await Promise.all([loadResearchInbox(), loadExperiences()]);
     const itemById = new Map(items.map((item) => [item.id, item]));
@@ -124,7 +175,9 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       )
     );
     return postToSlack(
-      `✅ リサーチ完了：新規${result.newItems}件、候補${result.topCandidates.length}件`,
+      result.topCandidates.length > 0
+        ? `✅ ${destinationLabel}「${intent.topic ?? "指定テーマ"}」のリサーチ完了：新規${result.newItems}件、関連候補${result.topCandidates.length}件`
+        : `調査は完了しましたが、${destinationLabel}の「${intent.topic ?? "指定テーマ"}」に直接関係する新しい候補は見つかりませんでした。以前の候補は混ぜずに停止しました。`,
       blocks.length ? blocks : undefined,
       { channel, threadTs }
     );
@@ -186,7 +239,7 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
   }
 
   return reply(
-    "普通の言葉で話しかけてください。たとえば：\n• 半導体について調べて\n• 今の候補を見せて\n• 最新の記事全文を見せて\n• 下書きの状況を教えて\n• 自動投稿の設定を教えて",
+    "普通の言葉で話しかけてください。たとえば：\n• 半導体について調べて\n• 今の候補を見せて\n• 一番上の候補でX投稿案を作って\n• 2番目の候補で無料noteを書いて\n• Xとnoteを両方作って\n• 最新の記事全文を見せて\n• 下書きの状況を教えて\n\n公開だけは誤操作防止のため、確認画面で本人が承認します。",
     channel,
     threadTs
   );
