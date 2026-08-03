@@ -7,7 +7,7 @@
 
 import { loadBrand } from "../store";
 import { abstractItems } from "./abstract";
-import { buildClusters } from "./cluster";
+import { buildClusters, selectTopCandidates } from "./cluster";
 import { researchNote } from "./sources/note";
 import { researchX } from "./sources/x";
 import {
@@ -34,7 +34,7 @@ export type ResearchRunResult = {
   ranAt: string;
 };
 
-export async function runResearch(): Promise<ResearchRunResult> {
+export async function runResearch(options?: { focusTopic?: string }): Promise<ResearchRunResult> {
   const ranAt = new Date().toISOString();
 
   const [settings, references, brandFile, experiences, existingItems, existingClusters, drafts] =
@@ -104,9 +104,12 @@ export async function runResearch(): Promise<ResearchRunResult> {
     await saveResearchSettings({ ...settings, x: { ...settings.x, lastRunAt: ranAt } });
   }
 
-  const topCandidates = saved
-    .filter((c) => c.status === "candidate" && !c.blocked)
-    .slice(0, 5);
+  const topCandidates = selectTopCandidates(
+    saved,
+    savedItems,
+    options?.focusTopic,
+    fresh.map((item) => item.id)
+  );
 
   return {
     fetched: fetched.length,

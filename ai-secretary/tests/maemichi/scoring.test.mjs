@@ -228,3 +228,29 @@ test("使用済み・却下の状態は再リサーチで戻らない", () => {
   const second = cluster.buildClusters(items, baseCtx, used);
   assert.equal(second[0].status, "used", "usedのまま維持されること");
 });
+
+test("テーマ指定時は無関係な過去候補を混ぜず、新着の関連候補を優先する", () => {
+  const semiconductor = item({
+    id: "semi",
+    sourceUrl: "semi-url",
+    title: "半導体市場とメモリ需要",
+    textExcerpt: "半導体の設備投資を調べた",
+    detectedGenreIds: ["asset-building"],
+  });
+  const unrelated = item({
+    id: "book",
+    sourceUrl: "book-url",
+    title: "読書習慣を続ける方法",
+    textExcerpt: "毎日読書する",
+    detectedGenreIds: ["reading"],
+  });
+  const clusters = cluster.buildClusters([unrelated, semiconductor], baseCtx);
+  const selected = cluster.selectTopCandidates(
+    clusters,
+    [unrelated, semiconductor],
+    "半導体",
+    ["semi"]
+  );
+  assert.equal(selected.length, 1);
+  assert.ok(selected[0].title.includes("半導体"));
+});

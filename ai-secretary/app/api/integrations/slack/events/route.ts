@@ -152,7 +152,9 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       channel,
       threadTs
     );
-    const result = await withLock("research-run", runResearch);
+    const result = await withLock("research-run", () =>
+      runResearch({ focusTopic: intent.topic })
+    );
     if (!result) return reply("別のリサーチが進行中です。終わってから結果を確認してください。", channel, threadTs);
     const [items, experiences] = await Promise.all([loadResearchInbox(), loadExperiences()]);
     const itemById = new Map(items.map((item) => [item.id, item]));
@@ -165,7 +167,9 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       )
     );
     return postToSlack(
-      `✅ リサーチ完了：新規${result.newItems}件、候補${result.topCandidates.length}件`,
+      result.topCandidates.length > 0
+        ? `✅ 「${intent.topic ?? "指定テーマ"}」のリサーチ完了：新規${result.newItems}件、関連候補${result.topCandidates.length}件`
+        : `調査は完了しましたが、「${intent.topic ?? "指定テーマ"}」に直接関係する新しい候補は見つかりませんでした。以前の候補は混ぜずに停止しました。`,
       blocks.length ? blocks : undefined,
       { channel, threadTs }
     );

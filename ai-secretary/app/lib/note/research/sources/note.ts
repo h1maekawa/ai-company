@@ -138,16 +138,22 @@ async function fetchCreator(creator: ReferenceNoteCreator): Promise<NoteResearch
 
 /** タグの人気・新着記事（ハッシュタグは v3 のみ提供されている） */
 async function fetchTag(tag: string): Promise<NoteResearchResult> {
-  const url = `https://note.com/api/v3/hashtags/${encodeURIComponent(tag)}/notes?order=popular&page=1`;
-  const res = await fetchPage(url);
-  if (!res.ok) return { items: [], failures: [{ source: `タグ:${tag}`, error: res.error }] };
-
   const items: ResearchItem[] = [];
-  for (const note of parseNotes(res.body).slice(0, MAX_PER_SOURCE)) {
-    const item = toResearchItem(note, "trend");
-    if (item) items.push(item);
+  const failures: { source: string; error: string }[] = [];
+  // 人気順だけだと毎回同じ記事になるため、新着順も取得する。
+  for (const [label, order] of [["人気", "popular"], ["新着", "new"]] as const) {
+    const url = `https://note.com/api/v3/hashtags/${encodeURIComponent(tag)}/notes?order=${order}&page=1`;
+    const res = await fetchPage(url);
+    if (!res.ok) {
+      failures.push({ source: `タグ:${tag}(${label})`, error: res.error });
+      continue;
+    }
+    for (const note of parseNotes(res.body).slice(0, MAX_PER_SOURCE)) {
+      const item = toResearchItem(note, "trend");
+      if (item) items.push(item);
+    }
   }
-  return { items, failures: [] };
+  return { items, failures };
 }
 
 /**
