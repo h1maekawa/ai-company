@@ -1,5 +1,6 @@
 import { candidateBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
 import { classifyConversation } from "@/app/lib/integrations/slack/conversation";
+import { generateCandidateInBackground } from "@/app/lib/integrations/slack/generate";
 import { verifySlackRequest } from "@/app/lib/integrations/slack/verify";
 import { runInBackground } from "@/app/lib/integrations/vercel-background";
 import { latestDraftLink } from "@/app/lib/note/drafts/mobile";
@@ -92,6 +93,46 @@ async function reply(text: string, channel: string, threadTs?: string) {
 
 async function handleConversation(text: string, channel: string, threadTs?: string) {
   const intent = classifyConversation(text);
+  if (intent.type === "generate") {
+    const clusters = (await loadClusters()).filter(
+      (candidate) =>
+        (candidate.status === "candidate" || candidate.status === "selected") &&
+        !candidate.blocked
+    );
+    const topic = intent.topic?.toLowerCase();
+    const matching = topic
+      ? clusters.filter((candidate) =>
+          `${candidate.title} ${candidate.summary}`.toLowerCase().includes(topic)
+        )
+      : clusters;
+    const index = (intent.candidateNumber ?? 1) - 1;
+    const selected = matching[index];
+
+    if (!selected) {
+      const subject = intent.topic ? `「${intent.topic}」` : "指定された";
+      return reply(
+        `${subject}候補がまだありません。\n先に「${intent.topic ?? "半導体"}について調べて」と話しかけてください。候補が届いたら「一番上でX案を作って」のように続けられます。`,
+        channel,
+        threadTs
+      );
+    }
+
+    const destination =
+      intent.kind === "x" ? "X投稿案" : intent.kind === "note" ? "note下書き" : "Xとnoteの下書き";
+    await reply(
+      `✍️ 受付しました。「${selected.title}」から${destination}を作っています。\n外部公開はせず、確認用の下書きとして保存します。`,
+      channel,
+      threadTs
+    );
+    await generateCandidateInBackground(
+      selected.id,
+      intent.kind,
+      intent.articleType,
+      { channel, threadTs }
+    );
+    return;
+  }
+
   if (intent.type === "research") {
     if (intent.topic) {
       const settings = await loadResearchSettings();
@@ -186,7 +227,7 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
   }
 
   return reply(
-    "普通の言葉で話しかけてください。たとえば：\n• 半導体について調べて\n• 今の候補を見せて\n• 最新の記事全文を見せて\n• 下書きの状況を教えて\n• 自動投稿の設定を教えて",
+    "普通の言葉で話しかけてください。たとえば：\n• 半導体について調べて\n• 今の候補を見せて\n• 一番上の候補でX投稿案を作って\n• 2番目の候補で無料noteを書いて\n• Xとnoteを両方作って\n• 最新の記事全文を見せて\n• 下書きの状況を教えて\n\n公開だけは誤操作防止のため、確認画面で本人が承認します。",
     channel,
     threadTs
   );

@@ -1,5 +1,6 @@
 import { verifySlackRequest } from "@/app/lib/integrations/slack/verify";
-import { ACTIONS, draftBlocks, articleBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
+import { ACTIONS, postToSlack } from "@/app/lib/integrations/slack/blocks";
+import { generateCandidateInBackground } from "@/app/lib/integrations/slack/generate";
 import { claimOnce } from "@/app/lib/note/publishing/queue";
 import {
   loadClusters,
@@ -113,7 +114,7 @@ export async function POST(req: Request): Promise<Response> {
 
         // 生成は時間がかかるので、先に応答してから裏で走らせる
         runInBackground(
-          generateInBackground(value, kind, articleType).catch(async (error) => {
+          generateCandidateInBackground(value, kind, articleType).catch(async (error) => {
             console.error("[slack/actions] 生成失敗", {
               errorType: error instanceof Error ? error.name : "unknown",
             });
@@ -391,108 +392,4 @@ async function handleNoteFinalizeRequest(articleId: string, triggerId?: string):
   ]);
 
   return ok("Note事業部のUIで確認してください（Slackからの直接公開は設定のためスキップしています）");
-}
-
-/** 生成して結果をSlackへ返す */
-async function generateInBackground(
-  clusterId: string,
-  kind: "x" | "note" | "both",
-  articleType: "free" | "paid"
-): Promise<void> {
-  const base = process.env.APP_BASE_URL;
-  if (!base) {
-    await postToSlack("APP_BASE_URL が未設定のため、生成を実行できませんでした。");
-    return;
-  }
-
-  // 内部APIを叩くのではなく、直接ライブラリを呼ぶ方が安全なため動的importで実行する
-  const [{ loadAffiliates, loadBrand, loadIdeas }, store, generate, experienceLib, typesMod] =
-    await Promise.all([
-      import("@/app/lib/note/store"),
-      import("@/app/lib/note/research/store"),
-      import("@/app/lib/note/research/generate"),
-      import("@/app/lib/note/research/experience"),
-      import("@/app/lib/note/types"),
-    ]);
-
-  const [clusters, items, experiences, brandFile, ideaFile, drafts] = await Promise.all([
-    store.loadClusters(),
-    store.loadResearchInbox(),
-    store.loadExperiences(),
-    loadBrand(),
-    loadIdeas(),
-    store.loadSocialDrafts(),
-  ]);
-  await loadAffiliates();
-
-  const cluster = clusters.find((c) => c.id === clusterId);
-  if (!cluster) {
-    await postToSlack("その候補が見つかりませんでした。");
-    return;
-  }
-
-  const clusterItems = items.filter((i) => cluster.researchItemIds.includes(i.id));
-  const genreId = cluster.genreIds[0] ?? typesMod.DEFAULT_GENRES[0].id;
-  const genre =
-    ideaFile.genres.find((g) => g.id === genreId) ??
-    typesMod.DEFAULT_GENRES.find((g) => g.id === genreId) ??
-    typesMod.DEFAULT_GENRES[0];
-  const selected = experienceLib.usableExperiences(experiences, cluster.matchedExperienceIds);
-  const pastPosts = drafts.map((d) => ({ label: `過去投稿(${d.id})`, text: d.text }));
-
-  if (kind === "x" || kind === "both") {
-    const account =
-      typesMod.accountForGenre(brandFile.xAccounts, genre.id) ?? brandFile.xAccounts[0];
-    if (account) {
-      const result = await generate.generateXPosts({
-        cluster,
-        items: clusterItems,
-        experiences: selected,
-        brand: brandFile.brand,
-        genre,
-        account,
-        purpose: "reach",
-        pastPosts,
-      });
-      if (result.drafts.length > 0) {
-        await store.saveSocialDrafts([...result.drafts, ...drafts]);
-        await postToSlack(
-          result.warning ? `X投稿案ができました（${result.warning}）` : "X投稿案ができました",
-          result.drafts.flatMap((d) => draftBlocks(d))
-        );
-      } else {
-        await postToSlack(`X投稿を作れませんでした: ${result.warning ?? "不明なエラー"}`);
-      }
-    }
-  }
-
-  if (kind === "note" || kind === "both") {
-    const result = await generate.generateNoteArticle({
-      cluster,
-      items: clusterItems,
-      experiences: selected,
-      brand: brandFile.brand,
-      genre,
-      articleType,
-      pastPosts,
-    });
-    if (result.error) {
-      await postToSlack(`note記事を作れませんでした: ${result.error}`);
-    } else if (result.article) {
-      const queue = await store.loadNoteQueue();
-      await store.saveNoteQueue({ ...queue, articles: [result.article, ...queue.articles] });
-      const blocks = articleBlocks(result.article);
-      if (result.warning) {
-        blocks.unshift({
-          type: "section",
-          text: { type: "mrkdwn", text: `⚠️ ${result.warning}` },
-        });
-      }
-      await postToSlack("note記事の下書きができました（Slackから確認・公開できます）", blocks);
-    }
-  }
-
-  await store.saveClusters(
-    clusters.map((c) => (c.id === clusterId ? { ...c, status: "used" as const } : c))
-  );
 }
