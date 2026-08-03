@@ -215,6 +215,11 @@ test("半導体と主要企業の話題は資産形成として判定する", ()
   assert.deepEqual(genres.detectGenres("TSMCとNVIDIAのデータセンター需要"), ["asset-building"]);
 });
 
+test("仕事・キャリアと個人開発を新しい切り口として判定する", () => {
+  assert.deepEqual(genres.detectGenres("役員という肩書きと働き方を考える"), ["career"]);
+  assert.ok(genres.detectGenres("個人開発でWebサービスを作った記録").includes("personal-development"));
+});
+
 test("通常のテーマはブロックされない", () => {
   const [c] = cluster.buildClusters([item()], baseCtx);
   assert.equal(c.blocked, false);
@@ -259,4 +264,30 @@ test("テーマ指定時は無関係な過去候補を混ぜず、新着の関�
   );
   assert.equal(selected.length, 1);
   assert.ok(selected[0].title.includes("半導体"));
+});
+
+test("指定したブランド軸の候補だけを返す", () => {
+  const aiItem = item({
+    id: "ai-topic",
+    sourceUrl: "ai-url",
+    title: "生成AIの仕事活用",
+    detectedGenreIds: ["ai"],
+  });
+  const investingItem = item({
+    id: "invest-topic",
+    sourceUrl: "invest-url",
+    title: "半導体市場",
+    detectedGenreIds: ["asset-building"],
+  });
+  const clusters = cluster.buildClusters([aiItem, investingItem], baseCtx);
+  const selected = cluster.selectTopCandidates(
+    clusters,
+    [aiItem, investingItem],
+    undefined,
+    [],
+    undefined,
+    "asset-building"
+  );
+  assert.equal(selected.length, 1);
+  assert.ok(selected[0].genreIds.includes("asset-building"));
 });

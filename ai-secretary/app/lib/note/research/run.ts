@@ -37,6 +37,8 @@ export type ResearchRunResult = {
 export async function runResearch(options?: {
   focusTopic?: string;
   platform?: "x" | "note" | "both";
+  xQuery?: string;
+  genreId?: string;
 }): Promise<ResearchRunResult> {
   const ranAt = new Date().toISOString();
 
@@ -129,7 +131,8 @@ export async function runResearch(options?: {
     savedItems,
     options?.focusTopic,
     fresh.map((item) => item.id),
-    platform === "both" ? undefined : platform
+    platform === "both" ? undefined : platform,
+    options?.genreId
   );
 
   return {
