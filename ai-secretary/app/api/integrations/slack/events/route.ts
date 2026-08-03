@@ -6,6 +6,7 @@ import { runInBackground } from "@/app/lib/integrations/vercel-background";
 import { latestDraftLink } from "@/app/lib/note/drafts/mobile";
 import { withLock, claimOnce } from "@/app/lib/note/publishing/queue";
 import { runResearch } from "@/app/lib/note/research/run";
+import { redisSafeGet, redisSafeSet } from "@/app/lib/utils/redis";
 import {
   loadClusters,
   loadExperiences,
@@ -34,6 +35,25 @@ type SlackEventPayload = {
     ts?: string;
   };
 };
+
+type SlackResearchContext = {
+  candidateIds: string[];
+  topic?: string;
+  savedAt: string;
+};
+
+function researchContextKey(channel: string, threadTs?: string): string {
+  return `slack:research-context:${channel}:${threadTs ?? "root"}`;
+}
+
+async function loadResearchContext(
+  channel: string,
+  threadTs?: string
+): Promise<SlackResearchContext | null> {
+  const exact = await redisSafeGet<SlackResearchContext>(researchContextKey(channel, threadTs));
+  if (exact || !threadTs) return exact;
+  return redisSafeGet<SlackResearchContext>(researchContextKey(channel));
+}
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
@@ -100,11 +120,19 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
         !candidate.blocked
     );
     const topic = intent.topic?.toLowerCase();
-    const matching = topic
-      ? clusters.filter((candidate) =>
-          `${candidate.title} ${candidate.summary}`.toLowerCase().includes(topic)
-        )
-      : clusters;
+    let matching;
+    if (topic) {
+      matching = clusters.filter((candidate) =>
+        `${candidate.title} ${candidate.summary}`.toLowerCase().includes(topic)
+      );
+    } else {
+      // 「一番上」は保存済み全候補ではなく、このSlack会話で直前に表示した候補を指す。
+      const context = await loadResearchContext(channel, threadTs);
+      const clusterById = new Map(clusters.map((candidate) => [candidate.id, candidate]));
+      matching = (context?.candidateIds ?? [])
+        .map((id) => clusterById.get(id))
+        .filter((candidate): candidate is (typeof clusters)[number] => Boolean(candidate));
+    }
     const index = (intent.candidateNumber ?? 1) - 1;
     const selected = matching[index];
 
@@ -174,6 +202,11 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
         candidate.matchedExperienceIds.map((id) => experienceById.get(id)?.title).filter((title): title is string => Boolean(title))
       )
     );
+    await redisSafeSet(researchContextKey(channel, threadTs), {
+      candidateIds: result.topCandidates.map((candidate) => candidate.id),
+      topic: intent.topic,
+      savedAt: new Date().toISOString(),
+    } satisfies SlackResearchContext);
     return postToSlack(
       result.topCandidates.length > 0
         ? `✅ ${destinationLabel}「${intent.topic ?? "指定テーマ"}」のリサーチ完了：新規${result.newItems}件、関連候補${result.topCandidates.length}件`
@@ -189,6 +222,10 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
     if (!top.length) return reply("候補はまだありません。「半導体について調べて」のように話しかけてください。", channel, threadTs);
     const itemById = new Map(items.map((item) => [item.id, item]));
     const experienceById = new Map(experiences.map((item) => [item.id, item]));
+    await redisSafeSet(researchContextKey(channel, threadTs), {
+      candidateIds: top.map((candidate) => candidate.id),
+      savedAt: new Date().toISOString(),
+    } satisfies SlackResearchContext);
     return postToSlack(
       `現在の候補 ${top.length}件です。`,
       top.flatMap((candidate) => candidateBlocks(
