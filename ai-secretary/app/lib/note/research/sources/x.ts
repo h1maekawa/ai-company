@@ -40,6 +40,9 @@ type SerpOrganic = { title?: string; link?: string; snippet?: string; date?: str
  * X本体をスクレイピングしにいくことはしない。
  */
 async function searchViaSerpApi(query: string): Promise<XResearchResult> {
+  if (process.env.SERPAPI_ENABLED !== "true") {
+    return empty("無料モードではSerpAPIを呼びません");
+  }
   const key = process.env.SERPAPI_KEY;
   if (!key) return empty("SERPAPI_KEY が未設定のため、freeモードでは検索結果を取得できません");
 
@@ -275,6 +278,9 @@ export async function researchX(
   if (!settings.enabled) return empty("Xリサーチが無効になっています");
 
   if (settings.mode === "official-api") {
+    if (process.env.X_API_ENABLED !== "true") {
+      return empty("無料モードではX APIを呼びません");
+    }
     if (settings.currentEstimatedSpendUsd >= settings.monthlyBudgetUsd) {
       return empty("月額予算の上限に達しているため、X APIを呼びませんでした");
     }

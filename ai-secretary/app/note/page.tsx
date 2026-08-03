@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 import {
+  ArrowRight,
   AtSign,
   BookOpen,
+  CircleHelp,
   Lightbulb,
   Link2,
   PenLine,
@@ -15,6 +17,7 @@ import {
   Sparkles,
   Target,
   Users,
+  PanelTop,
 } from "lucide-react";
 import { IdeaInbox } from "@/components/note/IdeaInbox";
 import { Composer } from "@/components/note/Composer";
@@ -27,6 +30,7 @@ import { ReferenceAccounts } from "@/components/note/ReferenceAccounts";
 import { ExperienceLibrary } from "@/components/note/ExperienceLibrary";
 import { PublishQueue } from "@/components/note/PublishQueue";
 import { AutomationSettings } from "@/components/note/AutomationSettings";
+import { XWorkspace } from "@/components/note/x/XWorkspace";
 import { Card, CardHeader } from "@/components/ui/primitives";
 import type { Idea } from "@/app/lib/note/types";
 import { useAffiliates, useBrand, useIdeas } from "./useNote";
@@ -43,22 +47,30 @@ type Tab =
   | "x"
   | "line"
   | "affiliate"
-  | "brand";
+  | "brand"
+  | "x-workspace";
 
-const TABS: { id: Tab; label: string; icon: typeof Lightbulb }[] = [
-  { id: "dashboard", label: "ダッシュボード", icon: Target },
-  { id: "research", label: "リサーチ候補", icon: Search },
-  { id: "references", label: "参考アカウント", icon: Users },
-  { id: "experiences", label: "体験ライブラリ", icon: BookOpen },
-  { id: "queue", label: "投稿キュー", icon: Send },
-  { id: "settings", label: "自動化設定", icon: Settings },
-  { id: "ideas", label: "ネタ帳", icon: Lightbulb },
-  { id: "write", label: "記事を作る", icon: PenLine },
-  { id: "x", label: "Xアカウント", icon: AtSign },
-  { id: "line", label: "公式LINE", icon: Smartphone },
-  { id: "affiliate", label: "アフィリエイト", icon: Link2 },
-  { id: "brand", label: "ブランディング", icon: Sparkles },
+const TABS: { id: Tab; label: string; description: string; icon: typeof Lightbulb; group: "main" | "materials" | "settings" }[] = [
+  { id: "dashboard", label: "ホーム", description: "今日やることを確認", icon: Target, group: "main" },
+  { id: "research", label: "話題を探す", description: "X・noteの投稿テーマを探す", icon: Search, group: "main" },
+  { id: "x-workspace", label: "X投稿を作る", description: "調べて、整えて、Xで投稿", icon: PanelTop, group: "main" },
+  { id: "write", label: "noteを書く", description: "メモや候補から記事を作る", icon: PenLine, group: "main" },
+  { id: "queue", label: "下書き・投稿", description: "作成済みの内容を確認", icon: Send, group: "main" },
+  { id: "experiences", label: "自分の体験", description: "記事に使える実体験", icon: BookOpen, group: "materials" },
+  { id: "references", label: "参考アカウント", description: "研究したい発信者", icon: Users, group: "materials" },
+  { id: "ideas", label: "ネタ帳", description: "思いつきを保存", icon: Lightbulb, group: "materials" },
+  { id: "brand", label: "発信ルール", description: "まえみちらしさを設定", icon: Sparkles, group: "materials" },
+  { id: "x", label: "Xアカウント", description: "自分のアカウントを登録", icon: AtSign, group: "settings" },
+  { id: "settings", label: "安全・自動化", description: "リサーチと公開の設定", icon: Settings, group: "settings" },
+  { id: "line", label: "公式LINE", description: "LINE教材を作成", icon: Smartphone, group: "settings" },
+  { id: "affiliate", label: "収益リンク", description: "紹介リンクを管理", icon: Link2, group: "settings" },
 ];
+
+const GROUPS = [
+  { id: "main", label: "よく使う" },
+  { id: "materials", label: "発信の材料" },
+  { id: "settings", label: "設定・その他" },
+] as const;
 
 export default function NoteDepartmentPage() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -102,28 +114,60 @@ export default function NoteDepartmentPage() {
           </Link>
         </div>
 
-        {/* Tabs */}
-        <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-hairline bg-ink-card p-1">
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
-                  tab === t.id ? "bg-gain text-ink-base" : "text-sub hover:bg-white/5 hover:text-white"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {t.label}
-              </button>
-            );
-          })}
+        {/* Navigation */}
+        <div className="mb-4 rounded-2xl border border-hairline bg-ink-card p-2 sm:p-3">
+          {GROUPS.map((group) => (
+            <div key={group.id} className="flex items-start gap-2 border-b border-hairline py-2 last:border-0">
+              <p className="w-20 shrink-0 px-1 pt-2 text-[10px] font-semibold text-sub">{group.label}</p>
+              <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+                {TABS.filter((item) => item.group === group.id).map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setTab(item.id)}
+                      title={item.description}
+                      className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors sm:text-sm ${
+                        tab === item.id ? "bg-gain text-ink-base" : "text-sub hover:bg-white/5 hover:text-white"
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
+
+        {tab !== "dashboard" && (
+          <div className="mb-4 flex items-start gap-2 rounded-xl border border-brand/20 bg-brand/5 px-4 py-3">
+            <CircleHelp className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+            <div>
+              <p className="text-sm font-semibold">{TABS.find((item) => item.id === tab)?.label}</p>
+              <p className="mt-0.5 text-xs text-sub">{TABS.find((item) => item.id === tab)?.description}</p>
+            </div>
+          </div>
+        )}
 
         {/* ─── ダッシュボード ───────────────────── */}
         {tab === "dashboard" && (
           <div className="space-y-4">
+            <Card>
+              <CardHeader title="まずは、この順番で進めます" hint="迷ったら左から順に押してください" />
+              <div className="grid gap-2 sm:grid-cols-4">
+                <GuideStep number="1" title="話題を探す" text="いま読まれそうなテーマを見つける" onClick={() => setTab("research")} />
+                <GuideStep number="2" title="自分の体験を足す" text="AIが作り話をしないための材料" onClick={() => setTab("experiences")} />
+                <GuideStep number="3" title="投稿を作る" text="Xまたはnoteの文章にする" onClick={() => setTab("x-workspace")} />
+                <GuideStep number="4" title="自分で確認する" text="下書きを確認してから投稿する" onClick={() => setTab("queue")} />
+              </div>
+              <p className="mt-3 rounded-lg bg-white/[0.03] px-3 py-2 text-[11px] leading-relaxed text-sub">
+                「リサーチ」は、人気の話題をそのままコピーする機能ではありません。
+                読まれている理由を見つけ、前川さん自身の体験や考えと組み合わせるための機能です。
+              </p>
+            </Card>
+
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Stat label="ネタの在庫" value={`${inboxCount}件`} accent="#f59e0b" />
               <Stat
@@ -178,7 +222,7 @@ export default function NoteDepartmentPage() {
             )}
 
             <Card>
-              <CardHeader title="収益までの流れ" hint="どこで集めて、どこで教えて、どこで収益化するか" />
+              <CardHeader title="この事業部でできること" hint="Xで知ってもらい、noteで詳しく伝え、収益につなげます" />
               <ol className="space-y-2">
                 {(brandState.brand?.funnel ?? []).map((step, i) => (
                   <li key={i} className="flex gap-3 text-sm">
@@ -229,6 +273,7 @@ export default function NoteDepartmentPage() {
         {tab === "experiences" && <ExperienceLibrary />}
         {tab === "queue" && <PublishQueue />}
         {tab === "settings" && <AutomationSettings />}
+        {tab === "x-workspace" && <XWorkspace accounts={brandState.xAccounts} onOpenLocalEditor={() => setTab("write")} />}
 
         {tab === "ideas" && (
           <IdeaInbox
@@ -305,5 +350,31 @@ function Stat({ label, value, accent }: { label: string; value: string; accent: 
         {value}
       </p>
     </div>
+  );
+}
+
+function GuideStep({
+  number,
+  title,
+  text,
+  onClick,
+}: {
+  number: string;
+  title: string;
+  text: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="group rounded-xl border border-hairline bg-white/[0.02] p-3 text-left hover:border-gain/40"
+    >
+      <div className="flex items-center justify-between">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gain/15 text-xs font-bold text-gain">{number}</span>
+        <ArrowRight className="h-3.5 w-3.5 text-sub group-hover:text-gain" />
+      </div>
+      <p className="mt-2 text-sm font-semibold text-white">{title}</p>
+      <p className="mt-1 text-[10px] leading-relaxed text-sub">{text}</p>
+    </button>
   );
 }

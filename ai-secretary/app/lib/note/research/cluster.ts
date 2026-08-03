@@ -276,11 +276,12 @@ export function buildClusters(
 
     const raw =
       trendScore + brandFitScore + experienceFitScore + monetizationFitScore + originalityScore;
-    const totalScore = Math.max(0, raw - deduction);
-
     const riskLabel = detectHighRisk(
       group.map((g) => `${g.title ?? ""} ${g.textExcerpt}`).join(" ")
     );
+    // 対象外の記事に高い点数が残ると、おすすめ候補に見えてしまう。
+    // 内訳は監査用に残しつつ、総合点は0として通常候補より下へ送る。
+    const totalScore = riskLabel ? 0 : Math.max(0, raw - deduction);
 
     const prior = existingById.get(id);
 

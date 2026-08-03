@@ -8,16 +8,35 @@ import {
   saveSocialDrafts,
 } from "@/app/lib/note/research/store";
 import { createPost, countScheduled } from "@/app/lib/note/publishing/buffer";
+import {
+  adoptLocalAiReview,
+  rejectLocalAiReview,
+  saveReviewAsUnverifiedExperience,
+} from "@/app/lib/note/editor/actions";
+import { enqueueLocalAiReview } from "@/app/lib/note/editor/create";
+import { getLocalAiReviewJob } from "@/app/lib/note/editor/jobs";
+import { runInBackground } from "@/app/lib/integrations/vercel-background";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 type SlackAction = { action_id?: string; value?: string };
 type SlackPayload = {
+  type?: string;
   user?: { id?: string; name?: string };
   actions?: SlackAction[];
   response_url?: string;
   trigger_id?: string;
+  view?: {
+    id?: string;
+    callback_id?: string;
+    state?: {
+      values?: Record<string, Record<string, {
+        value?: string;
+        selected_option?: { value?: string };
+      }>>;
+    };
+  };
 };
 
 function ok(text: string): Response {
@@ -47,6 +66,10 @@ export async function POST(req: Request): Promise<Response> {
     payload = JSON.parse(params.get("payload") ?? "{}") as SlackPayload;
   } catch {
     return ok("操作を解釈できませんでした");
+  }
+
+  if (payload.type === "view_submission" && payload.view?.callback_id === "maemichi_local_edit_submit") {
+    return handleLocalEditSubmission(payload);
   }
 
   const action = payload.actions?.[0];
@@ -89,8 +112,15 @@ export async function POST(req: Request): Promise<Response> {
         const articleType = actionId === ACTIONS.makePaidNote ? "paid" : "free";
 
         // 生成は時間がかかるので、先に応答してから裏で走らせる
-        void generateInBackground(value, kind, articleType).catch((error) =>
-          console.error("[slack/actions] 生成失敗:", error)
+        runInBackground(
+          generateInBackground(value, kind, articleType).catch(async (error) => {
+            console.error("[slack/actions] 生成失敗", {
+              errorType: error instanceof Error ? error.name : "unknown",
+            });
+            await postToSlack(
+              "投稿案の生成に失敗しました。Vercelのログを確認してください。"
+            );
+          })
         );
         return ok("作成を開始しました。できたらこのチャンネルへ送ります。");
       }
@@ -145,6 +175,30 @@ export async function POST(req: Request): Promise<Response> {
         return await handleNoteFinalizeRequest(value, payload.trigger_id);
       }
 
+      case ACTIONS.localEditAdopt: {
+        await adoptLocalAiReview(value);
+        return ok("採用しました。外部公開せず、Note事業部へ下書き保存しました。");
+      }
+
+      case ACTIONS.localEditReject: {
+        await rejectLocalAiReview(value);
+        return ok("却下履歴を保存しました。");
+      }
+
+      case ACTIONS.localEditExperience: {
+        await saveReviewAsUnverifiedExperience(value);
+        return ok("体験ライブラリへ未確認の下書きとして保存しました。");
+      }
+
+      case ACTIONS.localEditLight:
+        return await handleLocalEditRevision(value, user, "light");
+      case ACTIONS.localEditRewrite:
+        return await handleLocalEditRevision(value, user, "rewrite");
+      case ACTIONS.localEditX:
+        return await handleLocalEditRevision(value, user, "structure", "x");
+      case ACTIONS.localEditNote:
+        return await handleLocalEditRevision(value, user, "structure", "note");
+
       default:
         return ok("未対応の操作です。");
     }
@@ -153,6 +207,61 @@ export async function POST(req: Request): Promise<Response> {
     console.error("[slack/actions] 失敗:", error);
     return ok(`エラー: ${message}`);
   }
+}
+
+function modalValue(payload: SlackPayload, block: string): string {
+  const field = payload.view?.state?.values?.[block]?.value;
+  return field?.selected_option?.value ?? field?.value ?? "";
+}
+
+async function handleLocalEditSubmission(payload: SlackPayload): Promise<Response> {
+  const requestedBy = payload.user?.id ?? "slack";
+  try {
+    const job = await enqueueLocalAiReview(
+      {
+        destination: modalValue(payload, "destination"),
+        purpose: modalValue(payload, "purpose"),
+        originalText: modalValue(payload, "original"),
+        strength: modalValue(payload, "strength"),
+        keepExpressions: modalValue(payload, "keep"),
+        additionalFacts: modalValue(payload, "facts"),
+      },
+      `slack:${requestedBy}`
+    );
+    await postToSlack(
+      `Local AI添削を受け付けました（ジョブ: ${job.id}）。Macが停止中の場合は保留します。`
+    );
+    return new Response("", { status: 200 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "添削を依頼できません";
+    return new Response(
+      JSON.stringify({
+        response_action: "errors",
+        errors: { original: message.slice(0, 200) },
+      }),
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+}
+
+async function handleLocalEditRevision(
+  id: string,
+  user: string,
+  strength: "light" | "structure" | "rewrite",
+  destination?: "x" | "note"
+): Promise<Response> {
+  const source = await getLocalAiReviewJob(id);
+  if (!source?.result) return ok("元の添削結果が見つかりません。");
+  const job = await enqueueLocalAiReview(
+    {
+      ...source.input,
+      destination: destination ?? source.input.destination,
+      strength,
+      originalText: source.result.revisedText,
+    },
+    `slack:${user}`
+  );
+  return ok(`再添削を受け付けました（ジョブ: ${job.id}）。完了後に通知します。`);
 }
 
 /** X投稿を Buffer のキューに追加 */

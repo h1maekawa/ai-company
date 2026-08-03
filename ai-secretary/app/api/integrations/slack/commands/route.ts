@@ -1,5 +1,5 @@
 import { verifySlackRequest, slackText } from "@/app/lib/integrations/slack/verify";
-import { candidateBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
+import { candidateBlocks, openSlackView, postToSlack } from "@/app/lib/integrations/slack/blocks";
 import { runResearch } from "@/app/lib/note/research/run";
 import { runDailyXAutomation } from "@/app/lib/note/automation/dailyX";
 import { withLock } from "@/app/lib/note/publishing/queue";
@@ -12,6 +12,7 @@ import {
   loadResearchSettings,
   loadSocialDrafts,
 } from "@/app/lib/note/research/store";
+import { runInBackground } from "@/app/lib/integrations/vercel-background";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -53,9 +54,11 @@ export async function POST(req: Request): Promise<Response> {
         return await handleSettings();
       case "autopost":
         return handleAutoPost();
+      case "edit":
+        return await handleEdit(params.get("trigger_id"));
       default:
         return slackText(
-          "使い方: `/maemichi research | candidates | autopost | queue | performance | settings`"
+          "使い方: `/maemichi edit | research | candidates | autopost | queue | performance | settings`"
         );
     }
   } catch (error) {
@@ -65,34 +68,91 @@ export async function POST(req: Request): Promise<Response> {
   }
 }
 
+async function handleEdit(triggerId: string | null): Promise<Response> {
+  if (!triggerId) return slackText("Slackの入力画面を開けませんでした。もう一度実行してください。");
+  const option = (text: string, value: string) => ({
+    text: { type: "plain_text", text },
+    value,
+  });
+  const result = await openSlackView(triggerId, {
+    type: "modal",
+    callback_id: "maemichi_local_edit_submit",
+    title: { type: "plain_text", text: "まえみち原稿添削" },
+    submit: { type: "plain_text", text: "添削を依頼" },
+    close: { type: "plain_text", text: "キャンセル" },
+    blocks: [
+      {
+        type: "input", block_id: "destination", label: { type: "plain_text", text: "投稿先" },
+        element: { type: "static_select", action_id: "value", initial_option: option("Xとnote両方", "both"),
+          options: [option("X", "x"), option("note", "note"), option("Xとnote両方", "both")] },
+      },
+      {
+        type: "input", block_id: "purpose", label: { type: "plain_text", text: "記事の目的" },
+        element: { type: "static_select", action_id: "value", initial_option: option("体験共有", "experience"),
+          options: [option("認知", "awareness"), option("体験共有", "experience"), option("ノウハウ", "howto"), option("商品紹介", "product"), option("価値観", "values")] },
+      },
+      {
+        type: "input", block_id: "original", label: { type: "plain_text", text: "元になる文章" },
+        element: { type: "plain_text_input", action_id: "value", multiline: true, min_length: 10, max_length: 3000 },
+      },
+      {
+        type: "input", block_id: "strength", label: { type: "plain_text", text: "修正の強さ" },
+        element: { type: "static_select", action_id: "value", initial_option: option("軽く整える", "light"),
+          options: [option("軽く整える", "light"), option("読みやすく構成変更", "structure"), option("大幅に書き直す", "rewrite")] },
+      },
+      {
+        type: "input", optional: true, block_id: "keep", label: { type: "plain_text", text: "残したい表現（1行に1つ）" },
+        element: { type: "plain_text_input", action_id: "value", multiline: true },
+      },
+      {
+        type: "input", optional: true, block_id: "facts", label: { type: "plain_text", text: "確認済みの追加事実（1行に1つ）" },
+        element: { type: "plain_text_input", action_id: "value", multiline: true },
+      },
+    ],
+  });
+  return result.ok ? new Response("", { status: 200 }) : slackText(`入力画面を開けません: ${result.error}`);
+}
+
 function handleAutoPost(): Response {
-  void withLock("daily-x-publish", runDailyXAutomation).catch((error) =>
-    console.error("[slack/commands] autopost失敗:", error)
+  runInBackground(
+    withLock("daily-x-publish", runDailyXAutomation).catch(async (error) => {
+      console.error("[slack/commands] autopost失敗", {
+        errorType: error instanceof Error ? error.name : "unknown",
+      });
+      await postToSlack("X投稿案の生成に失敗しました。Vercelのログを確認してください。");
+    })
   );
   return slackText("X投稿案の生成を開始しました。完了後、このチャンネルに確認カードを送ります。");
 }
 
 async function handleResearch(): Promise<Response> {
   // Slackは3秒でタイムアウトするので、先に応答してから裏で走らせる
-  void withLock("research-run", async () => {
-    const result = await runResearch();
-    const [items, experiences] = await Promise.all([loadResearchInbox(), loadExperiences()]);
-    const itemById = new Map(items.map((i) => [i.id, i]));
-    const expById = new Map(experiences.map((e) => [e.id, e]));
+  runInBackground(
+    withLock("research-run", async () => {
+      const result = await runResearch();
+      const [items, experiences] = await Promise.all([loadResearchInbox(), loadExperiences()]);
+      const itemById = new Map(items.map((i) => [i.id, i]));
+      const expById = new Map(experiences.map((e) => [e.id, e]));
 
-    const blocks = result.topCandidates.flatMap((c) =>
-      candidateBlocks(
-        c,
-        c.researchItemIds.map((id) => itemById.get(id)).filter((i): i is NonNullable<typeof i> => Boolean(i)),
-        c.matchedExperienceIds.map((id) => expById.get(id)?.title).filter((t): t is string => Boolean(t))
-      )
-    );
+      const blocks = result.topCandidates.flatMap((c) =>
+        candidateBlocks(
+          c,
+          c.researchItemIds.map((id) => itemById.get(id)).filter((i): i is NonNullable<typeof i> => Boolean(i)),
+          c.matchedExperienceIds.map((id) => expById.get(id)?.title).filter((t): t is string => Boolean(t))
+        )
+      );
 
-    await postToSlack(
-      `リサーチが終わりました（新規 ${result.newItems}件 / 候補 ${result.topCandidates.length}件）`,
-      blocks.length > 0 ? blocks : undefined
-    );
-  }).catch((error) => console.error("[slack/commands] research失敗:", error));
+      await postToSlack(
+        `リサーチが終わりました（新規 ${result.newItems}件 / 候補 ${result.topCandidates.length}件）`,
+        blocks.length > 0 ? blocks : undefined
+      );
+    }).catch(async (error) => {
+      console.error("[slack/commands] research失敗", {
+        errorType: error instanceof Error ? error.name : "unknown",
+      });
+      await postToSlack("リサーチに失敗しました。Vercelのログを確認してください。");
+    })
+  );
 
   return slackText("リサーチを開始しました。終わったらこのチャンネルへ候補を送ります。");
 }
@@ -168,6 +228,7 @@ async function handleSettings(): Promise<Response> {
     `*Xリサーチ*: ${s.x.mode} / ${s.x.enabled ? "有効" : "無効"}`,
     `*API予算*: $${s.x.currentEstimatedSpendUsd} / $${s.x.monthlyBudgetUsd}`,
     `*投稿全体*: ${s.flags.publishingEnabled ? "有効" : "停止中"}`,
+    `*Local AI添削*: ${s.flags.localAiEditorEnabled ? "ON" : "OFF"}`,
     `*X自動投稿*: ${s.flags.xAutoPublish ? "ON" : "OFF"}`,
     `*note自動公開*: ${s.flags.noteAutoPublish ? "ON" : "OFF"}（下書きのみ: ${s.flags.noteDraftOnly ? "はい" : "いいえ"}）`,
     `*1日のX上限*: ${s.flags.maxXPostsPerDay}件 / *Buffer予約上限*: ${s.flags.maxBufferScheduled}件`,

@@ -10,6 +10,7 @@ import path from "node:path";
 const DIST = process.env.MAEMICHI_DIST;
 const cluster = await import(path.join(DIST, "note/research/cluster.js"));
 const types = await import(path.join(DIST, "note/research/types.js"));
+const genres = await import(path.join(DIST, "note/research/genres.js"));
 
 /* ─── テスト用のダミーデータ ───────────────── */
 
@@ -188,6 +189,24 @@ test("政治・医療・法律・投資助言・ギャンブルは自動公開�
     assert.equal(c.blocked, true, `${label}: blockedになること`);
     assert.ok(c.blockReason?.includes(label), `${label}: 理由に種別が入ること`);
   }
+});
+
+test("AI競艇はAI・資産形成として扱わず、総合点も0になる", () => {
+  const detected = genres.detectGenres("AI競艇予想に投資してコロガシを狙う");
+  assert.deepEqual(detected, []);
+
+  const [c] = cluster.buildClusters(
+    [item({ title: "AI競艇予想", textExcerpt: "舟券のコロガシ", detectedGenreIds: detected })],
+    baseCtx
+  );
+  assert.equal(c.blocked, true);
+  assert.equal(c.totalScore, 0);
+});
+
+test("具体的なAI・読書の話題は判定し、一般的な「本当に」は読書にしない", () => {
+  assert.deepEqual(genres.detectGenres("ChatGPTを仕事で活用する方法"), ["ai"]);
+  assert.deepEqual(genres.detectGenres("この方法は本当に便利でした"), []);
+  assert.deepEqual(genres.detectGenres("読書で学んだこと"), ["reading"]);
 });
 
 test("通常のテーマはブロックされない", () => {

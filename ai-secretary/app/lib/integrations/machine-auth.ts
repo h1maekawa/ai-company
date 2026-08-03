@@ -42,3 +42,17 @@ export function verifyRunnerToken(req: Request): { ok: boolean; reason?: string 
     ? { ok: true }
     : { ok: false, reason: "LOCAL_RUNNER_TOKEN が一致しません" };
 }
+
+/** Mac上のLocal AI Workerからのアクセスを検証する */
+export function verifyLocalAiWorkerToken(req: Request): { ok: boolean; reason?: string } {
+  const secret = process.env.MAEMICHI_LOCAL_AI_WORKER_TOKEN;
+  if (!secret) {
+    return { ok: false, reason: "MAEMICHI_LOCAL_AI_WORKER_TOKEN が未設定です" };
+  }
+
+  const token = bearer(req) ?? req.headers.get("x-local-ai-worker-token");
+  if (!token) return { ok: false, reason: "認証情報がありません" };
+  return safeEqual(token, secret)
+    ? { ok: true }
+    : { ok: false, reason: "MAEMICHI_LOCAL_AI_WORKER_TOKEN が一致しません" };
+}
