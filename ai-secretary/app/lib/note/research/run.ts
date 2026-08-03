@@ -86,7 +86,12 @@ export async function runResearch(options?: {
   const fresh = fetched.filter((i) => !knownUrls.has(i.sourceUrl));
 
   // 新しいものだけAIで型へ抽象化する（コストと時間の節約）
-  const abstracted = fresh.length > 0 ? await abstractItems(fresh) : [];
+  // Slackの会話リサーチはVercelの制限時間内に必ず完了通知を返す。
+  // 型分析のAI呼び出しは待たず、決定的なフォールバックで採点する。
+  const abstracted =
+    fresh.length > 0
+      ? await abstractItems(fresh, { useAI: !options?.focusTopic })
+      : [];
 
   const allItems: ResearchItem[] = [...abstracted, ...existingItems];
   const savedItems = await saveResearchInbox(allItems);

@@ -70,8 +70,14 @@ type AbstractRow = {
  * ResearchItem に型情報を付与する。
  * 入力の本文はここで捨て、以後は型だけを使う。
  */
-export async function abstractItems(items: ResearchItem[]): Promise<ResearchItem[]> {
+export async function abstractItems(
+  items: ResearchItem[],
+  options?: { useAI?: boolean }
+): Promise<ResearchItem[]> {
   if (items.length === 0) return items;
+  if (options?.useAI === false) {
+    return items.map((item) => ({ ...item, ...fallbackPattern(item) }));
+  }
 
   // 一度に投げすぎない
   const batch = items.slice(0, 25);
