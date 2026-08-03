@@ -54,6 +54,20 @@ test("候補番号とnote種別を会話から読み取る", () => {
   });
 });
 
+test("候補を選んで意見入力へ進める", () => {
+  assert.deepEqual(conversation.classifyConversation("1番目が気になる"), {
+    type: "select",
+    candidateNumber: 1,
+  });
+});
+
+test("この意見で作っては検索テーマとして扱わない", () => {
+  const intent = conversation.classifyConversation("この意見でXとnoteを両方作って");
+  assert.equal(intent.type, "generate");
+  assert.equal(intent.kind, "both");
+  assert.equal(intent.topic, undefined);
+});
+
 test("Xとnoteの両方を会話から作成できる", () => {
   const intent = conversation.classifyConversation("一番上の候補でXとnoteを両方作って");
   assert.equal(intent.type, "generate");

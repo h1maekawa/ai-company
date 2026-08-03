@@ -1,5 +1,5 @@
 import { candidateBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
-import { classifyConversation } from "@/app/lib/integrations/slack/conversation";
+import { classifyConversation, cleanSlackMessage } from "@/app/lib/integrations/slack/conversation";
 import { generateCandidateInBackground } from "@/app/lib/integrations/slack/generate";
 import { verifySlackRequest } from "@/app/lib/integrations/slack/verify";
 import { runInBackground } from "@/app/lib/integrations/vercel-background";
@@ -39,6 +39,9 @@ type SlackEventPayload = {
 type SlackResearchContext = {
   candidateIds: string[];
   topic?: string;
+  selectedCandidateId?: string;
+  authorViewpoint?: string;
+  awaitingOpinion?: boolean;
   savedAt: string;
 };
 
@@ -112,7 +115,55 @@ async function reply(text: string, channel: string, threadTs?: string) {
 }
 
 async function handleConversation(text: string, channel: string, threadTs?: string) {
+  const cleanedText = cleanSlackMessage(text);
+  const currentContext = await loadResearchContext(channel, threadTs);
+  if (
+    currentContext?.awaitingOpinion &&
+    cleanedText.length >= 5 &&
+    !/(?:候補.*見せ|設定|下書き.*状況|作って|作成して|生成して|書いて|公開)/.test(cleanedText)
+  ) {
+    await redisSafeSet(researchContextKey(channel, threadTs), {
+      ...currentContext,
+      authorViewpoint: cleanedText.slice(0, 2000),
+      awaitingOpinion: false,
+      savedAt: new Date().toISOString(),
+    } satisfies SlackResearchContext);
+    return reply(
+      "✅ 今回の意見として保存しました。体験ライブラリには自動登録しません。\n続けて「この意見でXとnoteを作って」のように話しかけてください。",
+      channel,
+      threadTs
+    );
+  }
+
   const intent = classifyConversation(text);
+  if (intent.type === "select") {
+    const context = currentContext ?? (await loadResearchContext(channel, threadTs));
+    const selectedId = context?.candidateIds[intent.candidateNumber - 1];
+    if (!context || !selectedId) {
+      return reply(
+        "その候補を確認できませんでした。先に調べたいテーマを話しかけてください。",
+        channel,
+        threadTs
+      );
+    }
+    const selected = (await loadClusters()).find((candidate) => candidate.id === selectedId);
+    if (!selected) {
+      return reply("その候補は見つかりませんでした。もう一度リサーチしてください。", channel, threadTs);
+    }
+    await redisSafeSet(researchContextKey(channel, threadTs), {
+      ...context,
+      selectedCandidateId: selected.id,
+      authorViewpoint: undefined,
+      awaitingOpinion: true,
+      savedAt: new Date().toISOString(),
+    } satisfies SlackResearchContext);
+    return reply(
+      `「${selected.title}」を選びました。\n\nこの話題について、前川さんはどう思いますか？\n体験・疑問・注目している点を、普段の言葉でそのまま送ってください。分からないことは「まだ分からない」と書いて大丈夫です。`,
+      channel,
+      threadTs
+    );
+  }
+
   if (intent.type === "generate") {
     const clusters = (await loadClusters()).filter(
       (candidate) =>
@@ -127,9 +178,12 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       );
     } else {
       // 「一番上」は保存済み全候補ではなく、このSlack会話で直前に表示した候補を指す。
-      const context = await loadResearchContext(channel, threadTs);
+      const context = currentContext ?? (await loadResearchContext(channel, threadTs));
       const clusterById = new Map(clusters.map((candidate) => [candidate.id, candidate]));
-      matching = (context?.candidateIds ?? [])
+      const orderedIds = context?.selectedCandidateId
+        ? [context.selectedCandidateId, ...context.candidateIds.filter((id) => id !== context.selectedCandidateId)]
+        : context?.candidateIds ?? [];
+      matching = orderedIds
         .map((id) => clusterById.get(id))
         .filter((candidate): candidate is (typeof clusters)[number] => Boolean(candidate));
     }
@@ -140,6 +194,23 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       const subject = intent.topic ? `「${intent.topic}」` : "指定された";
       return reply(
         `${subject}候補がまだありません。\n先に「${intent.topic ?? "半導体"}について調べて」と話しかけてください。候補が届いたら「一番上でX案を作って」のように続けられます。`,
+        channel,
+        threadTs
+      );
+    }
+    const context = currentContext ?? (await loadResearchContext(channel, threadTs));
+    if (!context?.authorViewpoint) {
+      await redisSafeSet(researchContextKey(channel, threadTs), {
+        ...(context ?? {
+          candidateIds: matching.map((candidate) => candidate.id),
+          savedAt: new Date().toISOString(),
+        }),
+        selectedCandidateId: selected.id,
+        awaitingOpinion: true,
+        savedAt: new Date().toISOString(),
+      } satisfies SlackResearchContext);
+      return reply(
+        `「${selected.title}」で作成します。\n\nその前に、この話題について前川さんはどう思いますか？\n体験・疑問・注目している点を、普段の言葉で送ってください。回答後に「この意見でXとnoteを作って」と続けられます。`,
         channel,
         threadTs
       );
@@ -156,7 +227,8 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       selected.id,
       intent.kind,
       intent.articleType,
-      { channel, threadTs }
+      { channel, threadTs },
+      context.authorViewpoint
     );
     return;
   }

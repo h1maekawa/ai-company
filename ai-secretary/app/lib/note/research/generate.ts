@@ -112,6 +112,18 @@ ${experiences
   .join("\n\n")}`;
 }
 
+function viewpointBlock(authorViewpoint?: string): string {
+  if (!authorViewpoint?.trim()) {
+    return `## 筆者の今回の意見
+（未入力。一般的な考察に留め、筆者の意見を創作しないでください）`;
+  }
+  return `## 筆者がSlackで入力した今回の意見
+${authorViewpoint.trim()}
+
+この文章は今回の投稿に使う本人の見解です。主張の中心として自然に反映してください。
+ただし、意見に含まれる数値・出来事・利用経験を、確認済みの客観的事実や実体験へ勝手に変換しないでください。`;
+}
+
 /* ─── X投稿の生成 ───────────────────────── */
 
 const PURPOSE_GUIDE: Record<ContentPurpose, string> = {
@@ -135,6 +147,8 @@ export type GenerateXInput = {
   policy?: AffiliatePolicy;
   /** 類似チェック用の自分の過去投稿 */
   pastPosts: SimilarityCandidate[];
+  /** Slackで本人が入力した、今回の投稿だけに使う見解 */
+  authorViewpoint?: string;
 };
 
 export type GenerateXResult = {
@@ -170,6 +184,8 @@ ${brandBlock(brand)}
 ${trendBlock(cluster, items)}
 
 ${experienceBlock(experiences)}
+
+${viewpointBlock(input.authorViewpoint)}
 
 ## この投稿の目的
 ${PURPOSE_GUIDE[purpose]}
@@ -284,6 +300,8 @@ export type GenerateNoteInput = {
   affiliate?: AffiliateLink;
   policy?: AffiliatePolicy;
   pastPosts: SimilarityCandidate[];
+  /** Slackで本人が入力した、今回の投稿だけに使う見解 */
+  authorViewpoint?: string;
 };
 
 export type GenerateNoteResult = {
@@ -342,6 +360,8 @@ ${brandBlock(brand)}
 ${trendBlock(cluster, items)}
 
 ${experienceBlock(experiences)}
+
+${viewpointBlock(input.authorViewpoint)}
 
 ${structure}
 

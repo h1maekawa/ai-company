@@ -7,6 +7,7 @@ export type ConversationIntent =
       topic?: string;
       candidateNumber?: number;
     }
+  | { type: "select"; candidateNumber: number }
   | { type: "candidates" }
   | { type: "queue" }
   | { type: "draft" }
@@ -31,12 +32,14 @@ function researchTopic(text: string): string | undefined {
 }
 
 function generationTopic(text: string): string | undefined {
+  if (/(?:この|今の)(?:意見|考え|回答)/.test(text)) return undefined;
   const cleaned = text
     .replace(/(?:X|Twitter|ツイート|note|ノート)(?:投稿|記事|原稿|用)?/gi, "")
     .replace(/(?:無料|有料|両方|どちらも|一緒に)/g, "")
     .replace(/(?:の)?(?:下書き|投稿案|記事|文章|原稿|案)/g, "")
     .replace(/(?:を|で|について)?(?:作って|作成して|生成して|書いて|考えて|お願い)/g, "")
     .replace(/(?:一番上|1番目|2番目|3番目|4番目|5番目|最初|候補)/g, "")
+    .replace(/(?:この|今の)?(?:意見|考え|回答)(?:を使って|で)?/g, "")
     .replace(/[。、！？!?]/g, " ")
     .replace(/^(?:の|で)+|(?:の|で)+$/g, "")
     .trim();
@@ -69,6 +72,13 @@ export function classifyConversation(text: string): ConversationIntent {
       topic: generationTopic(cleaned),
       candidateNumber: candidateNumber(cleaned),
     };
+  }
+  const selectedNumber = candidateNumber(cleaned);
+  if (
+    selectedNumber &&
+    /(?:気になる|選びたい|選ぶ|詳しく見たい|これにする|これがいい)/.test(cleaned)
+  ) {
+    return { type: "select", candidateNumber: selectedNumber };
   }
   if (/(全文|原稿|記事|下書き).*(見せ|確認|開)|(?:見せ|確認).*(全文|原稿|記事|下書き)/.test(cleaned)) {
     return { type: "draft" };
