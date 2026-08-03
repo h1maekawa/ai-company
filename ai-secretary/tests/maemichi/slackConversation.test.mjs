@@ -9,6 +9,19 @@ test("メンションを除いて普通の会話を解釈する", () => {
   const intent = conversation.classifyConversation("<@U123> 半導体について調べて");
   assert.equal(intent.type, "research");
   assert.equal(intent.topic, "半導体");
+  assert.equal(intent.destination, "both");
+});
+
+test("note記事用とX投稿用のリサーチを会話から分けられる", () => {
+  const note = conversation.classifyConversation("note記事用に半導体について調べて");
+  assert.equal(note.type, "research");
+  assert.equal(note.destination, "note");
+  assert.equal(note.topic, "半導体");
+
+  const x = conversation.classifyConversation("X投稿向けにAIニュースを調べて");
+  assert.equal(x.type, "research");
+  assert.equal(x.destination, "x");
+  assert.equal(x.topic, "AIニュース");
 });
 
 test("最新記事を見せてはスマホ下書き表示になる", () => {

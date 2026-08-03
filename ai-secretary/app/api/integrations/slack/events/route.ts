@@ -138,22 +138,30 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       const settings = await loadResearchSettings();
       await saveResearchSettings({
         ...settings,
-        noteTags: [...new Set([intent.topic, ...settings.noteTags])].slice(0, 20),
+        noteTags:
+          intent.destination === "x"
+            ? settings.noteTags
+            : [...new Set([intent.topic, ...settings.noteTags])].slice(0, 20),
         x: {
           ...settings.x,
-          keywords: [...new Set([intent.topic, ...settings.x.keywords])].slice(0, 20),
+          keywords:
+            intent.destination === "note"
+              ? settings.x.keywords
+              : [...new Set([intent.topic, ...settings.x.keywords])].slice(0, 20),
         },
       });
     }
+    const destinationLabel =
+      intent.destination === "x" ? "X投稿用" : intent.destination === "note" ? "note記事用" : "X・note両方";
     await reply(
       intent.topic
-        ? `🔎 受付しました。「${intent.topic}」を調べています。\n通常1〜3分ほどです。終わったら候補をここへ表示します。`
-        : "🔎 受付しました。リサーチ中です。\n通常1〜3分ほどです。終わったら候補をここへ表示します。",
+        ? `🔎 受付しました。${destinationLabel}に「${intent.topic}」を調べています。\n通常1〜3分ほどです。終わったら候補をここへ表示します。`
+        : `🔎 受付しました。${destinationLabel}のリサーチ中です。\n通常1〜3分ほどです。終わったら候補をここへ表示します。`,
       channel,
       threadTs
     );
     const result = await withLock("research-run", () =>
-      runResearch({ focusTopic: intent.topic })
+      runResearch({ focusTopic: intent.topic, platform: intent.destination })
     );
     if (!result) return reply("別のリサーチが進行中です。終わってから結果を確認してください。", channel, threadTs);
     const [items, experiences] = await Promise.all([loadResearchInbox(), loadExperiences()]);
@@ -168,8 +176,8 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
     );
     return postToSlack(
       result.topCandidates.length > 0
-        ? `✅ 「${intent.topic ?? "指定テーマ"}」のリサーチ完了：新規${result.newItems}件、関連候補${result.topCandidates.length}件`
-        : `調査は完了しましたが、「${intent.topic ?? "指定テーマ"}」に直接関係する新しい候補は見つかりませんでした。以前の候補は混ぜずに停止しました。`,
+        ? `✅ ${destinationLabel}「${intent.topic ?? "指定テーマ"}」のリサーチ完了：新規${result.newItems}件、関連候補${result.topCandidates.length}件`
+        : `調査は完了しましたが、${destinationLabel}の「${intent.topic ?? "指定テーマ"}」に直接関係する新しい候補は見つかりませんでした。以前の候補は混ぜずに停止しました。`,
       blocks.length ? blocks : undefined,
       { channel, threadTs }
     );

@@ -34,7 +34,10 @@ export type ResearchRunResult = {
   ranAt: string;
 };
 
-export async function runResearch(options?: { focusTopic?: string }): Promise<ResearchRunResult> {
+export async function runResearch(options?: {
+  focusTopic?: string;
+  platform?: "x" | "note" | "both";
+}): Promise<ResearchRunResult> {
   const ranAt = new Date().toISOString();
 
   const [settings, references, brandFile, experiences, existingItems, existingClusters, drafts] =
@@ -51,15 +54,25 @@ export async function runResearch(options?: { focusTopic?: string }): Promise<Re
   const failures: { source: string; error: string }[] = [];
 
   // note と X を独立に走らせ、片方が落ちても続行する
+  const platform = options?.platform ?? "both";
   const [noteResult, xResult] = await Promise.all([
-    researchNote(references.noteCreators, settings.noteTags).catch((error) => {
-      failures.push({ source: "note", error: String(error) });
-      return { items: [], failures: [] };
-    }),
-    researchX(references.xAccounts, settings.x).catch((error) => {
-      failures.push({ source: "x", error: String(error) });
-      return { items: [], failures: [], estimatedCostUsd: 0, skippedReason: undefined };
-    }),
+    platform === "x"
+      ? Promise.resolve({ items: [], failures: [] })
+      : researchNote(references.noteCreators, settings.noteTags).catch((error) => {
+          failures.push({ source: "note", error: String(error) });
+          return { items: [], failures: [] };
+        }),
+    platform === "note"
+      ? Promise.resolve({
+          items: [],
+          failures: [],
+          estimatedCostUsd: 0,
+          skippedReason: "note用リサーチのためX取得は実行していません",
+        })
+      : researchX(references.xAccounts, settings.x).catch((error) => {
+          failures.push({ source: "x", error: String(error) });
+          return { items: [], failures: [], estimatedCostUsd: 0, skippedReason: undefined };
+        }),
   ]);
 
   failures.push(...noteResult.failures, ...xResult.failures);
@@ -108,7 +121,8 @@ export async function runResearch(options?: { focusTopic?: string }): Promise<Re
     saved,
     savedItems,
     options?.focusTopic,
-    fresh.map((item) => item.id)
+    fresh.map((item) => item.id),
+    platform === "both" ? undefined : platform
   );
 
   return {

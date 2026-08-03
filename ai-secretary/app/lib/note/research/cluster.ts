@@ -324,15 +324,20 @@ export function selectTopCandidates(
   clusters: TrendCluster[],
   items: ResearchItem[],
   focusTopic?: string,
-  freshItemIds: string[] = []
+  freshItemIds: string[] = [],
+  platform?: "x" | "note"
 ): TrendCluster[] {
+  const itemById = new Map(items.map((item) => [item.id, item]));
   const candidates = clusters.filter(
-    (cluster) => cluster.status === "candidate" && !cluster.blocked
+    (cluster) =>
+      cluster.status === "candidate" &&
+      !cluster.blocked &&
+      (!platform ||
+        cluster.researchItemIds.some((id) => itemById.get(id)?.platform === platform))
   );
   if (!focusTopic?.trim()) return candidates.slice(0, 5);
 
   const topicTokens = tokenize(focusTopic);
-  const itemById = new Map(items.map((item) => [item.id, item]));
   const freshIds = new Set(freshItemIds);
 
   return candidates

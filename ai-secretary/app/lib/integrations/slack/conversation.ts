@@ -1,5 +1,5 @@
 export type ConversationIntent =
-  | { type: "research"; topic?: string }
+  | { type: "research"; topic?: string; destination: "x" | "note" | "both" }
   | {
       type: "generate";
       kind: "x" | "note" | "both";
@@ -20,9 +20,12 @@ export function cleanSlackMessage(text: string): string {
 
 function researchTopic(text: string): string | undefined {
   const cleaned = text
+    .replace(/(?:X|Twitter|ツイート|note|ノート)(?:投稿|記事|原稿)?(?:用|向け)?/gi, "")
+    .replace(/(?:両方|どちらも|一緒に)/g, "")
     .replace(/(?:について|を)?(?:リサーチ|調査|検索|調べ)(?:して|て|たい|よう)?/g, "")
     .replace(/(?:最近の|いまの|今の|今日の|お願い|ください|教えて)/g, "")
     .replace(/[。、！？!?]/g, " ")
+    .replace(/^(?:の|で|に)+|(?:の|で|に)+$/g, "")
     .trim();
   return cleaned && cleaned.length <= 60 ? cleaned : undefined;
 }
@@ -73,6 +76,16 @@ export function classifyConversation(text: string): ConversationIntent {
   if (/(候補|テーマ).*(見せ|確認)|(?:見せ|確認).*(候補|テーマ)/.test(cleaned)) return { type: "candidates" };
   if (/(キュー|予約|投稿予定|下書き一覧)/.test(cleaned)) return { type: "queue" };
   if (/(設定|自動投稿.*状態|安全装置)/.test(cleaned)) return { type: "settings" };
-  if (/(リサーチ|調査|検索|調べ)/.test(cleaned)) return { type: "research", topic: researchTopic(cleaned) };
+  if (/(リサーチ|調査|検索|調べ)/.test(cleaned)) {
+    const destination =
+      /(?:両方|どちらも|Xとnote|noteとX)/i.test(cleaned)
+        ? "both"
+        : /(?:note|ノート)/i.test(cleaned)
+          ? "note"
+          : /(?:X|Twitter|ツイート)/i.test(cleaned)
+            ? "x"
+            : "both";
+    return { type: "research", topic: researchTopic(cleaned), destination };
+  }
   return { type: "help" };
 }
