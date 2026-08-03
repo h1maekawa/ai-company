@@ -58,7 +58,9 @@ export async function runResearch(options?: {
   const [noteResult, xResult] = await Promise.all([
     platform === "x"
       ? Promise.resolve({ items: [], failures: [] })
-      : researchNote(references.noteCreators, settings.noteTags).catch((error) => {
+      : researchNote(references.noteCreators, settings.noteTags, {
+          focusTopic: options?.focusTopic,
+        }).catch((error) => {
           failures.push({ source: "note", error: String(error) });
           return { items: [], failures: [] };
         }),

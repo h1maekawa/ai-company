@@ -141,17 +141,27 @@ async function fetchTag(tag: string): Promise<NoteResearchResult> {
   const items: ResearchItem[] = [];
   const failures: { source: string; error: string }[] = [];
   // 人気順だけだと毎回同じ記事になるため、新着順も取得する。
-  for (const [label, order] of [["人気", "popular"], ["新着", "new"]] as const) {
-    const url = `https://note.com/api/v3/hashtags/${encodeURIComponent(tag)}/notes?order=${order}&page=1`;
-    const res = await fetchPage(url);
-    if (!res.ok) {
-      failures.push({ source: `タグ:${tag}(${label})`, error: res.error });
-      continue;
-    }
-    for (const note of parseNotes(res.body).slice(0, MAX_PER_SOURCE)) {
-      const item = toResearchItem(note, "trend");
-      if (item) items.push(item);
-    }
+  const results = await Promise.all(
+    ([["人気", "popular"], ["新着", "new"]] as const).map(async ([label, order]) => {
+      const url = `https://note.com/api/v3/hashtags/${encodeURIComponent(tag)}/notes?order=${order}&page=1`;
+      const res = await fetchPage(url);
+      if (!res.ok) {
+        return {
+          items: [] as ResearchItem[],
+          failure: { source: `タグ:${tag}(${label})`, error: res.error },
+        };
+      }
+      const fetchedItems: ResearchItem[] = [];
+      for (const note of parseNotes(res.body).slice(0, MAX_PER_SOURCE)) {
+        const item = toResearchItem(note, "trend");
+        if (item) fetchedItems.push(item);
+      }
+      return { items: fetchedItems };
+    })
+  );
+  for (const result of results) {
+    items.push(...result.items);
+    if (result.failure) failures.push(result.failure);
   }
   return { items, failures };
 }
@@ -162,23 +172,31 @@ async function fetchTag(tag: string): Promise<NoteResearchResult> {
  */
 export async function researchNote(
   creators: ReferenceNoteCreator[],
-  tags: string[]
+  tags: string[],
+  options?: { focusTopic?: string }
 ): Promise<NoteResearchResult> {
   const items: ResearchItem[] = [];
   const failures: { source: string; error: string }[] = [];
+  const focusTopic = options?.focusTopic?.trim();
 
   const activeCreators = creators
     .filter((c) => c.active)
     .sort((a, b) => a.priority - b.priority)
     .slice(0, 10);
 
-  for (const creator of activeCreators) {
-    const result = await fetchCreator(creator);
-    items.push(...result.items);
-    failures.push(...result.failures);
+  // Slackでテーマを指定された場合は、そのタグだけを調べる。
+  // 参考アカウントと全登録タグを毎回巡回するとVercelの実行時間を超え、
+  // 「受付しました」のまま完了通知が返らなくなるため。
+  if (!focusTopic) {
+    for (const creator of activeCreators) {
+      const result = await fetchCreator(creator);
+      items.push(...result.items);
+      failures.push(...result.failures);
+    }
   }
 
-  for (const tag of tags.slice(0, 12)) {
+  const targetTags = focusTopic ? [focusTopic] : tags.slice(0, 12);
+  for (const tag of targetTags) {
     const result = await fetchTag(tag);
     items.push(...result.items);
     failures.push(...result.failures);
