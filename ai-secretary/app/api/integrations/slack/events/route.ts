@@ -70,7 +70,9 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const channel = event.channel;
-  const threadTs = event.thread_ts || event.ts;
+  // 新しいメンションへの返答を自動でスレッドへ隠さない。
+  // すでにスレッド内で話しかけられた場合だけ、そのスレッドへ返す。
+  const threadTs = event.thread_ts;
   runInBackground(
     handleConversation(event.text, channel, threadTs).catch(async (error) => {
       console.error("[slack/events] 会話処理失敗", {
@@ -83,7 +85,9 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 async function reply(text: string, channel: string, threadTs?: string) {
-  return postToSlack(text, undefined, { channel, threadTs });
+  const result = await postToSlack(text, undefined, { channel, threadTs });
+  if (!result.ok) throw new Error(`Slackへの返信に失敗: ${result.error ?? "unknown"}`);
+  return result;
 }
 
 async function handleConversation(text: string, channel: string, threadTs?: string) {
@@ -102,8 +106,8 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
     }
     await reply(
       intent.topic
-        ? `「${intent.topic}」を調査対象に追加して、リサーチを始めます。終わったら候補をここへ返します。`
-        : "リサーチを始めます。終わったら候補をここへ返します。",
+        ? `🔎 受付しました。「${intent.topic}」を調べています。\n通常1〜3分ほどです。終わったら候補をここへ表示します。`
+        : "🔎 受付しました。リサーチ中です。\n通常1〜3分ほどです。終わったら候補をここへ表示します。",
       channel,
       threadTs
     );
@@ -120,7 +124,7 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       )
     );
     return postToSlack(
-      `リサーチ完了：新規${result.newItems}件、候補${result.topCandidates.length}件`,
+      `✅ リサーチ完了：新規${result.newItems}件、候補${result.topCandidates.length}件`,
       blocks.length ? blocks : undefined,
       { channel, threadTs }
     );
