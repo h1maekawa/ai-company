@@ -332,6 +332,7 @@ export function selectTopCandidates(
     (cluster) =>
       cluster.status === "candidate" &&
       !cluster.blocked &&
+      cluster.totalScore > 0 &&
       (!platform ||
         cluster.researchItemIds.some((id) => itemById.get(id)?.platform === platform))
   );

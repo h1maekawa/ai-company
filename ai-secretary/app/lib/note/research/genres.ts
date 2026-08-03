@@ -16,7 +16,7 @@ export function detectGenres(text: string): string[] {
     ai: /ChatGPT|Claude|Gemini|生成AI|プロンプト|自動化|LLM|人工知能|AI(?:ツール|活用|開発|仕事|業務|学習|文章|画像|議事録)/i,
     "side-business": /副業|複業|個人開発|マネタイズ|フリーランス|受注/,
     reading: /読書|書評|要約|積読|読了|一冊|書籍/,
-    "asset-building": /資産形成|資産運用|投資信託|個別株|NISA|積立|家計|貯金|株式/,
+    "asset-building": /資産形成|資産運用|投資信託|個別株|NISA|積立|家計|貯金|株式|半導体|メモリ(?:ー)?|データセンター|ラピダス|キオクシア|マイクロン|Micron|TSMC|NVIDIA|エヌビディア|AMD|ASML|Broadcom|ブロードコム/i,
     habits: /習慣|継続|ルーティン|朝活|時間術|生産性/,
   };
 
