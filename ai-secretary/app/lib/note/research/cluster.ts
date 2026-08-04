@@ -325,7 +325,8 @@ export function selectTopCandidates(
   items: ResearchItem[],
   focusTopic?: string,
   freshItemIds: string[] = [],
-  platform?: "x" | "note"
+  platform?: "x" | "note",
+  genreId?: string
 ): TrendCluster[] {
   const itemById = new Map(items.map((item) => [item.id, item]));
   const candidates = clusters.filter(
@@ -333,6 +334,7 @@ export function selectTopCandidates(
       cluster.status === "candidate" &&
       !cluster.blocked &&
       cluster.totalScore > 0 &&
+      (!genreId || cluster.genreIds.includes(genreId)) &&
       (!platform ||
         cluster.researchItemIds.some((id) => itemById.get(id)?.platform === platform))
   );

@@ -53,6 +53,18 @@ export const DEFAULT_GENRES: Genre[] = [
     description: "毎日を整え、無理なく前へ進むための小さな習慣",
     color: "#8B9188",
   },
+  {
+    id: "career",
+    label: "仕事・キャリア",
+    description: "肩書きや働き方に縛られず、自分の選択肢を増やすための考察",
+    color: "#64748B",
+  },
+  {
+    id: "personal-development",
+    label: "個人開発",
+    description: "小さなサービスや仕組みを自分で作り、学んだ過程を共有する記録",
+    color: "#6D7F9B",
+  },
 ];
 
 /* ─── ネタ帳 ───────────────────────────────────────── */

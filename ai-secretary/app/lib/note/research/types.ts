@@ -81,6 +81,31 @@ export function defaultXResearchSettings(): XResearchSettings {
 
 export type ResearchPlatform = "x" | "note" | "web";
 
+export type GrowthGoal =
+  | "reach"
+  | "conversation"
+  | "save"
+  | "profile-follow"
+  | "note-bridge"
+  | "trust"
+  | "monetization";
+
+export type OutputType =
+  | "x-post"
+  | "x-thread"
+  | "note-free"
+  | "note-paid-outline"
+  | "x-and-note";
+
+export type ResearchRequest = {
+  focusTopic?: string;
+  platform?: "x" | "note" | "both";
+  xQuery?: string;
+  genreId?: string;
+  growthGoal?: GrowthGoal;
+  personalAngle?: string;
+};
+
 export type ResearchSourceType =
   | "reference-account"
   | "keyword"

@@ -48,7 +48,7 @@ export function ResearchPanel() {
           hint="読まれそうな話題と、まえみちらしく書ける話題を見つけます"
           action={
             <button
-              onClick={state.runResearch}
+              onClick={() => void state.runResearch()}
               disabled={state.running}
               className="flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white hover:bg-brand/85 disabled:opacity-40"
             >

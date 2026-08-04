@@ -8,7 +8,8 @@ export async function generateCandidateInBackground(
   clusterId: string,
   kind: "x" | "note" | "both",
   articleType: "free" | "paid",
-  destination?: { channel?: string; threadTs?: string }
+  destination?: { channel?: string; threadTs?: string },
+  authorViewpoint?: string
 ): Promise<void> {
   if (!process.env.APP_BASE_URL) {
     await postToSlack("APP_BASE_URL が未設定のため、生成を実行できませんでした。", undefined, destination);
@@ -75,6 +76,7 @@ export async function generateCandidateInBackground(
         account,
         purpose: "reach",
         pastPosts,
+        authorViewpoint,
       });
       if (result.drafts.length > 0) {
         await store.saveSocialDrafts([...result.drafts, ...drafts]);
@@ -104,6 +106,7 @@ export async function generateCandidateInBackground(
       genre,
       articleType,
       pastPosts,
+      authorViewpoint,
     });
     if (result.error) {
       await postToSlack(`note記事を作れませんでした: ${result.error}`, undefined, destination);
