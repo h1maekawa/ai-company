@@ -14,7 +14,7 @@
  */
 
 import { callAI } from "../../ai/client";
-import { AffiliateLink, Brand, Genre, XAccount } from "../types";
+import { AffiliateLink, Brand, DailyPostSeed, Genre, XAccount } from "../types";
 import { hashId } from "./fetcher";
 import { checkSimilarity, SimilarityCandidate } from "./similarity";
 import {
@@ -32,11 +32,20 @@ import { normalizeMediaSuggestion, normalizeXPattern, X_LENGTH_GUIDE } from "./x
 
 /* ─── 共通の前提ブロック ───────────────────── */
 
-function brandBlock(brand: Brand): string {
+function brandBlock(brand: Brand, channel: "x" | "note" = "x"): string {
   const { identity, personality } = brand;
   return `## ブランド
 ${identity.name} — ${identity.primaryTagline}
 コンセプト: ${brand.concept}
+
+## ブランド全体のゴール
+${brand.brandGoal}
+
+## 最重要ルール
+人生を主役にする。
+AI・投資・読書・副業は人生の一部として扱う。
+ノウハウだけで終わらせず、本人がなぜ気になったかを含める。
+投稿を読み終えたあと、人柄が伝わることを優先する。
 
 ## 人格
 ${personality.traits.join("、")}
@@ -53,6 +62,11 @@ ${personality.writingRules.map((s) => `- ${s}`).join("\n")}
 
 ## 読者
 ${brand.targetReader}
+
+## この媒体の発信ルール
+目的: ${brand.channelGuidelines[channel].purpose.join(" / ")}
+口調: ${brand.channelGuidelines[channel].tone.join(" / ")}
+ルール: ${brand.channelGuidelines[channel].rules.join(" / ")}
 
 ## 筆者が語れる根拠
 ${brand.credibility.length > 0 ? brand.credibility.map((c) => `- ${c}`).join("\n") : "（未登録。具体的な数字・成果を書いてはいけません）"}`;
@@ -127,6 +141,26 @@ ${authorViewpoint.trim()}
 ただし、意見に含まれる数値・出来事・利用経験を、確認済みの客観的事実や実体験へ勝手に変換しないでください。`;
 }
 
+function dailyBlock(seed: DailyPostSeed): string {
+  return `## 今日あったこと
+${seed.whatHappened}
+
+## そのとき感じたこと
+${seed.feeling?.trim() || "（未入力。感情を創作しないでください）"}
+
+## そこから考えたこと
+${seed.thought?.trim() || "（未入力。教訓や結論を無理に作らないでください）"}
+
+## まだ迷っていること・分からないこと
+${seed.uncertainty?.trim() || "（未入力）"}
+
+入力された本人の出来事と感情だけを中心に書いてください。外部情報や他者投稿は参照していません。`;
+}
+
+export type ContentSourceContext =
+  | { type: "trend"; cluster: TrendCluster; items: ResearchItem[] }
+  | { type: "daily"; seed: DailyPostSeed };
+
 /* ─── X投稿の生成 ───────────────────────── */
 
 const PURPOSE_GUIDE: Record<ContentPurpose, string> = {
@@ -154,6 +188,7 @@ export type GenerateXInput = {
   authorViewpoint?: string;
   outputType?: OutputType;
   length?: XPostLength;
+  sourceContext?: ContentSourceContext;
 };
 
 export type GenerateXResult = {
@@ -183,24 +218,31 @@ ${policy!.claimRestrictions.length > 0 ? `禁止訴求: ${policy!.claimRestricti
 このアカウント／案件ではX本文にURLを入れられません。**URLを一切書かないでください。**`;
 
   const outputType = input.outputType ?? "x-post";
+  const isDaily = input.sourceContext?.type === "daily";
   const length = input.length ?? "standard";
   const formatGuide =
     outputType === "x-thread"
       ? `2〜7投稿のスレッドを1案作る。各投稿は単独でも意味が通り、threadPartsへ順番に入れる。`
       : outputType === "x-and-note"
         ? `note連携用に5案作る。patternは順に pre-release / publish / key-point / spinoff / reminder とする。URLは作らず、記事タイトルと価値を案内する。`
-        : `次の3案を必ず1つずつ作る。
+        : isDaily
+          ? `日常投稿として次の3案を必ず1つずつ作る。
+- daily: 今日あったこと→そのままの感情→短い余韻
+- reflection: 出来事→考えたこと→まだ決めきれていないこと、または小さな気づき
+- conversation: 出来事や考え→自分の現在地→必要な場合だけ自然で具体的な問い
+質問や結論を毎回強制しない。試したことが中心ならdailyの代わりにtriedを使ってよい。`
+          : `次の3案を必ず1つずつ作る。
 - opinion: 意見型（意外性のある結論→理由→本人の考え→余韻）
 - save: 保存型（悩み・結論→3〜7要点→初心者向け補足→まとめ）
 - conversation: 会話型（考え→本人の立場→答えやすい具体的な質問）`;
 
   const prompt = `あなたは「${brand.identity.name}」のX投稿を書くライターです。
 
-${brandBlock(brand)}
+${brandBlock(brand, "x")}
 
-${trendBlock(cluster, items)}
+${isDaily ? dailyBlock((input.sourceContext as { type: "daily"; seed: DailyPostSeed }).seed) : trendBlock(cluster, items)}
 
-${experienceBlock(experiences)}
+${isDaily ? "## 本人入力の扱い\n上の日常入力は今回本人が入力した内容です。書かれている範囲だけ本人の出来事・感情として使えます。" : experienceBlock(experiences)}
 
 ${viewpointBlock(input.authorViewpoint)}
 
@@ -224,6 +266,10 @@ ${affiliateBlock}
 6. 「私は」という主語を自然に使う
 7. 「どう思う？」だけの形式的な返信誘導をしない
 8. 冒頭候補を3案、メディア案を1つ付ける。画像・動画は必須にしない
+9. 友達に話すように自然に書き、先生・成功者として教えない
+10. 人生を主役にし、AI・投資・読書は人生の一部として扱う
+11. 毎回オチ、質問、ブランドコピー、フォロー依頼を付けない
+12. 本人が入力していない感情や結論を創作しない
 
 ## 作る形式
 ${formatGuide}
@@ -309,7 +355,7 @@ mediaSuggestionは text / diagram / screenshot / comparison / chart / video / no
       genreId: genre.id,
       text,
       pattern: normalizeXPattern(
-        post.pattern ?? (["opinion", "save", "conversation"][postIndex] as string | undefined),
+        post.pattern ?? ((isDaily ? ["daily", "reflection", "conversation"] : ["opinion", "save", "conversation"])[postIndex] as string | undefined),
         outputType
       ),
       length,
@@ -335,7 +381,7 @@ mediaSuggestionは text / diagram / screenshot / comparison / chart / video / no
   }
 
   const warning =
-    experiences.length === 0
+    experiences.length === 0 && !isDaily
       ? "登録済みの体験が無いため、一般的な考察として生成しました（体験談としては書いていません）"
       : undefined;
 
@@ -414,7 +460,7 @@ X投稿を単純に長文化せず、noteとして独立した価値を持たせ
 
   const prompt = `あなたは「${brand.identity.name}」のnote記事を書くライターです。
 
-${brandBlock(brand)}
+${brandBlock(brand, "note")}
 
 ${trendBlock(cluster, items)}
 

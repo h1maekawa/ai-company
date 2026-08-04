@@ -11,6 +11,8 @@ import {
   AffiliatePolicy,
   ContentBrief,
   ContentPerformance,
+  MonetizationRule,
+  RevenueSharingProgress,
   ExperienceEntry,
   FeatureFlags,
   NoteArticleDraft,
@@ -485,13 +487,41 @@ export async function appendHistory(entry: HistoryEntry): Promise<void> {
 export type PerformanceFile = {
   records: ContentPerformance[];
   policies: AffiliatePolicy[];
+  revenueProgress: RevenueSharingProgress;
+  monetizationRules: MonetizationRule[];
 };
+
+const defaultRevenueProgress = (): RevenueSharingProgress => ({
+  requiredOrganicImpressions: 5_000_000,
+  requiredVerifiedFollowers: 500,
+  lastCheckedAt: new Date().toISOString(),
+});
+const defaultMonetizationRules = (): MonetizationRule[] => [
+  {
+    program: "revenue-sharing",
+    requirements: { note: "公式条件は変更されるため手動確認" },
+    sourceLabel: "X公式の最新条件を確認",
+    verifiedAt: new Date().toISOString(),
+    active: true,
+  },
+  {
+    program: "subscriptions",
+    requirements: { note: "収益配分とは別条件。公式条件を手動確認" },
+    sourceLabel: "X公式の最新条件を確認",
+    verifiedAt: new Date().toISOString(),
+    active: true,
+  },
+];
 
 export async function loadPerformance(): Promise<PerformanceFile> {
   const data = await readJson<PerformanceFile>(RESEARCH_PATHS.performance);
   return {
     records: Array.isArray(data?.records) ? data.records : [],
     policies: Array.isArray(data?.policies) ? data.policies : [],
+    revenueProgress: data?.revenueProgress ?? defaultRevenueProgress(),
+    monetizationRules: Array.isArray(data?.monetizationRules) && data.monetizationRules.length > 0
+      ? data.monetizationRules
+      : defaultMonetizationRules(),
   };
 }
 

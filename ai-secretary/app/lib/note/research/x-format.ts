@@ -8,7 +8,7 @@ export const X_LENGTH_GUIDE: Record<XPostLength, string> = {
 
 export function normalizeXPattern(value: string | undefined, outputType: OutputType): XPostPattern {
   if (outputType === "x-and-note") return "note-link";
-  if (value === "save" || value === "conversation") return value;
+  if (value === "daily" || value === "reflection" || value === "tried" || value === "save" || value === "conversation") return value;
   return "opinion";
 }
 

@@ -6,6 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import fs from "node:fs";
 
 const DIST = process.env.MAEMICHI_DIST;
 const cluster = await import(path.join(DIST, "note/research/cluster.js"));
@@ -13,6 +14,8 @@ const types = await import(path.join(DIST, "note/research/types.js"));
 const genres = await import(path.join(DIST, "note/research/genres.js"));
 const xQuery = await import(path.join(DIST, "note/research/x-query.js"));
 const xFormat = await import(path.join(DIST, "note/research/x-format.js"));
+const performance = await import(path.join(DIST, "note/research/performance.js"));
+const noteTypes = await import(path.join(DIST, "note/types.js"));
 
 /* ─── テスト用のダミーデータ ───────────────── */
 
@@ -331,4 +334,63 @@ test("未認識のメディア案と投稿型は安全な初期値へ戻す", ()
   assert.equal(xFormat.normalizeMediaSuggestion("unknown"), "text");
   assert.equal(xFormat.normalizeXPattern("unknown", "x-post"), "opinion");
   assert.equal(xFormat.normalizeXPattern("publish", "x-and-note"), "note-link");
+});
+
+test("ブランドv1初期値だけをv2へ移行し、利用者編集は残す", () => {
+  const v1 = noteTypes.defaultBrand();
+  v1.identity.version = "maemichi-v1";
+  v1.identity.xProfile = noteTypes.MAEMICHI_V1_DEFAULTS.identity.xProfile;
+  v1.identity.xProfileShort = noteTypes.MAEMICHI_V1_DEFAULTS.identity.xProfileShort;
+  v1.identity.fixedPost = noteTypes.MAEMICHI_V1_DEFAULTS.identity.fixedPost;
+  v1.concept = noteTypes.MAEMICHI_V1_DEFAULTS.concept;
+  v1.credibility = ["本人が登録した事実"];
+  const migrated = noteTypes.migrateBrandV1ToV2(v1);
+  assert.equal(migrated.identity.version, "maemichi-v2");
+  assert.match(migrated.identity.xProfile, /人生の寄り道/);
+  assert.equal(migrated.credibility[0], "本人が登録した事実");
+  assert.equal(migrated.contentPillars.reduce((sum, pillar) => sum + pillar.targetRatio, 0), 100);
+
+  v1.identity.xProfile = "利用者が編集したプロフィール";
+  assert.equal(noteTypes.migrateBrandV1ToV2(v1).identity.xProfile, "利用者が編集したプロフィール");
+});
+
+test("投稿指標は0除算せず、未取得をundefinedで維持する", () => {
+  const rates = performance.performanceRates({
+    contentId: "x1", platform: "x", purpose: "reach", genreId: "daily-thoughts",
+    publishedAt: "2026-08-04T09:00:00.000Z", measuredAt: "2026-08-04T10:00:00.000Z",
+    impressions: 0, replies: 0,
+  });
+  assert.equal(rates.replyRate, undefined);
+  assert.equal(rates.bookmarkRate, undefined);
+});
+
+test("収益化進捗は500万までの残りを計算し、収益額を予測しない", () => {
+  const projection = performance.monetizationProjection({
+    organicImpressions90Days: 1_000_000,
+    requiredOrganicImpressions: 5_000_000,
+    verifiedFollowers: 120,
+    requiredVerifiedFollowers: 500,
+    lastCheckedAt: "2026-08-04T00:00:00.000Z",
+  });
+  assert.equal(projection.remainingImpressions, 4_000_000);
+  assert.equal(projection.verifiedFollowersRemaining, 380);
+  assert.equal("estimatedRevenue" in projection, false);
+});
+
+test("投稿割合は直近30件だけを集計し、選択を強制しない", () => {
+  const records = Array.from({ length: 35 }, (_, index) => ({
+    contentId: `x${index}`, platform: "x", purpose: "reach",
+    genreId: index < 20 ? "ai" : "daily-thoughts",
+    publishedAt: new Date(Date.UTC(2026, 7, 4, 0, 0, index)).toISOString(),
+    measuredAt: "2026-08-04T01:00:00.000Z",
+  }));
+  const balance = performance.contentPillarBalance(records, noteTypes.DEFAULT_CONTENT_PILLARS);
+  assert.equal(balance.length, 7);
+  assert.ok(balance.find((item) => item.id === "ai").currentRatio >= 0);
+});
+
+test("日常投稿APIはX APIや外部リサーチを参照しない", () => {
+  const source = fs.readFileSync(path.join(process.cwd(), "app/api/note/content/generate-daily/route.ts"), "utf8");
+  assert.doesNotMatch(source, /researchX|X_API|api\\.x\\.com|x-trends|x-search/);
+  assert.match(source, /generateXPosts/);
 });

@@ -17,11 +17,13 @@ import {
   loadResearchInbox,
   loadResearchSettings,
   loadSocialDrafts,
+  loadPerformance,
   saveClusters,
   saveResearchInbox,
   saveResearchSettings,
 } from "./store";
 import { ResearchItem, TrendCluster } from "./types";
+import { learningSignals } from "./performance";
 
 export type ResearchRunResult = {
   fetched: number;
@@ -42,7 +44,7 @@ export async function runResearch(options?: {
 }): Promise<ResearchRunResult> {
   const ranAt = new Date().toISOString();
 
-  const [settings, references, brandFile, experiences, existingItems, existingClusters, drafts] =
+  const [settings, references, brandFile, experiences, existingItems, existingClusters, drafts, performance] =
     await Promise.all([
       loadResearchSettings(),
       loadReferences(),
@@ -51,6 +53,7 @@ export async function runResearch(options?: {
       loadResearchInbox(),
       loadClusters(),
       loadSocialDrafts(),
+      loadPerformance(),
     ]);
 
   const failures: { source: string; error: string }[] = [];
@@ -135,7 +138,8 @@ export async function runResearch(options?: {
     options?.focusTopic,
     fresh.map((item) => item.id),
     platform === "both" ? undefined : platform,
-    options?.genreId
+    options?.genreId,
+    learningSignals(performance.records).preferredGenreIds
   );
 
   return {

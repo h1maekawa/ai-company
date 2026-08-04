@@ -11,6 +11,7 @@ import type {
 } from "@/app/lib/note/research/types";
 import { Card, CardHeader } from "@/components/ui/primitives";
 import type { XTrend, XTrendLocation, XTrendResponse } from "@/app/lib/note/research/x-trends";
+import type { ContentSourceMode, DailyPostSeed } from "@/app/lib/note/types";
 
 const GENRES = [
   ["", "指定なし"],
@@ -49,6 +50,11 @@ const LENGTHS: { id: XPostLength; label: string; hint: string }[] = [
 
 export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   const candidates = useCandidates();
+  const [sourceMode, setSourceMode] = useState<ContentSourceMode>("daily");
+  const [dailySeed, setDailySeed] = useState<DailyPostSeed>({ whatHappened: "", feeling: "", thought: "", uncertainty: "", genreId: "daily-thoughts" });
+  const [dailyRunning, setDailyRunning] = useState(false);
+  const [dailyNotice, setDailyNotice] = useState("");
+  const [dailyError, setDailyError] = useState("");
   const [focusTopic, setFocusTopic] = useState("");
   const [xQuery, setXQuery] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -100,6 +106,36 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
     }
   }
 
+  function changeSourceMode(mode: ContentSourceMode) {
+    setSourceMode(mode);
+    if (mode === "daily") {
+      setGenreId("daily-thoughts");
+      setGrowthGoal("profile-follow");
+      setOutputType("x-post");
+      setXLength("short");
+    }
+  }
+
+  async function generateDaily() {
+    setDailyRunning(true);
+    setDailyError("");
+    setDailyNotice("");
+    try {
+      const response = await fetch("/api/note/content/generate-daily", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seed: dailySeed, growthGoal, outputType, xLength }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      setDailyNotice(`日常投稿の下書きを${body.xDrafts?.length ?? 0}件作りました`);
+    } catch (error) {
+      setDailyError(error instanceof Error ? error.message : "日常投稿を作成できませんでした");
+    } finally {
+      setDailyRunning(false);
+    }
+  }
+
   async function generate() {
     if (!selectedId) return;
     const kind =
@@ -133,7 +169,39 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
           ))}
         </div>
 
-        <section className="rounded-2xl border border-hairline p-4">
+        <section className="mb-4 rounded-2xl border border-brand/25 bg-brand/5 p-4">
+          <p className="text-sm font-semibold">何から投稿を作りますか？</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Choice active={sourceMode === "daily"} onClick={() => changeSourceMode("daily")} label="今日あったこと・感じたこと" />
+            <Choice active={sourceMode === "trend"} onClick={() => changeSourceMode("trend")} label="今話題になっていること" />
+          </div>
+        </section>
+
+        {sourceMode === "daily" && (
+          <section className="rounded-2xl border border-hairline p-4">
+            <StepTitle number="1" title="今日のことをそのまま書く" text="外部検索やX APIは使いません。入力していない感情や教訓も追加しません。" />
+            <div className="mt-4 space-y-3">
+              <DailyField label="今日あったこと" required value={dailySeed.whatHappened} onChange={(whatHappened) => setDailySeed({ ...dailySeed, whatHappened })} placeholder="例：仕事終わりに10分だけ本を読んだ" />
+              <DailyField label="そのとき感じたこと" value={dailySeed.feeling ?? ""} onChange={(feeling) => setDailySeed({ ...dailySeed, feeling })} placeholder="例：短い時間でも、何もしないより気持ちが良かった" />
+              <DailyField label="そこから考えたこと" value={dailySeed.thought ?? ""} onChange={(thought) => setDailySeed({ ...dailySeed, thought })} placeholder="例：まとまった時間より小さく始める方が自分には合っている" />
+              <DailyField label="まだ迷っていること・分からないこと（任意）" value={dailySeed.uncertainty ?? ""} onChange={(uncertainty) => setDailySeed({ ...dailySeed, uncertainty })} placeholder="例：毎日続けられるかはまだ分からない" />
+            </div>
+            <div className="mt-4">
+              <p className="text-xs font-semibold">Xの長さ</p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {LENGTHS.map((length) => <Choice key={length.id} active={xLength === length.id} onClick={() => setXLength(length.id)} label={`${length.label} ${length.hint}`} />)}
+              </div>
+            </div>
+            <button onClick={() => void generateDaily()} disabled={dailyRunning || !dailySeed.whatHappened.trim()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gain py-3 text-sm font-bold text-ink-base disabled:opacity-40">
+              {dailyRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              日常投稿の下書きを3案作る
+            </button>
+            {dailyError && <p className="mt-3 rounded-xl bg-red-500/10 p-3 text-xs text-red-300">{dailyError}</p>}
+            {dailyNotice && <div className="mt-3 rounded-xl border border-gain/30 bg-gain/10 p-3 text-xs text-gain">{dailyNotice}<button onClick={onOpenDrafts} className="ml-2 underline">下書きを確認</button></div>}
+          </section>
+        )}
+
+        {sourceMode === "trend" && <section className="rounded-2xl border border-hairline p-4">
           <StepTitle number="1" title="話題を選ぶ" text="調べたい言葉を入力します。空欄なら登録済みの話題を調べます。" />
           <label className="mt-3 block text-xs font-semibold text-slate-200">今回調べたいテーマ</label>
           <input
@@ -202,9 +270,9 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
             {candidates.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
             今の話題を調べる
           </button>
-        </section>
+        </section>}
 
-        {visibleCandidates.length > 0 && (
+        {sourceMode === "trend" && visibleCandidates.length > 0 && (
           <section className="mt-4 rounded-2xl border border-hairline p-4">
             <StepTitle number="2" title="候補と切り口を選ぶ" text="他者の文章ではなく、話題と構造だけを参考にします。" />
             <div className="mt-3 space-y-2">
@@ -227,7 +295,7 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
           </section>
         )}
 
-        {visibleCandidates.length > 0 && (
+        {sourceMode === "trend" && visibleCandidates.length > 0 && (
           <section className="mt-4 rounded-2xl border border-hairline p-4">
             <StepTitle
               number="3"
@@ -247,7 +315,7 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
           </section>
         )}
 
-        {visibleCandidates.length > 0 && (
+        {sourceMode === "trend" && visibleCandidates.length > 0 && (
           <section className="mt-4 rounded-2xl border border-hairline p-4">
             <StepTitle number="4" title="目的と作るものを選ぶ" text="初期値はフォロワー獲得とX・note両方です。" />
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -339,6 +407,15 @@ function Choice({ active, onClick, label }: { active: boolean; onClick: () => vo
     <button onClick={onClick} className={`rounded-lg border px-3 py-2 text-xs ${active ? "border-brand bg-brand/10 text-white" : "border-hairline text-sub"}`}>
       {label}
     </button>
+  );
+}
+
+function DailyField({ label, value, onChange, placeholder, required }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; required?: boolean }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold text-slate-200">{label}{required && <span className="ml-1 text-amber-300">必須</span>}</span>
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={3} placeholder={placeholder} className="mt-1 w-full rounded-xl border border-hairline bg-white/[0.03] px-3 py-3 text-sm leading-6 text-white outline-none placeholder:text-sub/60 focus:border-brand/60" />
+    </label>
   );
 }
 

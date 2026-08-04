@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   AtSign,
   ArrowRight,
+  BarChart3,
   BookOpen,
   Database,
   FileCheck2,
@@ -19,6 +20,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { ContentStudio } from "@/components/note/growth/ContentStudio";
+import { GrowthInsights } from "@/components/note/growth/GrowthInsights";
 import { IdeaInbox } from "@/components/note/IdeaInbox";
 import { Composer } from "@/components/note/Composer";
 import { AffiliateManager } from "@/components/note/AffiliateManager";
@@ -35,7 +37,7 @@ import { useAffiliates, useBrand, useIdeas } from "./useNote";
 
 type MainView = "create" | "drafts" | "materials" | "settings";
 type MaterialView = "experiences" | "references" | "ideas" | "past-x" | "manual";
-type SettingsView = "overview" | "brand" | "x" | "note" | "safety" | "line";
+type SettingsView = "overview" | "brand" | "x" | "note" | "growth" | "safety" | "line";
 
 const MAIN_NAV = [
   { id: "create", label: "投稿を作る", icon: PenLine, description: "話題からX・noteの下書きを作成" },
@@ -238,6 +240,7 @@ export default function NoteDepartmentPage() {
                 />
               </>
             )}
+            {settingsView === "growth" && <GrowthInsights />}
             {settingsView === "safety" && (
               <>
                 <ChannelFlow
@@ -280,6 +283,7 @@ const SETTINGS_NAV = [
   ["x", "X", AtSign, "アカウントと役割"],
   ["note", "note", BookOpen, "記事と収益リンク"],
   ["brand", "ブランド", Sparkles, "全媒体共通"],
+  ["growth", "分析・収益", BarChart3, "投稿結果と条件"],
   ["safety", "安全", ShieldCheck, "公開・自動化"],
   ["line", "LINE", Smartphone, "登録後の配信"],
 ] as const;
