@@ -18,6 +18,7 @@ import {
   ContentPurpose,
   GrowthGoal,
   OutputType,
+  XPostLength,
 } from "@/app/lib/note/research/types";
 import { accountForGenre, DEFAULT_GENRES } from "@/app/lib/note/types";
 
@@ -35,6 +36,7 @@ type Body = {
   personalAngle?: string;
   growthGoal?: GrowthGoal;
   outputType?: OutputType;
+  xLength?: XPostLength;
 };
 
 function purposeForGoal(goal?: GrowthGoal): ContentPurpose {
@@ -119,6 +121,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         policy,
         pastPosts,
         authorViewpoint: body.personalAngle?.trim() || undefined,
+        outputType: body.outputType,
+        length: body.xLength,
       });
 
       if (result.drafts.length > 0) {

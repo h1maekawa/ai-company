@@ -25,7 +25,10 @@ import {
   ResearchItem,
   SocialDraft,
   TrendCluster,
+  OutputType,
+  XPostLength,
 } from "./types";
+import { normalizeMediaSuggestion, normalizeXPattern, X_LENGTH_GUIDE } from "./x-format";
 
 /* ─── 共通の前提ブロック ───────────────────── */
 
@@ -149,6 +152,8 @@ export type GenerateXInput = {
   pastPosts: SimilarityCandidate[];
   /** Slackで本人が入力した、今回の投稿だけに使う見解 */
   authorViewpoint?: string;
+  outputType?: OutputType;
+  length?: XPostLength;
 };
 
 export type GenerateXResult = {
@@ -177,6 +182,18 @@ ${policy!.claimRestrictions.length > 0 ? `禁止訴求: ${policy!.claimRestricti
     : `## リンク
 このアカウント／案件ではX本文にURLを入れられません。**URLを一切書かないでください。**`;
 
+  const outputType = input.outputType ?? "x-post";
+  const length = input.length ?? "standard";
+  const formatGuide =
+    outputType === "x-thread"
+      ? `2〜7投稿のスレッドを1案作る。各投稿は単独でも意味が通り、threadPartsへ順番に入れる。`
+      : outputType === "x-and-note"
+        ? `note連携用に5案作る。patternは順に pre-release / publish / key-point / spinoff / reminder とする。URLは作らず、記事タイトルと価値を案内する。`
+        : `次の3案を必ず1つずつ作る。
+- opinion: 意見型（意外性のある結論→理由→本人の考え→余韻）
+- save: 保存型（悩み・結論→3〜7要点→初心者向け補足→まとめ）
+- conversation: 会話型（考え→本人の立場→答えやすい具体的な質問）`;
+
   const prompt = `あなたは「${brand.identity.name}」のX投稿を書くライターです。
 
 ${brandBlock(brand)}
@@ -203,22 +220,40 @@ ${affiliateBlock}
 2. 登録された体験に無いことを「やった」と書かない
 3. 「筆者が語れる根拠」に無い数字・成果を書かない
 4. 強い命令形・感嘆符の多用・煽りをしない
-5. 1投稿140文字以内。改行を使う。ハッシュタグは0〜2個
+5. 文字数は${X_LENGTH_GUIDE[length]}を目安にする。改行を使う。ハッシュタグは0〜2個
 6. 「私は」という主語を自然に使う
+7. 「どう思う？」だけの形式的な返信誘導をしない
+8. 冒頭候補を3案、メディア案を1つ付ける。画像・動画は必須にしない
+
+## 作る形式
+${formatGuide}
 
 # 出力（JSONのみ）
 {
   "posts": [
-    { "angle": "気づき", "text": "投稿本文" },
-    { "angle": "実践", "text": "投稿本文" },
-    { "angle": "考え方", "text": "投稿本文" }
+    {
+      "pattern": "opinion",
+      "angle": "投稿の切り口",
+      "text": "投稿本文",
+      "hookCandidates": ["冒頭案1", "冒頭案2", "冒頭案3"],
+      "mediaSuggestion": "text",
+      "threadParts": []
+    }
   ]
-}`;
+}
+mediaSuggestionは text / diagram / screenshot / comparison / chart / video / note-thumbnail のいずれか。`;
 
   const message = `【テーマ】${cluster.title}
 【読者の悩み】${cluster.summary}`;
 
-  let posts: { angle?: string; text?: string }[] = [];
+  let posts: {
+    angle?: string;
+    pattern?: string;
+    text?: string;
+    hookCandidates?: string[];
+    mediaSuggestion?: string;
+    threadParts?: string[];
+  }[] = [];
   try {
     const response = await callAI(message, prompt, { provider: "auto" });
     const match = response.match(/\{[\s\S]*\}/);
@@ -237,9 +272,15 @@ ${affiliateBlock}
   const now = new Date().toISOString();
   const drafts: SocialDraft[] = [];
 
-  for (const post of posts.slice(0, 3)) {
-    if (!post.text) continue;
-    let text = String(post.text);
+  const selectedPosts = posts.slice(0, outputType === "x-and-note" ? 5 : 3);
+  for (const [postIndex, post] of selectedPosts.entries()) {
+    const texts =
+      outputType === "x-thread" && Array.isArray(post.threadParts) && post.threadParts.length >= 2
+        ? post.threadParts.slice(0, 7)
+        : post.text ? [post.text] : [];
+    const threadId = outputType === "x-thread" ? hashId("th", `${cluster.id}${now}`) : undefined;
+    for (const [threadIndex, rawText] of texts.entries()) {
+    let text = String(rawText);
 
     // 未許可URLを除去（AIにURLを作らせない）
     const urls = text.match(/https?:\/\/[^\s)\]"'）]+/g) ?? [];
@@ -261,12 +302,24 @@ ${affiliateBlock}
     const similarity = checkSimilarity(text, sourceCandidates, input.pastPosts);
 
     drafts.push({
-      id: hashId("s", `${cluster.id}${post.angle ?? ""}${now}${text.slice(0, 20)}`),
+      id: hashId("s", `${cluster.id}${post.angle ?? ""}${threadIndex}${now}${text.slice(0, 20)}`),
       trendClusterId: cluster.id,
       xAccountId: account.id,
       purpose,
       genreId: genre.id,
       text,
+      pattern: normalizeXPattern(
+        post.pattern ?? (["opinion", "save", "conversation"][postIndex] as string | undefined),
+        outputType
+      ),
+      length,
+      hookCandidates: Array.isArray(post.hookCandidates)
+        ? post.hookCandidates.map(String).slice(0, 3)
+        : [],
+      mediaSuggestion: normalizeMediaSuggestion(post.mediaSuggestion),
+      threadId,
+      threadIndex: threadId ? threadIndex + 1 : undefined,
+      threadTotal: threadId ? texts.length : undefined,
       urls: kept,
       affiliateId: needsDisclosure ? affiliate?.id : undefined,
       needsDisclosure,
@@ -278,6 +331,7 @@ ${affiliateBlock}
       createdAt: now,
       updatedAt: now,
     });
+    }
   }
 
   const warning =
@@ -347,11 +401,16 @@ export async function generateNoteArticle(
 有料パート: 実際の設定・テンプレート・プロンプト・失敗と対処・チェックリスト
 有料パートは「読者が再利用できる成果物」を必ず含めること。`
       : `## 構成（無料）
-1. 感じた疑問や出来事
-2. 実際に試したこと
-3. 分かったこと
-4. 読者が試せる具体的な方法
-5. 断定しないまとめ`;
+1. 読者の悩み・疑問
+2. なぜ今この話題なのか
+3. 初心者向けの背景説明
+4. まえみちとしての考え
+5. 登録済みの体験・事実（無ければ体験を創作しない）
+6. 失敗・迷い・注意点
+7. 今日からできること
+8. まとめ
+9. 関連記事（登録URLが無ければURLを作らない）
+X投稿を単純に長文化せず、noteとして独立した価値を持たせること。`;
 
   const prompt = `あなたは「${brand.identity.name}」のnote記事を書くライターです。
 

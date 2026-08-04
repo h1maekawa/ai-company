@@ -15,6 +15,7 @@ import type {
   XResearchSettings,
   GrowthGoal,
   OutputType,
+  XPostLength,
 } from "@/app/lib/note/research/types";
 
 type ClusterWithSources = TrendCluster & {
@@ -146,6 +147,7 @@ export function useCandidates() {
       personalAngle?: string;
       growthGoal?: GrowthGoal;
       outputType?: OutputType;
+      xLength?: XPostLength;
     } = {}
   ) {
     setRunning(true);

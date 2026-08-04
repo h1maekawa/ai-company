@@ -7,6 +7,7 @@ import type {
   GrowthGoal,
   OutputType,
   TrendCluster,
+  XPostLength,
 } from "@/app/lib/note/research/types";
 import { Card, CardHeader } from "@/components/ui/primitives";
 import type { XTrend, XTrendLocation, XTrendResponse } from "@/app/lib/note/research/x-trends";
@@ -36,8 +37,14 @@ const OUTPUTS: { id: OutputType; label: string; available: boolean }[] = [
   { id: "x-post", label: "X投稿", available: true },
   { id: "note-free", label: "無料note", available: true },
   { id: "x-and-note", label: "Xとnote両方", available: true },
-  { id: "x-thread", label: "Xスレッド（Phase 3）", available: false },
-  { id: "note-paid-outline", label: "有料note構成（Phase 3）", available: false },
+  { id: "x-thread", label: "Xスレッド", available: true },
+  { id: "note-paid-outline", label: "有料note構成", available: true },
+];
+
+const LENGTHS: { id: XPostLength; label: string; hint: string }[] = [
+  { id: "short", label: "短文", hint: "80〜160文字" },
+  { id: "standard", label: "標準", hint: "161〜280文字" },
+  { id: "long", label: "長文", hint: "280文字超" },
 ];
 
 export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
@@ -54,6 +61,7 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   const [personalAngle, setPersonalAngle] = useState("");
   const [growthGoal, setGrowthGoal] = useState<GrowthGoal>("reach");
   const [outputType, setOutputType] = useState<OutputType>("x-and-note");
+  const [xLength, setXLength] = useState<XPostLength>("standard");
   const [selectedId, setSelectedId] = useState("");
 
   const visibleCandidates = useMemo(() => {
@@ -95,11 +103,17 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   async function generate() {
     if (!selectedId) return;
     const kind =
-      outputType === "x-post" ? "x" : outputType === "note-free" ? "note" : "both";
-    await candidates.generate(selectedId, kind, "free", {
+      outputType === "x-post" || outputType === "x-thread"
+        ? "x"
+        : outputType === "note-free" || outputType === "note-paid-outline"
+          ? "note"
+          : "both";
+    const articleType = outputType === "note-paid-outline" ? "paid" : "free";
+    await candidates.generate(selectedId, kind, articleType, {
       personalAngle: personalAngle.trim() || undefined,
       growthGoal,
       outputType,
+      xLength,
     });
   }
 
@@ -266,6 +280,26 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
                 </button>
               ))}
             </div>
+            {(outputType === "x-post" || outputType === "x-thread" || outputType === "x-and-note") && (
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-slate-200">Xの長さ</p>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {LENGTHS.map((length) => (
+                    <button
+                      key={length.id}
+                      onClick={() => setXLength(length.id)}
+                      className={`rounded-xl border p-2 text-left ${xLength === length.id ? "border-brand bg-brand/10" : "border-hairline"}`}
+                    >
+                      <p className="text-xs font-semibold">{length.label}</p>
+                      <p className="text-[10px] text-sub">{length.hint}</p>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[10px] text-sub">
+                  X投稿は意見型・保存型・会話型の3案を作り、冒頭候補とメディア案も付けます。
+                </p>
+              </div>
+            )}
             <button
               onClick={generate}
               disabled={!selectedId || candidates.running}
