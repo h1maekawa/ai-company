@@ -73,7 +73,10 @@ export async function runResearch(options?: {
           estimatedCostUsd: 0,
           skippedReason: "note用リサーチのためX取得は実行していません",
         })
-      : researchX(references.xAccounts, settings.x).catch((error) => {
+      : researchX(references.xAccounts, settings.x, {
+          focusTopic: options?.focusTopic,
+          xQuery: options?.xQuery,
+        }).catch((error) => {
           failures.push({ source: "x", error: String(error) });
           return { items: [], failures: [], estimatedCostUsd: 0, skippedReason: undefined };
         }),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowRight, Check, Loader2, Search, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Loader2, Search, Sparkles, TrendingUp } from "lucide-react";
 import { useCandidates } from "@/app/note/useResearch";
 import type {
   GrowthGoal,
@@ -9,6 +9,7 @@ import type {
   TrendCluster,
 } from "@/app/lib/note/research/types";
 import { Card, CardHeader } from "@/components/ui/primitives";
+import type { XTrend, XTrendLocation, XTrendResponse } from "@/app/lib/note/research/x-trends";
 
 const GENRES = [
   ["", "指定なし"],
@@ -42,6 +43,12 @@ const OUTPUTS: { id: OutputType; label: string; available: boolean }[] = [
 export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   const candidates = useCandidates();
   const [focusTopic, setFocusTopic] = useState("");
+  const [xQuery, setXQuery] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [trends, setTrends] = useState<XTrend[]>([]);
+  const [trendLocation, setTrendLocation] = useState<XTrendLocation>("japan");
+  const [trendNotice, setTrendNotice] = useState("");
+  const [loadingTrends, setLoadingTrends] = useState(false);
   const [platform, setPlatform] = useState<"x" | "note" | "both">("both");
   const [genreId, setGenreId] = useState("");
   const [personalAngle, setPersonalAngle] = useState("");
@@ -62,10 +69,27 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
     await candidates.runResearch({
       focusTopic: focusTopic.trim() || undefined,
       platform,
+      xQuery: xQuery.trim() || undefined,
       genreId: genreId || undefined,
       growthGoal,
       personalAngle: personalAngle.trim() || undefined,
     });
+  }
+
+  async function loadTrends(location: XTrendLocation) {
+    setTrendLocation(location);
+    setLoadingTrends(true);
+    setTrendNotice("");
+    try {
+      const response = await fetch(`/api/note/research/x-trends?location=${location}`);
+      const body = (await response.json()) as XTrendResponse;
+      setTrends(body.trends ?? []);
+      setTrendNotice(body.skippedReason ?? "");
+    } catch {
+      setTrendNotice("トレンドを取得できません。テーマを直接入力してください。");
+    } finally {
+      setLoadingTrends(false);
+    }
   }
 
   async function generate() {
@@ -104,6 +128,49 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
             placeholder="例：半導体、NVIDIA、新NISA、嫌われる勇気"
             className="mt-1 w-full rounded-xl border border-hairline bg-white/[0.03] px-3 py-3 text-sm text-white outline-none placeholder:text-sub/60 focus:border-brand/60"
           />
+          <div className="mt-3 rounded-xl border border-hairline bg-white/[0.02] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="flex items-center gap-1.5 text-xs font-semibold"><TrendingUp className="h-3.5 w-3.5" />今伸びている話題</p>
+                <p className="mt-0.5 text-[10px] text-sub">X APIが使えない場合も、テーマの直接入力は利用できます。</p>
+              </div>
+              <div className="flex gap-1">
+                {([["japan", "日本"], ["tokyo", "東京"]] as const).map(([id, label]) => (
+                  <button key={id} onClick={() => void loadTrends(id)} className={`rounded-lg px-2.5 py-1.5 text-[10px] ${trendLocation === id && trends.length ? "bg-brand text-white" : "bg-white/5 text-sub"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {trends.length === 0 ? (
+              <button onClick={() => void loadTrends(trendLocation)} disabled={loadingTrends} className="mt-2 text-xs font-semibold text-brand-light disabled:opacity-50">
+                {loadingTrends ? "取得中…" : "トレンドを表示する"}
+              </button>
+            ) : (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {trends.slice(0, 12).map((trend) => (
+                  <button key={trend.name} onClick={() => setFocusTopic(trend.name)} className="rounded-full border border-hairline px-2.5 py-1.5 text-[10px] text-slate-200">
+                    {trend.name}{trend.postCount ? ` ${trend.postCount.toLocaleString()}件` : ""}
+                  </button>
+                ))}
+              </div>
+            )}
+            {trendNotice && <p className="mt-2 rounded-lg bg-amber-500/10 p-2 text-[10px] text-amber-200">{trendNotice}</p>}
+          </div>
+          <button onClick={() => setShowAdvanced((value) => !value)} className="mt-3 text-xs text-sub underline decoration-white/20 underline-offset-4">
+            {showAdvanced ? "X検索条件を閉じる" : "X検索条件（任意）"}
+          </button>
+          {showAdvanced && (
+            <div className="mt-2">
+              <input
+                value={xQuery}
+                onChange={(event) => setXQuery(event.target.value)}
+                placeholder={'例：("NVIDIA" OR "TSMC") 半導体 -仮想通貨'}
+                className="w-full rounded-xl border border-hairline bg-white/[0.03] px-3 py-3 text-sm text-white outline-none placeholder:text-sub/60 focus:border-brand/60"
+              />
+              <p className="mt-1 text-[10px] text-sub">未指定ならテーマから複数検索を作成します。lang:ja と -is:retweet は自動補完します。</p>
+            </div>
+          )}
           <div className="mt-3 grid grid-cols-3 gap-2">
             {([
               ["both", "X・note両方"],
