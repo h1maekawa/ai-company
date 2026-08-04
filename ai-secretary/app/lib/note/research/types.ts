@@ -98,7 +98,7 @@ export type OutputType =
   | "x-and-note";
 
 export type XPostLength = "short" | "standard" | "long";
-export type XPostPattern = "opinion" | "save" | "conversation" | "note-link";
+export type XPostPattern = "daily" | "reflection" | "tried" | "opinion" | "save" | "conversation" | "note-link";
 export type MediaSuggestion =
   | "text"
   | "diagram"
@@ -416,6 +416,20 @@ export type ContentPerformance = {
   likes?: number;
   replies?: number;
   reposts?: number;
+  quotes?: number;
+  bookmarks?: number;
+  profileClicks?: number;
+  followsFromPost?: number;
+  urlClicks?: number;
+  videoViews?: number;
+  mediaViews?: number;
+  followerCountAtPost?: number;
+  currentFollowerCount?: number;
+  pattern?: XPostPattern;
+  length?: XPostLength;
+  mediaSuggestion?: MediaSuggestion;
+  hasQuestion?: boolean;
+  hasExternalLink?: boolean;
   linkClicks?: number;
 
   noteViews?: number;
@@ -428,6 +442,28 @@ export type ContentPerformance = {
   affiliateRevenue?: number;
 
   measuredAt: string;
+  measurementWindow?: "30m" | "1h" | "3h" | "24h" | "72h" | "7d";
+};
+
+export type RevenueSharingProgress = {
+  premiumActive?: boolean;
+  organicImpressions90Days?: number;
+  requiredOrganicImpressions: number;
+  verifiedFollowers?: number;
+  requiredVerifiedFollowers: number;
+  stripeConnected?: boolean;
+  identityVerified?: boolean;
+  accountInGoodStanding?: boolean;
+  eligibleCountry?: boolean;
+  lastCheckedAt: string;
+};
+
+export type MonetizationRule = {
+  program: "revenue-sharing" | "subscriptions";
+  requirements: Record<string, number | boolean | string>;
+  sourceLabel: string;
+  verifiedAt: string;
+  active: boolean;
 };
 
 /* ─── 投稿ジョブ（Playwrightローカルランナー用） ─────── */

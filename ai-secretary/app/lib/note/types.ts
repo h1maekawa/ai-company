@@ -24,6 +24,12 @@ export type Genre = {
 
 export const DEFAULT_GENRES: Genre[] = [
   {
+    id: "daily-thoughts",
+    label: "日常・考え方",
+    description: "日々あったこと、感じたこと、迷ったこと、小さな気づきや途中経過を記録する",
+    color: "#8C8378",
+  },
+  {
     id: "ai",
     label: "AI",
     description: "AIを使って仕事や生活の時間をつくり、毎日を少し楽にする方法",
@@ -189,9 +195,9 @@ export function defaultXAccounts(): XAccount[] {
       id: "maemichi",
       label: "まえみち",
       handle: "",
-      role: "AI・副業・読書・資産形成・習慣について、実際に試したことから得た小さな気づきや具体的な方法を、穏やかで押し付けない言葉で届ける。読んだ人が少し前向きになれる投稿を書く。",
+      role: "人生の寄り道を日常的に記録するアカウント。AI・読書・投資・仕事・副業・習慣は人生の一部として扱う。先生として教えるのではなく、友達に話すくらいの距離感で、実際に試したこと、迷い、失敗、途中経過、日常で感じたことを自然体で共有する。投稿単体の有益さだけでなく、この人の日常や考え方をこれからも見たいと思われることを優先する。",
       genreIds: [...ALL_GENRE_IDS],
-      nextStep: "関連するnote記事へ誘導。内容に応じて有料note・公式LINE・登録済みサービスを案内する",
+      nextStep: "まずは投稿を継続して読んでもらう。テーマを深く書いた場合のみ、自然に関連noteへ案内する。",
       monetization: ["note有料記事", "登録済みアフィリエイト", "将来の教材・サービス", "X収益分配"],
       directAffiliate: false,
     },
@@ -257,7 +263,7 @@ export function defaultProgram(): TeachingProgram {
 /* ─── ブランディング / マーケティング戦略 ─────────────── */
 
 /** ブランドの現在バージョン。既存データの一回限りの移行判定に使う */
-export const BRAND_VERSION = "maemichi-v1";
+export const BRAND_VERSION = "maemichi-v2";
 
 /** ブランド名・キャッチコピー・プロフィール・固定ポストなど、短く表示する情報 */
 export type BrandIdentity = {
@@ -299,6 +305,25 @@ export type VisualIdentity = {
   headerGuidelines: string[];
 };
 
+export type ContentPillarId =
+  | "daily-thoughts" | "ai" | "reading" | "career"
+  | "asset-building" | "side-business" | "habits";
+export type ContentPillar = {
+  id: ContentPillarId;
+  label: string;
+  targetRatio: number;
+  description: string;
+};
+export type ChannelBrandGuideline = {
+  purpose: string[];
+  tone: string[];
+  rules: string[];
+};
+export type BrandChannelGuidelines = {
+  x: ChannelBrandGuideline;
+  note: ChannelBrandGuideline;
+};
+
 export type Brand = {
   identity: BrandIdentity;
   personality: BrandPersonality;
@@ -320,8 +345,70 @@ export type Brand = {
   ngList: string[];
   /** 収益導線 */
   funnel: string[];
+  brandGoal: string;
+  contentPillars: ContentPillar[];
+  channelGuidelines: BrandChannelGuidelines;
   updatedAt: string;
 };
+
+export type ContentSourceMode = "daily" | "trend";
+export type DailyPostSeed = {
+  whatHappened: string;
+  feeling?: string;
+  thought?: string;
+  uncertainty?: string;
+  genreId?: string;
+};
+
+export const DEFAULT_CONTENT_PILLARS: ContentPillar[] = [
+  { id: "daily-thoughts", label: "日常・考え方", targetRatio: 35, description: "日常、感情、迷い、小さな気づき" },
+  { id: "ai", label: "AI", targetRatio: 20, description: "人生の中でAIを試した記録" },
+  { id: "reading", label: "読書", targetRatio: 15, description: "本を読んで感じ、考えたこと" },
+  { id: "career", label: "仕事・キャリア", targetRatio: 10, description: "仕事や働き方で感じたこと" },
+  { id: "asset-building", label: "投資・資産形成", targetRatio: 10, description: "投資やお金で迷い、学んだこと" },
+  { id: "side-business", label: "副業", targetRatio: 5, description: "小さく試した副業の途中経過" },
+  { id: "habits", label: "習慣", targetRatio: 5, description: "生活を整えるために試したこと" },
+];
+
+export const MAEMICHI_V1_DEFAULTS = {
+  identity: {
+    xProfile: "AI・副業・読書・資産形成。\n人生を、ちょっと豊かにするヒントを発信。\n実際に試したことだけを書いています。\n焦らず、一歩ずつ。",
+    xProfileShort: "AI・副業・読書・資産形成。\n人生を少し豊かにする、実践ベースのヒントを発信。\n焦らず、一歩ずつ。",
+    fixedPost: "はじめまして、まえみちです。\n\nこのアカウントでは、\n\n・AIで時間をつくる\n・副業で選択肢を増やす\n・読書で考え方を育てる\n・資産形成で未来に備える\n・習慣を整えて、毎日を少し良くする\n\nそんな「人生を少し豊かにするヒント」を、\n実際に試したことを中心に発信しています。\n\n大きく変わる方法は知らないけれど、\n昨日より少し前へ進む方法なら、\n一緒に考えられると思っています。\n\n人生の寄り道が、未来の近道になる。\n\nよかったら、これからよろしくお願いします。",
+  },
+  concept: "AI・副業・読書・資産形成・習慣を通じて、人生を少し豊かにするヒントを発信する",
+} as const;
+
+export function useV2WhenUnchanged<T>(current: T, v1Default: T, v2Default: T): T {
+  return JSON.stringify(current) === JSON.stringify(v1Default) ? v2Default : current;
+}
+
+export function migrateBrandV1ToV2(old: Brand): Brand {
+  const fresh = defaultBrand();
+  return {
+    ...fresh,
+    ...old,
+    identity: {
+      ...fresh.identity,
+      ...old.identity,
+      version: BRAND_VERSION,
+      xProfile: useV2WhenUnchanged(old.identity.xProfile, MAEMICHI_V1_DEFAULTS.identity.xProfile, fresh.identity.xProfile),
+      xProfileShort: useV2WhenUnchanged(old.identity.xProfileShort, MAEMICHI_V1_DEFAULTS.identity.xProfileShort, fresh.identity.xProfileShort),
+      fixedPost: useV2WhenUnchanged(old.identity.fixedPost, MAEMICHI_V1_DEFAULTS.identity.fixedPost, fresh.identity.fixedPost),
+    },
+    personality: { ...fresh.personality, ...old.personality },
+    visualIdentity: { ...fresh.visualIdentity, ...old.visualIdentity },
+    concept: useV2WhenUnchanged(old.concept, MAEMICHI_V1_DEFAULTS.concept, fresh.concept),
+    credibility: old.credibility,
+    brandGoal: old.brandGoal || fresh.brandGoal,
+    contentPillars: old.contentPillars?.length ? old.contentPillars : fresh.contentPillars,
+    channelGuidelines: {
+      x: { ...fresh.channelGuidelines.x, ...old.channelGuidelines?.x },
+      note: { ...fresh.channelGuidelines.note, ...old.channelGuidelines?.note },
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 /**
  * 移行判定専用：旧ブランド（副業教育メディア期）のデフォルト値そのまま。
@@ -372,13 +459,13 @@ export function defaultBrand(): Brand {
       storyTagline: "人生の寄り道が、未来の近道になる。",
       alternateTaglines: ["人生は、寄り道くらいがちょうどいい。"],
       xProfile:
-        "AI・副業・読書・資産形成。\n人生を、ちょっと豊かにするヒントを発信。\n実際に試したことだけを書いています。\n焦らず、一歩ずつ。",
+        "人生の寄り道を、ゆるく記録中。\nAIを試したこと、本を読んで考えたこと、\n投資や仕事で迷ったこと、何気ない日常のこと。\n成功も失敗も、途中経過もそのまま残します。\n気軽にフォローしてもらえたら嬉しいです。\n人生を、ちょっと豊かに。",
       xProfileShort:
-        "AI・副業・読書・資産形成。\n人生を少し豊かにする、実践ベースのヒントを発信。\n焦らず、一歩ずつ。",
+        "人生の寄り道を、ゆるく記録中。\nAI・読書・投資・仕事・日常で感じたことを、\n成功も失敗もそのまま発信。\n気軽にフォローしてもらえたら嬉しいです。",
       noteProfile:
         "人生に正解はないけれど、\n良い寄り道はあると思う。\n\nAI・読書・副業・習慣・資産形成から、\n実際に試して学んだことを発信しています。\n\n人生を、ちょっと豊かに。\n焦らず、一歩ずつ。",
       fixedPost:
-        "はじめまして、まえみちです。\n\nこのアカウントでは、\n\n・AIで時間をつくる\n・副業で選択肢を増やす\n・読書で考え方を育てる\n・資産形成で未来に備える\n・習慣を整えて、毎日を少し良くする\n\nそんな「人生を少し豊かにするヒント」を、\n実際に試したことを中心に発信しています。\n\n大きく変わる方法は知らないけれど、\n昨日より少し前へ進む方法なら、\n一緒に考えられると思っています。\n\n人生の寄り道が、未来の近道になる。\n\nよかったら、これからよろしくお願いします。",
+        "はじめまして、まえみちです。\n\nこのアカウントは、\n「人生の寄り道」を記録する場所です。\n\nAIを触ってみて、\n「これ普通に便利じゃん。」と思ったこと。\n\n本を読んで、\n「この一文、刺さるな。」と思ったこと。\n\n投資で迷ったこと。\n仕事で感じたこと。\nたまには失敗したことも。\n\n全部ひっくるめて残していきます。\n\n誰かに教えるというより、\n自分で試して「これは良かった」「これは違った」を記録していく感覚です。\n\nその記録が、同じように頑張っている誰かのヒントになったら嬉しいです。\n\n人生に正解はないけれど、良い寄り道はあると思っています。\n\n人生を、ちょっと豊かに。\n\nこれからよろしくお願いします。",
     },
     personality: {
       traits: [
@@ -395,6 +482,9 @@ export function defaultBrand(): Brand {
         "自分を成功者として見せない。",
         "読者より上の立場から教えない。",
         "先生ではなく、少し先を歩きながら一緒に考える人として書く。",
+        "人生を主役にし、AIや投資は人生の一部として扱う。",
+        "知識よりも、体験・感情・迷い・途中経過を共有する。",
+        "まだ分からないことは、分からないと書く。",
       ],
       preferredExpressions: [
         "私はこう考えています。",
@@ -405,6 +495,12 @@ export function defaultBrand(): Brand {
         "少しずつ改善しています。",
         "もし参考になれば。",
         "焦らず、一歩ずつで大丈夫だと思います。",
+        "普通に便利だった。",
+        "これは意外だった。",
+        "今日これ試してみた。",
+        "まだ勉強中です。",
+        "今のところ、こう考えています。",
+        "正直、まだ迷っています。",
       ],
       avoidedExpressions: [
         "絶対にやるべきです。",
@@ -415,6 +511,9 @@ export function defaultBrand(): Brand {
         "人生が変わります。",
         "知らないと危険です。",
         "これ一択です。",
+        "神ツール",
+        "全員使え",
+        "これだけで稼げる",
       ],
       writingRules: [
         "「〜しよう！」という強い命令形を多用しない",
@@ -431,6 +530,10 @@ export function defaultBrand(): Brand {
         "読者が今日試せる小さな行動を1つ含める",
         "毎回同じ決まり文句を機械的に付けない",
         "ブランドコピーは自然な記事でのみ使用する",
+        "人生と人柄を主役にし、AIや投資だけを主役にしない",
+        "カジュアル表現は本人の感情に合う場合だけ使う",
+        "毎回オチや質問を付けない",
+        "フォローを毎投稿で直接お願いしない",
       ],
     },
     visualIdentity: {
@@ -462,7 +565,7 @@ export function defaultBrand(): Brand {
         "ジャンル表記（AI / 読書 / 副業 / 資産形成 / 習慣）を添える",
       ],
     },
-    concept: "AI・副業・読書・資産形成・習慣を通じて、人生を少し豊かにするヒントを発信する",
+    concept: "人生の中で感じたことや、実際に試したことを記録しながら、AI・読書・副業・投資・仕事・習慣・日常を通して、人生を少し豊かにする寄り道を共有するブランド。AIやノウハウではなく、人生と人柄を主役にする。",
     targetReader:
       "本業や日々の生活を続けながら、AI・副業・読書・資産形成・習慣を通じて、人生を少しずつ良くしていきたい20〜30代。強い煽りや成功者による断定的な発信には疲れており、現実的で誠実な実践記録を求めている人。",
     painPoints: [
@@ -512,6 +615,20 @@ export function defaultBrand(): Brand {
       "継続的に学びたい読者を公式LINEへ案内する",
       "内容に合う場合のみ、教材・サービス・アフィリエイトを案内する",
     ],
+    brandGoal: "AI・投資・読書を発信する人ではなく、この人の考え方や日常を追いかけたくなる人になる。",
+    contentPillars: DEFAULT_CONTENT_PILLARS.map((pillar) => ({ ...pillar })),
+    channelGuidelines: {
+      x: {
+        purpose: ["毎日の記録", "独り言", "リアルタイムの気づき", "会話", "迷い・途中経過"],
+        tone: ["友達とカフェで話す程度の距離感", "自然体", "日記感を残す"],
+        rules: ["完成されたノウハウより今感じたことを優先", "毎回質問やオチを付けない", "毎回外部導線を置かない"],
+      },
+      note: {
+        purpose: ["振り返り", "考察", "ストーリー", "体験談", "失敗や迷いの整理"],
+        tone: ["背景と感情を丁寧に書く", "結論を急がない", "自然体"],
+        rules: ["Xを単純に長文化しない", "考えが変わった過程を書く", "分からないことを無理に結論づけない"],
+      },
+    },
     updatedAt: new Date().toISOString(),
   };
 }

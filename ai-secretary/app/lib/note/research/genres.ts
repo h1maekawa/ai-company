@@ -13,6 +13,7 @@ export function detectGenres(text: string): string[] {
   const hits: string[] = [];
 
   const table: Record<string, RegExp> = {
+    "daily-thoughts": /日常|今日あった|感じた|迷って|途中経過|小さな気づき|独り言|暮らし/,
     ai: /ChatGPT|Claude|Gemini|生成AI|プロンプト|自動化|LLM|人工知能|AI(?:ツール|活用|開発|仕事|業務|学習|文章|画像|議事録)/i,
     "side-business": /副業|複業|個人開発|マネタイズ|フリーランス|受注/,
     reading: /読書|書評|要約|積読|読了|一冊|書籍/,

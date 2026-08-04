@@ -326,7 +326,8 @@ export function selectTopCandidates(
   focusTopic?: string,
   freshItemIds: string[] = [],
   platform?: "x" | "note",
-  genreId?: string
+  genreId?: string,
+  preferredGenreIds: string[] = []
 ): TrendCluster[] {
   const itemById = new Map(items.map((item) => [item.id, item]));
   const candidates = clusters.filter(
@@ -338,7 +339,13 @@ export function selectTopCandidates(
       (!platform ||
         cluster.researchItemIds.some((id) => itemById.get(id)?.platform === platform))
   );
-  if (!focusTopic?.trim()) return candidates.slice(0, 5);
+  const preference = (cluster: TrendCluster) =>
+    cluster.genreIds.some((id) => preferredGenreIds.includes(id)) ? 1 : 0;
+  if (!focusTopic?.trim()) {
+    return [...candidates]
+      .sort((a, b) => b.totalScore - a.totalScore || preference(b) - preference(a))
+      .slice(0, 5);
+  }
 
   const topicTokens = tokenize(focusTopic);
   const freshIds = new Set(freshItemIds);
@@ -364,7 +371,8 @@ export function selectTopCandidates(
       (a, b) =>
         Number(b.hasFreshItem) - Number(a.hasFreshItem) ||
         b.relevance - a.relevance ||
-        b.cluster.totalScore - a.cluster.totalScore
+        b.cluster.totalScore - a.cluster.totalScore ||
+        preference(b.cluster) - preference(a.cluster)
     )
     .slice(0, 5)
     .map((entry) => entry.cluster);
