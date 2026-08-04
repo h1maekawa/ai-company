@@ -8,6 +8,9 @@ export type ConversationIntent =
       candidateNumber?: number;
     }
   | { type: "select"; candidateNumber: number }
+  | { type: "answer"; text: string }
+  | { type: "confirm-viewpoint" }
+  | { type: "edit-viewpoint" }
   | { type: "candidates" }
   | { type: "queue" }
   | { type: "draft" }
@@ -54,6 +57,12 @@ function candidateNumber(text: string): number | undefined {
 
 export function classifyConversation(text: string): ConversationIntent {
   const cleaned = cleanSlackMessage(text);
+  if (/(?:この内容|この理解|要約).*(?:合って|正しい)|(?:合っています|その通り|これで大丈夫)/.test(cleaned)) {
+    return { type: "confirm-viewpoint" };
+  }
+  if (/(?:意見|考え|要約).*(?:修正|直したい|変更)|少し修正/.test(cleaned)) {
+    return { type: "edit-viewpoint" };
+  }
   if (/(公開|投稿)(して|する|お願い)/.test(cleaned)) return { type: "publish" };
   if (
     /(?:X|Twitter|ツイート|note|ノート|両方)/i.test(cleaned) &&
@@ -96,6 +105,9 @@ export function classifyConversation(text: string): ConversationIntent {
             ? "x"
             : "both";
     return { type: "research", topic: researchTopic(cleaned), destination };
+  }
+  if (cleaned.length >= 2 && /思う|考え|気になる|感じ|分から|注目|経験|迷/.test(cleaned)) {
+    return { type: "answer", text: cleaned };
   }
   return { type: "help" };
 }

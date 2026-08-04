@@ -24,6 +24,7 @@ import {
   SocialDraft,
   TrendCluster,
   XResearchSettings,
+  ViewpointLibraryEntry,
   defaultFeatureFlags,
   defaultPurposeMix,
   defaultXResearchSettings,
@@ -42,6 +43,7 @@ export const RESEARCH_PATHS = {
   publishingHistory: `${ROOT}/publishing-history.md`,
   performance: `${ROOT}/content-performance.md`,
   noteQueue: `${ROOT}/note-publish-queue.md`,
+  viewpoints: `${ROOT}/viewpoint-library.md`,
 } as const;
 
 function extractJson<T>(markdown: string): T | null {
@@ -351,6 +353,33 @@ export async function saveExperiences(
     )
   );
   return experiences;
+}
+
+/* ─── 本人の考え方ライブラリ ───────────────────── */
+
+type ViewpointFile = { viewpoints: ViewpointLibraryEntry[] };
+
+export async function loadViewpoints(): Promise<ViewpointLibraryEntry[]> {
+  const data = await readJson<ViewpointFile>(RESEARCH_PATHS.viewpoints);
+  return Array.isArray(data?.viewpoints) ? data.viewpoints : [];
+}
+
+export async function saveViewpoints(
+  viewpoints: ViewpointLibraryEntry[]
+): Promise<ViewpointLibraryEntry[]> {
+  const human = viewpoints.length
+    ? viewpoints.slice(0, 50).map((item) => `- ✅ **${item.title}**（${item.topic}）\n  ${item.opinion}`).join("\n")
+    : "（まだありません）";
+  await write(
+    RESEARCH_PATHS.viewpoints,
+    buildDoc(
+      "maemichi_viewpoint_library",
+      "前川さんが明示的に「今後も使える」と確認した考えだけを保存します。",
+      human,
+      { viewpoints }
+    )
+  );
+  return viewpoints;
 }
 
 /* ─── コンテンツブリーフ ───────────────────── */

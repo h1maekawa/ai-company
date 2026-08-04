@@ -1,9 +1,17 @@
 import { verifySlackRequest } from "@/app/lib/integrations/slack/verify";
-import { ACTIONS, postToSlack } from "@/app/lib/integrations/slack/blocks";
+import {
+  ACTIONS,
+  generationChoiceBlocks,
+  postToSlack,
+} from "@/app/lib/integrations/slack/blocks";
 import { generateCandidateInBackground } from "@/app/lib/integrations/slack/generate";
 import { claimOnce } from "@/app/lib/note/publishing/queue";
 import {
   loadClusters,
+  loadExperiences,
+  loadViewpoints,
+  saveExperiences,
+  saveViewpoints,
   loadSocialDrafts,
   saveClusters,
   saveSocialDrafts,
@@ -17,6 +25,13 @@ import {
 import { enqueueLocalAiReview } from "@/app/lib/note/editor/create";
 import { getLocalAiReviewJob } from "@/app/lib/note/editor/jobs";
 import { runInBackground } from "@/app/lib/integrations/vercel-background";
+import {
+  loadEditorialContext,
+  newEditorialContext,
+  saveEditorialContext,
+  viewpointText,
+} from "@/app/lib/integrations/slack/editorial-context";
+import { editorialQuestions } from "@/app/lib/integrations/slack/editorial-questions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -28,6 +43,9 @@ type SlackPayload = {
   actions?: SlackAction[];
   response_url?: string;
   trigger_id?: string;
+  channel?: { id?: string };
+  message?: { ts?: string; thread_ts?: string };
+  container?: { channel_id?: string; message_ts?: string; thread_ts?: string };
   view?: {
     id?: string;
     callback_id?: string;
@@ -79,6 +97,8 @@ export async function POST(req: Request): Promise<Response> {
   const actionId = action.action_id;
   const value = action.value;
   const user = payload.user?.name ?? payload.user?.id ?? "unknown";
+  const channel = payload.channel?.id ?? payload.container?.channel_id;
+  const threadTs = payload.container?.thread_ts ?? payload.message?.thread_ts;
 
   // 同じボタンの二度押しで二重に走らせない
   if (!(await claimOnce(`slack:${actionId}:${value}:${user}`))) {
@@ -100,30 +120,175 @@ export async function POST(req: Request): Promise<Response> {
           "体験を追加してください: Note事業部 → 体験ライブラリ から登録できます。\n登録後に `/maemichi candidates` を実行すると、体験が紐づいた状態で再評価されます。"
         );
 
-      case ACTIONS.makeX:
-      case ACTIONS.makeFreeNote:
-      case ACTIONS.makePaidNote:
-      case ACTIONS.makeBoth: {
+      case ACTIONS.startThinking: {
+        if (!channel) return ok("チャンネルを確認できませんでした。会話でニュースを選んでください。");
+        const clusters = await loadClusters();
+        const selected = clusters.find((candidate) => candidate.id === value);
+        if (!selected) return ok("そのニュースが見つかりませんでした。もう一度リサーチしてください。");
+        const context = await loadEditorialContext(channel, threadTs);
+        const questions = editorialQuestions({ title: selected.title, genreIds: selected.genreIds });
+        await saveEditorialContext(channel, threadTs, newEditorialContext({
+          ...(context ?? {}),
+          status: "awaiting-viewpoint",
+          candidateIds: context?.candidateIds?.length ? context.candidateIds : [selected.id],
+          selectedCandidateId: selected.id,
+          selectedNewsItemId: selected.id,
+          questions,
+          currentQuestionIndex: 0,
+          answers: [],
+          authorViewpoint: undefined,
+          viewpointConfirmedAt: undefined,
+        }));
+        await postToSlack(
+          `「${selected.title}」について一緒に考えます。\n\n${questions[0].question}\n\n一つずつで大丈夫です。「まだ分からない」も、そのまま回答してください。`,
+          undefined,
+          { channel, threadTs }
+        );
+        return ok("壁打ちを始めました。質問へ普段の言葉で答えてください。");
+      }
+
+      case ACTIONS.confirmViewpoint: {
+        if (!channel) return ok("チャンネルを確認できませんでした。");
+        const context = await loadEditorialContext(channel, threadTs);
+        if (!context?.authorViewpoint || context.status !== "awaiting-viewpoint-confirmation") {
+          return ok("確認待ちの考えがありません。先に質問へ回答してください。");
+        }
+        const confirmed = { ...context.authorViewpoint, confirmedByUser: true };
+        await saveEditorialContext(channel, threadTs, {
+          ...context,
+          status: "ready-to-generate",
+          authorViewpoint: confirmed,
+          viewpointConfirmedAt: new Date().toISOString(),
+        });
+        await postToSlack(
+          "✅ 本人の考えとして確認しました。今回はこの下書きだけに使用します。",
+          generationChoiceBlocks(context.selectedCandidateId!),
+          { channel, threadTs }
+        );
+        return ok("確認しました。投稿形式を選んでください。");
+      }
+
+      case ACTIONS.editViewpoint:
+      case ACTIONS.rethinkViewpoint: {
+        if (!channel) return ok("チャンネルを確認できませんでした。");
+        const context = await loadEditorialContext(channel, threadTs);
+        if (!context?.selectedCandidateId) return ok("修正する考えがありません。");
+        await saveEditorialContext(channel, threadTs, {
+          ...context,
+          status: "awaiting-viewpoint",
+          questions: [{
+            id: "opinion",
+            category: "opinion",
+            question: "修正後の考えを、普段の言葉でそのまま送ってください。",
+            required: true,
+          }],
+          currentQuestionIndex: 0,
+          answers: [],
+          authorViewpoint: undefined,
+          viewpointConfirmedAt: undefined,
+        });
+        return ok("修正後の考えを、普段の言葉でそのまま送ってください。");
+      }
+
+      case ACTIONS.generateX:
+      case ACTIONS.generateNote:
+      case ACTIONS.generateBoth: {
+        if (!channel) return ok("チャンネルを確認できませんでした。");
+        const context = await loadEditorialContext(channel, threadTs);
+        if (
+          !context?.authorViewpoint?.confirmedByUser ||
+          context.status !== "ready-to-generate" ||
+          context.selectedCandidateId !== value
+        ) {
+          return ok("投稿を作る前に、このニュースについての考えを教えてください。本人確認前は生成できません。");
+        }
         const kind =
-          actionId === ACTIONS.makeX
+          actionId === ACTIONS.generateX
             ? "x"
-            : actionId === ACTIONS.makeBoth
+            : actionId === ACTIONS.generateBoth
               ? "both"
               : "note";
-        const articleType = actionId === ACTIONS.makePaidNote ? "paid" : "free";
+        await saveEditorialContext(channel, threadTs, { ...context, status: "generating" });
 
-        // 生成は時間がかかるので、先に応答してから裏で走らせる
         runInBackground(
-          generateCandidateInBackground(value, kind, articleType).catch(async (error) => {
+          generateCandidateInBackground(
+            value,
+            kind,
+            "free",
+            { channel, threadTs },
+            {
+              text: viewpointText(context.authorViewpoint),
+              confirmedByUser: context.authorViewpoint.confirmedByUser,
+            }
+          ).catch(async (error) => {
             console.error("[slack/actions] 生成失敗", {
               errorType: error instanceof Error ? error.name : "unknown",
             });
             await postToSlack(
-              "投稿案の生成に失敗しました。Vercelのログを確認してください。"
+              "投稿案の生成に失敗しました。Vercelのログを確認してください。",
+              undefined,
+              { channel, threadTs }
             );
           })
         );
-        return ok("作成を開始しました。できたらこのチャンネルへ送ります。");
+        return ok("確認済みの考えを中心に下書きを作成します。外部公開はしません。");
+      }
+
+      case ACTIONS.saveForLater:
+        return ok("あとで読むニュースとして残しました。投稿や意見の生成は行いません。");
+
+      case ACTIONS.useOnce:
+        return ok("今回の下書きだけに使用します。考え方・体験ライブラリには保存しません。");
+
+      case ACTIONS.saveViewpoint: {
+        if (!channel) return ok("チャンネルを確認できませんでした。");
+        const context = await loadEditorialContext(channel, threadTs);
+        const viewpoint = context?.authorViewpoint;
+        if (!viewpoint?.confirmedByUser) return ok("本人確認済みの考えだけを保存できます。");
+        const viewpoints = await loadViewpoints();
+        const now = new Date().toISOString();
+        await saveViewpoints([{
+          id: `viewpoint-${Date.now()}`,
+          title: context?.topic || viewpoint.mainOpinion?.slice(0, 60) || "今回の考え",
+          topic: context?.topic || "未分類",
+          opinion: viewpoint.mainOpinion || viewpoint.rawText,
+          reasons: viewpoint.reasons,
+          uncertainties: viewpoint.uncertainties,
+          sourceBriefId: context?.brief?.id,
+          sourceDraftIds: [],
+          reusable: true,
+          verifiedByUser: true,
+          createdAt: now,
+          updatedAt: now,
+        }, ...viewpoints]);
+        return ok("本人確認済みの考えとして、考え方ライブラリへ保存しました。");
+      }
+
+      case ACTIONS.saveViewpointExperience: {
+        if (!channel) return ok("チャンネルを確認できませんでした。");
+        const context = await loadEditorialContext(channel, threadTs);
+        const viewpoint = context?.authorViewpoint;
+        if (!viewpoint?.confirmedByUser) return ok("本人確認済みの内容だけを体験として保存できます。");
+        if (!viewpoint.experiences.length) {
+          return ok("今回の回答には実体験として確認できる内容がありません。意見やニュース閲覧だけを体験として保存することはできません。");
+        }
+        const experiences = await loadExperiences();
+        const now = new Date().toISOString();
+        await saveExperiences([{
+          id: `experience-slack-${Date.now()}`,
+          title: context?.topic || "Slack壁打ちで確認した体験",
+          genres: [],
+          summary: viewpoint.experiences.join(" "),
+          whatHappened: viewpoint.experiences.join("\n"),
+          whatWasTried: "",
+          reusableFacts: [],
+          sourceType: "conversation",
+          verifiedByUser: true,
+          sensitive: false,
+          createdAt: now,
+          updatedAt: now,
+        }, ...experiences]);
+        return ok("この回答が本人の実体験であることを確認し、体験ライブラリへ保存しました。");
       }
 
       case ACTIONS.discard: {

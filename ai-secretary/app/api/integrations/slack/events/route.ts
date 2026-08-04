@@ -1,12 +1,29 @@
-import { candidateBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
+import {
+  candidateBlocks,
+  editorialBriefBlocks,
+  generationChoiceBlocks,
+  postToSlack,
+  viewpointConfirmationBlocks,
+} from "@/app/lib/integrations/slack/blocks";
 import { classifyConversation, cleanSlackMessage } from "@/app/lib/integrations/slack/conversation";
 import { generateCandidateInBackground } from "@/app/lib/integrations/slack/generate";
+import { buildEditorialBrief } from "@/app/lib/integrations/slack/editorial-brief";
+import {
+  loadEditorialContext,
+  newEditorialContext,
+  saveEditorialContext,
+  viewpointText,
+} from "@/app/lib/integrations/slack/editorial-context";
+import {
+  captureViewpoint,
+  editorialQuestions,
+  viewpointSummary,
+} from "@/app/lib/integrations/slack/editorial-questions";
 import { verifySlackRequest } from "@/app/lib/integrations/slack/verify";
 import { runInBackground } from "@/app/lib/integrations/vercel-background";
 import { latestDraftLink } from "@/app/lib/note/drafts/mobile";
 import { withLock, claimOnce } from "@/app/lib/note/publishing/queue";
 import { runResearch } from "@/app/lib/note/research/run";
-import { redisSafeGet, redisSafeSet } from "@/app/lib/utils/redis";
 import {
   loadClusters,
   loadExperiences,
@@ -35,28 +52,6 @@ type SlackEventPayload = {
     ts?: string;
   };
 };
-
-type SlackResearchContext = {
-  candidateIds: string[];
-  topic?: string;
-  selectedCandidateId?: string;
-  authorViewpoint?: string;
-  awaitingOpinion?: boolean;
-  savedAt: string;
-};
-
-function researchContextKey(channel: string, threadTs?: string): string {
-  return `slack:research-context:${channel}:${threadTs ?? "root"}`;
-}
-
-async function loadResearchContext(
-  channel: string,
-  threadTs?: string
-): Promise<SlackResearchContext | null> {
-  const exact = await redisSafeGet<SlackResearchContext>(researchContextKey(channel, threadTs));
-  if (exact || !threadTs) return exact;
-  return redisSafeGet<SlackResearchContext>(researchContextKey(channel));
-}
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
@@ -116,28 +111,85 @@ async function reply(text: string, channel: string, threadTs?: string) {
 
 async function handleConversation(text: string, channel: string, threadTs?: string) {
   const cleanedText = cleanSlackMessage(text);
-  const currentContext = await loadResearchContext(channel, threadTs);
+  const currentContext = await loadEditorialContext(channel, threadTs);
+
+  const intent = classifyConversation(text);
   if (
-    currentContext?.awaitingOpinion &&
-    cleanedText.length >= 5 &&
-    !/(?:候補.*見せ|設定|下書き.*状況|作って|作成して|生成して|書いて|公開)/.test(cleanedText)
+    currentContext?.status === "awaiting-viewpoint" &&
+    intent.type !== "research" &&
+    intent.type !== "publish" &&
+    cleanedText.length >= 2
   ) {
-    await redisSafeSet(researchContextKey(channel, threadTs), {
+    const question = currentContext.questions[currentContext.currentQuestionIndex];
+    if (!question) return reply("質問を確認できませんでした。もう一度ニュースを選んでください。", channel, threadTs);
+    const answers = [
+      ...currentContext.answers.filter((answer) => answer.questionId !== question.id),
+      { questionId: question.id, rawText: cleanedText.slice(0, 2000), answeredAt: new Date().toISOString() },
+    ];
+    const nextIndex = currentContext.currentQuestionIndex + 1;
+    if (nextIndex < currentContext.questions.length) {
+      await saveEditorialContext(channel, threadTs, {
+        ...currentContext,
+        answers,
+        currentQuestionIndex: nextIndex,
+      });
+      return reply(currentContext.questions[nextIndex].question, channel, threadTs);
+    }
+    const authorViewpoint = captureViewpoint(answers);
+    await saveEditorialContext(channel, threadTs, {
       ...currentContext,
-      authorViewpoint: cleanedText.slice(0, 2000),
-      awaitingOpinion: false,
-      savedAt: new Date().toISOString(),
-    } satisfies SlackResearchContext);
-    return reply(
-      "✅ 今回の意見として保存しました。体験ライブラリには自動登録しません。\n続けて「この意見でXとnoteを作って」のように話しかけてください。",
-      channel,
-      threadTs
+      status: "awaiting-viewpoint-confirmation",
+      answers,
+      authorViewpoint,
+    });
+    return postToSlack(
+      viewpointSummary(authorViewpoint),
+      viewpointConfirmationBlocks(authorViewpoint, currentContext.selectedCandidateId ?? currentContext.brief?.id ?? "viewpoint"),
+      { channel, threadTs }
     );
   }
 
-  const intent = classifyConversation(text);
+  if (intent.type === "confirm-viewpoint") {
+    if (!currentContext?.authorViewpoint || currentContext.status !== "awaiting-viewpoint-confirmation") {
+      return reply("確認待ちの考えがありません。先にニュースを選び、質問へ答えてください。", channel, threadTs);
+    }
+    const confirmed = { ...currentContext.authorViewpoint, confirmedByUser: true };
+    await saveEditorialContext(channel, threadTs, {
+      ...currentContext,
+      status: "ready-to-generate",
+      authorViewpoint: confirmed,
+      viewpointConfirmedAt: new Date().toISOString(),
+    });
+    return postToSlack(
+      "✅ 本人の考えとして確認しました。今回はこの下書きだけに使用し、ブランド情報や体験へ自動登録しません。",
+      generationChoiceBlocks(currentContext.selectedCandidateId!),
+      { channel, threadTs }
+    );
+  }
+
+  if (intent.type === "edit-viewpoint") {
+    if (!currentContext?.selectedCandidateId) {
+      return reply("修正する考えがありません。先にニュースを選んでください。", channel, threadTs);
+    }
+    await saveEditorialContext(channel, threadTs, {
+      ...currentContext,
+      status: "awaiting-viewpoint",
+      questions: [{
+        id: "opinion",
+        category: "opinion",
+        question: "修正後の考えを、普段の言葉でそのまま送ってください。",
+        required: true,
+      }],
+      currentQuestionIndex: 0,
+      answers: [],
+      authorViewpoint: undefined,
+      viewpointConfirmedAt: undefined,
+    });
+    return reply("修正後の考えを、普段の言葉でそのまま送ってください。", channel, threadTs);
+  }
+
   if (intent.type === "select") {
-    const context = currentContext ?? (await loadResearchContext(channel, threadTs));
+    const context = currentContext;
     const selectedId = context?.candidateIds[intent.candidateNumber - 1];
     if (!context || !selectedId) {
       return reply(
@@ -150,15 +202,19 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
     if (!selected) {
       return reply("その候補は見つかりませんでした。もう一度リサーチしてください。", channel, threadTs);
     }
-    await redisSafeSet(researchContextKey(channel, threadTs), {
+    const questions = editorialQuestions({ title: selected.title, genreIds: selected.genreIds });
+    await saveEditorialContext(channel, threadTs, {
       ...context,
+      status: "awaiting-viewpoint",
       selectedCandidateId: selected.id,
+      selectedNewsItemId: selected.id,
       authorViewpoint: undefined,
-      awaitingOpinion: true,
-      savedAt: new Date().toISOString(),
-    } satisfies SlackResearchContext);
+      questions,
+      currentQuestionIndex: 0,
+      answers: [],
+    });
     return reply(
-      `「${selected.title}」を選びました。\n\nこの話題について、前川さんはどう思いますか？\n体験・疑問・注目している点を、普段の言葉でそのまま送ってください。分からないことは「まだ分からない」と書いて大丈夫です。`,
+      `「${selected.title}」を選びました。\n\n${questions[0].question}\n\n一つずつで大丈夫です。「まだ分からない」も、そのまま回答してください。`,
       channel,
       threadTs
     );
@@ -178,7 +234,7 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       );
     } else {
       // 「一番上」は保存済み全候補ではなく、このSlack会話で直前に表示した候補を指す。
-      const context = currentContext ?? (await loadResearchContext(channel, threadTs));
+      const context = currentContext;
       const clusterById = new Map(clusters.map((candidate) => [candidate.id, candidate]));
       const orderedIds = context?.selectedCandidateId
         ? [context.selectedCandidateId, ...context.candidateIds.filter((id) => id !== context.selectedCandidateId)]
@@ -198,19 +254,22 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
         threadTs
       );
     }
-    const context = currentContext ?? (await loadResearchContext(channel, threadTs));
-    if (!context?.authorViewpoint) {
-      await redisSafeSet(researchContextKey(channel, threadTs), {
-        ...(context ?? {
-          candidateIds: matching.map((candidate) => candidate.id),
-          savedAt: new Date().toISOString(),
-        }),
+    const context = currentContext;
+    if (!context?.authorViewpoint?.confirmedByUser) {
+      const questions = editorialQuestions({ title: selected.title, genreIds: selected.genreIds });
+      await saveEditorialContext(channel, threadTs, newEditorialContext({
+        ...(context ?? {}),
+        status: "awaiting-viewpoint",
+        candidateIds: context?.candidateIds?.length ? context.candidateIds : matching.map((candidate) => candidate.id),
         selectedCandidateId: selected.id,
-        awaitingOpinion: true,
-        savedAt: new Date().toISOString(),
-      } satisfies SlackResearchContext);
+        selectedNewsItemId: selected.id,
+        questions,
+        currentQuestionIndex: 0,
+        answers: [],
+        authorViewpoint: undefined,
+      }));
       return reply(
-        `「${selected.title}」で作成します。\n\nその前に、この話題について前川さんはどう思いますか？\n体験・疑問・注目している点を、普段の言葉で送ってください。回答後に「この意見でXとnoteを作って」と続けられます。`,
+        `まだ投稿は作りません。\n「${selected.title}」について、まず前川さんの考えを確認します。\n\n${questions[0].question}`,
         channel,
         threadTs
       );
@@ -228,7 +287,10 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       intent.kind,
       intent.articleType,
       { channel, threadTs },
-      context.authorViewpoint
+      {
+        text: viewpointText(context.authorViewpoint),
+        confirmedByUser: context.authorViewpoint.confirmedByUser,
+      }
     );
     return;
   }
@@ -264,21 +326,21 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       runResearch({ focusTopic: intent.topic, platform: intent.destination })
     );
     if (!result) return reply("別のリサーチが進行中です。終わってから結果を確認してください。", channel, threadTs);
-    const [items, experiences] = await Promise.all([loadResearchInbox(), loadExperiences()]);
-    const itemById = new Map(items.map((item) => [item.id, item]));
-    const experienceById = new Map(experiences.map((item) => [item.id, item]));
-    const blocks = result.topCandidates.flatMap((candidate) =>
-      candidateBlocks(
-        candidate,
-        candidate.researchItemIds.map((id) => itemById.get(id)).filter((item): item is NonNullable<typeof item> => Boolean(item)),
-        candidate.matchedExperienceIds.map((id) => experienceById.get(id)?.title).filter((title): title is string => Boolean(title))
-      )
-    );
-    await redisSafeSet(researchContextKey(channel, threadTs), {
+    const items = await loadResearchInbox();
+    const brief = buildEditorialBrief({
+      topic: intent.topic,
+      destination: intent.destination,
+      candidates: result.topCandidates,
+      items,
+    });
+    const blocks = editorialBriefBlocks(brief, items);
+    await saveEditorialContext(channel, threadTs, newEditorialContext({
+      status: "awaiting-topic-selection",
+      brief,
       candidateIds: result.topCandidates.map((candidate) => candidate.id),
       topic: intent.topic,
-      savedAt: new Date().toISOString(),
-    } satisfies SlackResearchContext);
+      destination: intent.destination,
+    }));
     return postToSlack(
       result.topCandidates.length > 0
         ? `✅ ${destinationLabel}「${intent.topic ?? "指定テーマ"}」のリサーチ完了：新規${result.newItems}件、関連候補${result.topCandidates.length}件`
@@ -294,10 +356,10 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
     if (!top.length) return reply("候補はまだありません。「半導体について調べて」のように話しかけてください。", channel, threadTs);
     const itemById = new Map(items.map((item) => [item.id, item]));
     const experienceById = new Map(experiences.map((item) => [item.id, item]));
-    await redisSafeSet(researchContextKey(channel, threadTs), {
+    await saveEditorialContext(channel, threadTs, newEditorialContext({
+      status: "awaiting-topic-selection",
       candidateIds: top.map((candidate) => candidate.id),
-      savedAt: new Date().toISOString(),
-    } satisfies SlackResearchContext);
+    }));
     return postToSlack(
       `現在の候補 ${top.length}件です。`,
       top.flatMap((candidate) => candidateBlocks(
@@ -348,7 +410,7 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
   }
 
   return reply(
-    "普通の言葉で話しかけてください。たとえば：\n• 半導体について調べて\n• 今の候補を見せて\n• 一番上の候補でX投稿案を作って\n• 2番目の候補で無料noteを書いて\n• Xとnoteを両方作って\n• 最新の記事全文を見せて\n• 下書きの状況を教えて\n\n公開だけは誤操作防止のため、確認画面で本人が承認します。",
+    "普通の言葉で話しかけてください。\n\n例：\n• 半導体について調べて\n• 今日のAIニュースを見せて\n• 2番目のニュースが気になる\n• 私はこう思う\n• この考えでXを作って\n• この考えをnoteにして\n• 下書きを見せて\n\n私は、まずニュースを整理して質問します。前川さんの考えを確認してから、Xやnoteの下書きを作ります。\n\n本人の確認なしに、意見や体験を作ることはありません。",
     channel,
     threadTs
   );

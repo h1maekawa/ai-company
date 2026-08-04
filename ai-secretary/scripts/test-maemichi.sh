@@ -30,6 +30,9 @@ npx tsc \
   app/lib/note/publishing/queue.ts \
   app/lib/integrations/slack/verify.ts \
   app/lib/integrations/slack/conversation.ts \
+  app/lib/integrations/slack/editorial-context.ts \
+  app/lib/integrations/slack/editorial-questions.ts \
+  app/lib/integrations/slack/editorial-brief.ts \
   app/lib/integrations/machine-auth.ts \
   app/lib/integrations/vercel-background.ts \
   --outDir "$DIST" --module commonjs --target es2020 \
