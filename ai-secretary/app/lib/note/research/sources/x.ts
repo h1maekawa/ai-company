@@ -14,6 +14,7 @@ import { fetchPage, hashId, stripTags } from "../fetcher";
 import { redisSafeGet, redisSafeSet } from "../../../utils/redis";
 import { ReferenceXAccount, ResearchItem, XResearchSettings } from "../types";
 import { detectGenres } from "./note";
+import { buildXQueries } from "../x-query";
 
 export type XResearchResult = {
   items: ResearchItem[];
@@ -201,7 +202,8 @@ function tweetToItem(
 
 async function researchViaOfficialApi(
   accounts: ReferenceXAccount[],
-  settings: XResearchSettings
+  settings: XResearchSettings,
+  options?: { focusTopic?: string; xQuery?: string }
 ): Promise<XResearchResult> {
   const items: ResearchItem[] = [];
   const failures: { source: string; error: string }[] = [];
@@ -248,22 +250,27 @@ async function researchViaOfficialApi(
     await markFetchedToday(`acct:${account.id}`);
   }
 
-  for (const keyword of settings.keywords.slice(0, 5)) {
+  const queries = buildXQueries({
+    focusTopic: options?.focusTopic,
+    xQuery: options?.xQuery,
+    fallbackKeywords: settings.keywords,
+  });
+  for (const query of queries) {
     if (!budgetLeft()) break;
-    if (await alreadyFetchedToday(`kw:${keyword}`)) continue;
+    if (await alreadyFetchedToday(`kw:${query}`)) continue;
 
     const search = await callXApi(
       `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(
-        `${keyword} -is:retweet lang:ja`
+        query
       )}&max_results=10&start_time=${startTime}&tweet.fields=created_at,public_metrics`
     );
     cost += COST_PER_REQUEST_USD;
     if (search.error) {
-      failures.push({ source: `キーワード:${keyword}`, error: search.error });
+      failures.push({ source: `キーワード:${query}`, error: search.error });
       continue;
     }
     for (const tweet of search.tweets) items.push(tweetToItem(tweet));
-    await markFetchedToday(`kw:${keyword}`);
+    await markFetchedToday(`kw:${query}`);
   }
 
   return { items, failures, estimatedCostUsd: cost };
@@ -273,7 +280,8 @@ async function researchViaOfficialApi(
 
 export async function researchX(
   accounts: ReferenceXAccount[],
-  settings: XResearchSettings
+  settings: XResearchSettings,
+  options?: { focusTopic?: string; xQuery?: string }
 ): Promise<XResearchResult> {
   if (!settings.enabled) return empty("Xリサーチが無効になっています");
 
@@ -284,14 +292,20 @@ export async function researchX(
     if (settings.currentEstimatedSpendUsd >= settings.monthlyBudgetUsd) {
       return empty("月額予算の上限に達しているため、X APIを呼びませんでした");
     }
-    return researchViaOfficialApi(accounts, settings);
+    return researchViaOfficialApi(accounts, settings, options);
   }
 
   // free モード: 公開検索のみ
   const items: ResearchItem[] = [];
   const failures: { source: string; error: string }[] = [];
+  const topicQueries = buildXQueries({
+    focusTopic: options?.focusTopic,
+    xQuery: options?.xQuery,
+    fallbackKeywords: settings.keywords,
+    maxQueries: 3,
+  });
   const queries = [
-    ...settings.keywords.slice(0, 3).map((k) => `site:x.com ${k}`),
+    ...topicQueries.map((query) => `site:x.com ${query}`),
     ...accounts
       .filter((a) => a.active)
       .sort((a, b) => a.priority - b.priority)

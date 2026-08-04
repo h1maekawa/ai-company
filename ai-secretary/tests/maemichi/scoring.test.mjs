@@ -11,6 +11,7 @@ const DIST = process.env.MAEMICHI_DIST;
 const cluster = await import(path.join(DIST, "note/research/cluster.js"));
 const types = await import(path.join(DIST, "note/research/types.js"));
 const genres = await import(path.join(DIST, "note/research/genres.js"));
+const xQuery = await import(path.join(DIST, "note/research/x-query.js"));
 
 /* ─── テスト用のダミーデータ ───────────────── */
 
@@ -290,4 +291,31 @@ test("指定したブランド軸の候補だけを返す", () => {
   );
   assert.equal(selected.length, 1);
   assert.ok(selected[0].genreIds.includes("asset-building"));
+});
+
+test("X検索条件へ日本語とリポスト除外を自動補完する", () => {
+  assert.equal(
+    xQuery.normalizeXQuery('("NVIDIA" OR TSMC) 半導体'),
+    '("NVIDIA" OR TSMC) 半導体 lang:ja -is:retweet'
+  );
+  assert.equal(
+    xQuery.normalizeXQuery("NISA lang:ja -is:retweet"),
+    "NISA lang:ja -is:retweet"
+  );
+});
+
+test("半導体テーマはAPI量を抑えて複数クエリへ分割する", () => {
+  const queries = xQuery.buildXQueries({ focusTopic: "半導体", maxQueries: 4 });
+  assert.equal(queries.length, 4);
+  assert.ok(queries.every((query) => query.includes("lang:ja -is:retweet")));
+  assert.ok(queries.some((query) => query.includes("NVIDIA")));
+  assert.ok(queries.some((query) => query.includes("マイクロン")));
+});
+
+test("手動X検索条件は自動展開より優先する", () => {
+  const queries = xQuery.buildXQueries({
+    focusTopic: "半導体",
+    xQuery: '"嫌われる勇気" 仕事 -広告',
+  });
+  assert.deepEqual(queries, ['"嫌われる勇気" 仕事 -広告 lang:ja -is:retweet']);
 });
