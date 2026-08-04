@@ -247,6 +247,21 @@ export type ExperienceEntry = {
   updatedAt: string;
 };
 
+export type ViewpointLibraryEntry = {
+  id: string;
+  title: string;
+  topic: string;
+  opinion: string;
+  reasons: string[];
+  uncertainties: string[];
+  sourceBriefId?: string;
+  sourceDraftIds: string[];
+  reusable: boolean;
+  verifiedByUser: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 /* ─── コンテンツ設計 ───────────────────────────── */
 
 export type ContentPurpose =
