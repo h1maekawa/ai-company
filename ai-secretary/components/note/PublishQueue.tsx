@@ -86,12 +86,24 @@ export function PublishQueue() {
 
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-sub">
                   <span className="rounded bg-white/[0.06] px-1.5 py-0.5">{d.status}</span>
+                  {d.pattern && <span>{patternLabel(d.pattern)}</span>}
+                  {d.length && <span>{lengthLabel(d.length)}</span>}
+                  {d.threadIndex && <span>スレッド {d.threadIndex}/{d.threadTotal}</span>}
+                  {d.mediaSuggestion && <span>メディア案: {mediaLabel(d.mediaSuggestion)}</span>}
                   <span>{d.needsDisclosure ? "[PR]あり" : "リンクなし"}</span>
                   {typeof d.similarityScore === "number" && (
                     <span>類似度 {d.similarityScore}</span>
                   )}
                   {d.scheduledAt && <span>予定 {d.scheduledAt}</span>}
                 </div>
+                {d.hookCandidates && d.hookCandidates.length > 0 && (
+                  <details className="mt-2 rounded-lg border border-hairline px-2 py-1.5 text-[11px] text-sub">
+                    <summary className="cursor-pointer">冒頭候補を3案見る</summary>
+                    <ol className="mt-1 list-decimal space-y-1 pl-4">
+                      {d.hookCandidates.map((hook) => <li key={hook}>{hook}</li>)}
+                    </ol>
+                  </details>
+                )}
 
                 {d.failureReason && (
                   <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-300">
@@ -247,6 +259,26 @@ export function PublishQueue() {
       </Card>
     </div>
   );
+}
+
+function patternLabel(pattern: string): string {
+  return ({ opinion: "意見型", save: "保存型", conversation: "会話型", "note-link": "note連携" } as Record<string, string>)[pattern] ?? pattern;
+}
+
+function lengthLabel(length: string): string {
+  return ({ short: "短文", standard: "標準", long: "長文" } as Record<string, string>)[length] ?? length;
+}
+
+function mediaLabel(media: string): string {
+  return ({
+    text: "テキスト",
+    diagram: "図解",
+    screenshot: "スクリーンショット",
+    comparison: "比較表",
+    chart: "グラフ",
+    video: "動画",
+    "note-thumbnail": "noteサムネイル",
+  } as Record<string, string>)[media] ?? media;
 }
 
 function Toggle({

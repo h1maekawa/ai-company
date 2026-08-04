@@ -97,6 +97,17 @@ export type OutputType =
   | "note-paid-outline"
   | "x-and-note";
 
+export type XPostLength = "short" | "standard" | "long";
+export type XPostPattern = "opinion" | "save" | "conversation" | "note-link";
+export type MediaSuggestion =
+  | "text"
+  | "diagram"
+  | "screenshot"
+  | "comparison"
+  | "chart"
+  | "video"
+  | "note-thumbnail";
+
 export type ResearchRequest = {
   focusTopic?: string;
   platform?: "x" | "note" | "both";
@@ -299,6 +310,13 @@ export type SocialDraft = {
   genreId: string;
 
   text: string;
+  pattern?: XPostPattern;
+  length?: XPostLength;
+  hookCandidates?: string[];
+  mediaSuggestion?: MediaSuggestion;
+  threadId?: string;
+  threadIndex?: number;
+  threadTotal?: number;
   /** 本文に残った登録済みURL（未登録は生成後に除去済み） */
   urls: string[];
   affiliateId?: string;

@@ -12,6 +12,7 @@ const cluster = await import(path.join(DIST, "note/research/cluster.js"));
 const types = await import(path.join(DIST, "note/research/types.js"));
 const genres = await import(path.join(DIST, "note/research/genres.js"));
 const xQuery = await import(path.join(DIST, "note/research/x-query.js"));
+const xFormat = await import(path.join(DIST, "note/research/x-format.js"));
 
 /* ─── テスト用のダミーデータ ───────────────── */
 
@@ -318,4 +319,16 @@ test("手動X検索条件は自動展開より優先する", () => {
     xQuery: '"嫌われる勇気" 仕事 -広告',
   });
   assert.deepEqual(queries, ['"嫌われる勇気" 仕事 -広告 lang:ja -is:retweet']);
+});
+
+test("X生成形式ごとの必要な下書き数を固定する", () => {
+  assert.deepEqual(xFormat.expectedDraftCount("x-post"), { min: 3, max: 3 });
+  assert.deepEqual(xFormat.expectedDraftCount("x-thread"), { min: 2, max: 7 });
+  assert.deepEqual(xFormat.expectedDraftCount("x-and-note"), { min: 5, max: 5 });
+});
+
+test("未認識のメディア案と投稿型は安全な初期値へ戻す", () => {
+  assert.equal(xFormat.normalizeMediaSuggestion("unknown"), "text");
+  assert.equal(xFormat.normalizeXPattern("unknown", "x-post"), "opinion");
+  assert.equal(xFormat.normalizeXPattern("publish", "x-and-note"), "note-link");
 });
