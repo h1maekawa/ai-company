@@ -54,3 +54,16 @@ test("共通生成サービスは本人確認なしで停止する", () => {
   assert.match(source, /confirmedByUser/);
   assert.match(source, /本人の考えを確認するまで下書きは生成しません/);
 });
+
+test("候補0件では空の編集部ブリーフを送らず、絞り込み待ちにする", () => {
+  const source = fs.readFileSync(
+    path.resolve(process.cwd(), "app/api/integrations/slack/events/route.ts"),
+    "utf8"
+  );
+  const zeroGuard = source.indexOf("if (!result.topCandidates.length)");
+  const briefBuild = source.indexOf("const brief = buildEditorialBrief", zeroGuard);
+  assert.ok(zeroGuard >= 0);
+  assert.ok(briefBuild > zeroGuard);
+  assert.match(source.slice(zeroGuard, briefBuild), /awaiting-research-refinement/);
+  assert.doesNotMatch(source.slice(zeroGuard, briefBuild), /editorialBriefBlocks/);
+});

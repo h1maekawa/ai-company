@@ -4,6 +4,7 @@ export type EditorialStatus =
   | "researching"
   | "brief-ready"
   | "awaiting-topic-selection"
+  | "awaiting-research-refinement"
   | "awaiting-viewpoint"
   | "viewpoint-captured"
   | "awaiting-viewpoint-confirmation"
@@ -134,4 +135,3 @@ export function viewpointText(viewpoint: AuthorViewpoint): string {
     viewpoint.experiences.length > 0 && `本人が述べた経験: ${viewpoint.experiences.join(" / ")}`,
   ].filter(Boolean).join("\n");
 }
-

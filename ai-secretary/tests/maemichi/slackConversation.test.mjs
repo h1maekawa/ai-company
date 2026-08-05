@@ -24,6 +24,26 @@ test("note記事用とX投稿用のリサーチを会話から分けられる", 
   assert.equal(x.topic, "AIニュース");
 });
 
+test("自然な依頼文から余計な語を除いて半導体だけを抽出する", () => {
+  const intent = conversation.classifyConversation(
+    "<@U123> Xに記載する半導体関連について調べてほしい。"
+  );
+  assert.equal(intent.type, "research");
+  assert.equal(intent.destination, "x");
+  assert.equal(intent.topic, "半導体");
+});
+
+test("短い追加発言をリサーチとして理解する", () => {
+  const gpu = conversation.classifyConversation("<@U123> GPUについて");
+  assert.equal(gpu.type, "research");
+  assert.equal(gpu.topic, "GPU");
+
+  assert.equal(
+    conversation.followUpResearchTopic("そもそもこの流れの中でどこに一番需要がありそうか？", "半導体"),
+    "半導体 需要"
+  );
+});
+
 test("最新記事を見せてはスマホ下書き表示になる", () => {
   assert.equal(conversation.classifyConversation("最新の記事全文を見せて").type, "draft");
 });

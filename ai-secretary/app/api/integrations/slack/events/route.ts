@@ -5,7 +5,11 @@ import {
   postToSlack,
   viewpointConfirmationBlocks,
 } from "@/app/lib/integrations/slack/blocks";
-import { classifyConversation, cleanSlackMessage } from "@/app/lib/integrations/slack/conversation";
+import {
+  classifyConversation,
+  cleanSlackMessage,
+  followUpResearchTopic,
+} from "@/app/lib/integrations/slack/conversation";
 import { generateCandidateInBackground } from "@/app/lib/integrations/slack/generate";
 import { buildEditorialBrief } from "@/app/lib/integrations/slack/editorial-brief";
 import {
@@ -146,6 +150,30 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       viewpointSummary(authorViewpoint),
       viewpointConfirmationBlocks(authorViewpoint, currentContext.selectedCandidateId ?? currentContext.brief?.id ?? "viewpoint"),
       { channel, threadTs }
+    );
+  }
+
+  if (
+    currentContext &&
+    (currentContext.status === "awaiting-research-refinement" ||
+      (currentContext.status === "awaiting-topic-selection" &&
+        !currentContext.selectedCandidateId &&
+        (intent.type === "answer" || intent.type === "help"))) &&
+    intent.type !== "research"
+  ) {
+    const followUpTopic = followUpResearchTopic(cleanedText, currentContext.topic);
+    if (followUpTopic) {
+      return runEditorialResearch(
+        followUpTopic,
+        currentContext.destination ?? "both",
+        channel,
+        threadTs
+      );
+    }
+    return reply(
+      `「${currentContext.topic ?? "このテーマ"}」の続きですね。\n\nどこを詳しく見たいですか？\n• GPU\n• HBM・メモリ\n• 製造装置\n• データセンター\n• 電力・冷却\n\n「GPUについて」のように短く送って大丈夫です。`,
+      channel,
+      threadTs
     );
   }
 
@@ -296,58 +324,7 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
   }
 
   if (intent.type === "research") {
-    if (intent.topic) {
-      const settings = await loadResearchSettings();
-      await saveResearchSettings({
-        ...settings,
-        noteTags:
-          intent.destination === "x"
-            ? settings.noteTags
-            : [...new Set([intent.topic, ...settings.noteTags])].slice(0, 20),
-        x: {
-          ...settings.x,
-          keywords:
-            intent.destination === "note"
-              ? settings.x.keywords
-              : [...new Set([intent.topic, ...settings.x.keywords])].slice(0, 20),
-        },
-      });
-    }
-    const destinationLabel =
-      intent.destination === "x" ? "X投稿用" : intent.destination === "note" ? "note記事用" : "X・note両方";
-    await reply(
-      intent.topic
-        ? `🔎 受付しました。${destinationLabel}に「${intent.topic}」を調べています。\n通常1〜3分ほどです。終わったら候補をここへ表示します。`
-        : `🔎 受付しました。${destinationLabel}のリサーチ中です。\n通常1〜3分ほどです。終わったら候補をここへ表示します。`,
-      channel,
-      threadTs
-    );
-    const result = await withLock("research-run", () =>
-      runResearch({ focusTopic: intent.topic, platform: intent.destination })
-    );
-    if (!result) return reply("別のリサーチが進行中です。終わってから結果を確認してください。", channel, threadTs);
-    const items = await loadResearchInbox();
-    const brief = buildEditorialBrief({
-      topic: intent.topic,
-      destination: intent.destination,
-      candidates: result.topCandidates,
-      items,
-    });
-    const blocks = editorialBriefBlocks(brief, items);
-    await saveEditorialContext(channel, threadTs, newEditorialContext({
-      status: "awaiting-topic-selection",
-      brief,
-      candidateIds: result.topCandidates.map((candidate) => candidate.id),
-      topic: intent.topic,
-      destination: intent.destination,
-    }));
-    return postToSlack(
-      result.topCandidates.length > 0
-        ? `✅ ${destinationLabel}「${intent.topic ?? "指定テーマ"}」のリサーチ完了：新規${result.newItems}件、関連候補${result.topCandidates.length}件`
-        : `調査は完了しましたが、${destinationLabel}の「${intent.topic ?? "指定テーマ"}」に直接関係する新しい候補は見つかりませんでした。以前の候補は混ぜずに停止しました。`,
-      blocks.length ? blocks : undefined,
-      { channel, threadTs }
-    );
+    return runEditorialResearch(intent.topic, intent.destination, channel, threadTs);
   }
 
   if (intent.type === "candidates") {
@@ -413,5 +390,77 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
     "普通の言葉で話しかけてください。\n\n例：\n• 半導体について調べて\n• 今日のAIニュースを見せて\n• 2番目のニュースが気になる\n• 私はこう思う\n• この考えでXを作って\n• この考えをnoteにして\n• 下書きを見せて\n\n私は、まずニュースを整理して質問します。前川さんの考えを確認してから、Xやnoteの下書きを作ります。\n\n本人の確認なしに、意見や体験を作ることはありません。",
     channel,
     threadTs
+  );
+}
+
+async function runEditorialResearch(
+  topic: string | undefined,
+  destination: "x" | "note" | "both",
+  channel: string,
+  threadTs?: string
+) {
+  if (topic) {
+    const settings = await loadResearchSettings();
+    await saveResearchSettings({
+      ...settings,
+      noteTags:
+        destination === "x"
+          ? settings.noteTags
+          : [...new Set([topic, ...settings.noteTags])].slice(0, 20),
+      x: {
+        ...settings.x,
+        keywords:
+          destination === "note"
+            ? settings.x.keywords
+            : [...new Set([topic, ...settings.x.keywords])].slice(0, 20),
+      },
+    });
+  }
+  const destinationLabel =
+    destination === "x" ? "X投稿用" : destination === "note" ? "note記事用" : "X・note両方";
+  await reply(
+    topic
+      ? `🔎 分かりました。${destinationLabel}に「${topic}」を調べます。\n終わったら、考える材料だけを整理して表示します。`
+      : `🔎 分かりました。${destinationLabel}の話題を調べます。\n終わったら、考える材料だけを整理して表示します。`,
+    channel,
+    threadTs
+  );
+  const result = await withLock("research-run", () =>
+    runResearch({ focusTopic: topic, platform: destination })
+  );
+  if (!result) {
+    return reply("別のリサーチが進行中です。終わってから結果を確認してください。", channel, threadTs);
+  }
+  if (!result.topCandidates.length) {
+    await saveEditorialContext(channel, threadTs, newEditorialContext({
+      status: "awaiting-research-refinement",
+      candidateIds: [],
+      topic,
+      destination,
+    }));
+    return reply(
+      `「${topic ?? "指定テーマ"}」で確認しましたが、新しい候補を見つけられませんでした。\n\n少し範囲を絞ると調べやすくなります。\n• GPU\n• HBM・メモリ\n• 製造装置\n• データセンター\n• 電力・冷却\n\n「GPUについて」や「どこに需要がありそう？」のように、そのまま続けてください。`,
+      channel,
+      threadTs
+    );
+  }
+  const items = await loadResearchInbox();
+  const brief = buildEditorialBrief({
+    topic,
+    destination,
+    candidates: result.topCandidates,
+    items,
+  });
+  await saveEditorialContext(channel, threadTs, newEditorialContext({
+    status: "awaiting-topic-selection",
+    brief,
+    candidateIds: result.topCandidates.map((candidate) => candidate.id),
+    topic,
+    destination,
+  }));
+  return postToSlack(
+    `✅ ${destinationLabel}「${topic ?? "指定テーマ"}」のリサーチ完了：関連候補${result.topCandidates.length}件`,
+    editorialBriefBlocks(brief, items),
+    { channel, threadTs }
   );
 }
