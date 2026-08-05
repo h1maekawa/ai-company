@@ -22,16 +22,39 @@ export function cleanSlackMessage(text: string): string {
   return text.replace(/<@[A-Z0-9]+>/gi, "").replace(/\s+/g, " ").trim();
 }
 
-function researchTopic(text: string): string | undefined {
+export function researchTopic(text: string): string | undefined {
   const cleaned = text
+    .replace(/(?:X|Twitter|ツイート|note|ノート)(?:に|へ)?(?:記載|掲載|投稿|発信)(?:する|したい)?(?:用|向け)?/gi, "")
     .replace(/(?:X|Twitter|ツイート|note|ノート)(?:投稿|記事|原稿)?(?:用|向け)?/gi, "")
     .replace(/(?:両方|どちらも|一緒に)/g, "")
-    .replace(/(?:について|を)?(?:リサーチ|調査|検索|調べ)(?:して|て|たい|よう)?/g, "")
-    .replace(/(?:最近の|いまの|今の|今日の|お願い|ください|教えて)/g, "")
+    .replace(/(?:について|を)?(?:リサーチ|調査|検索|調べ)(?:して|て)?(?:ほしい|欲しい|ください|たい|よう)?/g, "")
+    .replace(/(?:最近の|いまの|今の|今日の|お願い|ください|教えて|ほしい|欲しい)/g, "")
     .replace(/[。、！？!?]/g, " ")
-    .replace(/^(?:の|で|に)+|(?:の|で|に)+$/g, "")
+    .replace(/関連\s*$/g, "")
+    .replace(/^(?:の|で|に)+|(?:の|で|に|について)+$/g, "")
     .trim();
   return cleaned && cleaned.length <= 60 ? cleaned : undefined;
+}
+
+export function followUpResearchTopic(text: string, previousTopic?: string): string | undefined {
+  const cleaned = cleanSlackMessage(text)
+    .replace(/[。、！？!?]/g, " ")
+    .replace(/(?:について|を)?(?:詳しく)?(?:教えて|知りたい|見たい|お願い)$/g, "")
+    .trim();
+  const subject = cleaned
+    .replace(/について$/g, "")
+    .replace(/^(?:そもそも|じゃあ|では|次に)/g, "")
+    .trim();
+  if (/^(?:GPU|HBM|メモリ|製造装置|ASML|NVIDIA|Micron|マイクロン|電力|冷却|データセンター|通信)$/i.test(subject)) {
+    return subject;
+  }
+  if (/需要|伸び|成長|有望|市場/.test(subject)) {
+    return `${previousTopic || "半導体"} 需要`.trim();
+  }
+  if (/投資|銘柄|企業/.test(subject)) {
+    return `${previousTopic || "半導体"} 企業 投資`.trim();
+  }
+  return undefined;
 }
 
 function generationTopic(text: string): string | undefined {
@@ -105,6 +128,10 @@ export function classifyConversation(text: string): ConversationIntent {
             ? "x"
             : "both";
     return { type: "research", topic: researchTopic(cleaned), destination };
+  }
+  const standaloneFollowUp = followUpResearchTopic(cleaned);
+  if (standaloneFollowUp && /について$|って.*(?:どう|何|伸び|需要)|どこ.*(?:需要|伸び)/.test(cleaned)) {
+    return { type: "research", topic: standaloneFollowUp, destination: "both" };
   }
   if (cleaned.length >= 2 && /思う|考え|気になる|感じ|分から|注目|経験|迷/.test(cleaned)) {
     return { type: "answer", text: cleaned };
