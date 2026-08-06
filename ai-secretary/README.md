@@ -38,6 +38,13 @@ npm run dev
 - 同じ内容のオリジナル `.md` は `../ai-company/prompts/secretaries/*.md` に存在
 - プロンプトを変更する場合は両方を同期更新すること
 
+## Obsidian Vault
+
+- データ本体は別リポジトリ `h1maekawa/ai-company-vault` で管理する
+- Obsidianの入口は `00_HOME/AI会社_全体マップ.md`
+- Vault内の既存ファイルやフォルダはアプリから直接参照されるため、移動・改名しない
+- 読み書き方式、固定パス、自動生成ファイルの詳細は [`docs/obsidian-vault-path-contract.md`](./docs/obsidian-vault-path-contract.md) を参照する
+
 ## 動作確認用クエリ（Note Secretary）
 
 - 「今日の記事を企画して」
