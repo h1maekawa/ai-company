@@ -5,8 +5,8 @@ export type SecretaryScope = {
 };
 
 export const DEFAULT_GLOBAL_SCOPE = [
-  "memory/personal/profile.md",
-  "memory/shared/ai-development-rules.md"
+  MEMORY_MANIFEST.core.identity[0],
+  MEMORY_MANIFEST.core.identity[3],
 ];
 
 
@@ -41,21 +41,14 @@ export const MEMORY_SCOPES: MemoryScopes = {
   },
 
   // ─── Personal OS ──────────────────────────────────────
-  "personal-piro": {
-    local: [],
-    shared: ["memory/personal/goals.md"],
-    global: ["memory/personal/profile.md"]
-  },
   "personal-morning": {
     local: [
       "memory/personal/rules.md",
       "memory/personal/goals.md",
-      "memory/personal/tasks/",
-      "memory/personal/logs/",
-      "memory/personal/finance/",
-      "memory/personal/investment/",
       "memory/personal/fund/positions.md",
-      "memory/personal/note/"
+      "memory/personal/fund/holdings.md",
+      "memory/personal/fund/capacity.md",
+      "memory/personal/note/kpi.md"
     ],
     shared: ["memory/shared/ai-development-rules.md"],
     global: ["memory/personal/profile.md"]
@@ -63,11 +56,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
   "personal-note": {
     local: [
       "memory/personal/rules.md",
-      "memory/personal/note/",
-      "memory/personal/note/ideas/index.md",
-      "memory/personal/note/affiliates/index.md",
-      "memory/personal/note/kpi.md",
-      "memory/personal/note/business-strategy.md"
+      ...MEMORY_MANIFEST.core.note
     ],
     shared: ["memory/personal/goals.md", "memory/shared/ai-development-rules.md"],
     global: ["memory/personal/profile.md"]
@@ -75,9 +64,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
   "personal-finance": {
     local: [
       "memory/personal/rules.md",
-      "memory/personal/finance/",
-      "memory/personal/investment/",
-      "memory/personal/fund/"
+      ...MEMORY_MANIFEST.core.fund
     ],
     shared: ["memory/personal/goals.md", "memory/shared/ai-development-rules.md"],
     global: ["memory/personal/profile.md"]
@@ -96,7 +83,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
       "memory/personal/fund/holdings.md",
       "memory/personal/fund/capacity.md",
       "memory/personal/fund/policy.md",
-      "memory/personal/fund/investment-log/"
+      "memory/personal/fund/decisions.md"
     ],
     shared: ["memory/personal/goals.md", "memory/shared/ai-development-rules.md"],
     global: ["memory/personal/profile.md"]
@@ -111,3 +98,4 @@ export function getScopeForSecretary(secretaryId: string): string[] {
   if (!scope) return [];
   return [...scope.global, ...scope.shared, ...scope.local];
 }
+import { MEMORY_MANIFEST } from "../memory/manifest";
