@@ -40,6 +40,7 @@ export const MEMORY_MANIFEST = {
       "memory/personal/fund/recommendations.md",
       "memory/personal/fund/decisions.md",
     ],
+    sales: ["memory/company/sales/catalog.md"],
   },
   archive: {
     planning: "memory/personal/planning/",
@@ -48,4 +49,3 @@ export const MEMORY_MANIFEST = {
     chatLogs: "memory/chat-log/",
   },
 } as const;
-

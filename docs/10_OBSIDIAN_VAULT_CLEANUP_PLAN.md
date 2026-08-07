@@ -8,13 +8,13 @@ Obsidian保管庫を、個人用AI会社と会社用AI会社の2つに整理す�
 
 ## 調査範囲についての注意
 
-`ai-company`（コードリポジトリ、Cowork接続済みフォルダ）と、ユーザー指定により今回新たに接続した`Dropbox/maehiro/個人用`は調査できましたが、**`maehiro`フォルダ自体および`Dropbox`ルートは接続範囲外のため直接確認できていません**。この2つについてはユーザーの仮説（広すぎるコンテナフォルダ）をそのまま採用しています。
+`ai-company`（コードリポジトリ、Cowork接続済みフォルダ）と、ユーザー指定により今回新たに接続した`[retired Dropbox container]`は調査できましたが、**`maehiro`フォルダ自体および`Dropbox`ルートは接続範囲外のため直接確認できていません**。この2つについてはユーザーの仮説（広すぎるコンテナフォルダ）をそのまま採用しています。
 
 ## 現在確認した保管庫
 
 | 保管庫 | パス | .obsidian有無 | mdファイル数 | 最新更新 | 判断 |
 |---|---|---:|---:|---|---|
-| **AI会社** | `Dropbox/maehiro/個人用/AI会社` | ○ | 55 | 2026-07-08（chat-log要約）／2026-07-04（fund/positions.md, portfolio.md） | **実運用中の本命Vault** |
+| **AI会社** | `[retired Dropbox Vault]` | ○ | 55 | 2026-07-08（chat-log要約）／2026-07-04（fund/positions.md, portfolio.md） | **実運用中の本命Vault** |
 | personal-vault | `ai-company/vaults/personal-vault` | ○ | 7 | 2026-06-25（全ファイル同一時刻＝作成時のみ、以降更新なし） | 未使用スキャフォールド |
 | crestix-vault | `ai-company/vaults/crestix-vault` | ○ | 10 | 2026-06-25（同上、うち5ファイルが0バイト） | 未使用スキャフォールド |
 | holding-vault | `ai-company/vaults/holding-vault` | ○ | 7 | 2026-06-25（同上、ほぼ全ファイル0バイト） | ほぼ完全に未使用 |
@@ -25,13 +25,13 @@ Obsidian保管庫を、個人用AI会社と会社用AI会社の2つに整理す�
 
 **さらに重要な発見**: `AI会社`（Dropbox）の`memory/`配下には`memory/personal/`のみが存在し、**`memory/company/`が一件も存在しません**。会社側（Crestix / HD Business）の実データは、現状`ai-company`コードリポジトリのローカル`memory/company/`にしか存在せず、GitHub Vaultリポジトリにも`crestix-vault`にも同期された形跡がありません。これは「会社用Vault」を決める上で最も重要な制約です（詳細は次項）。
 
-なお、`Dropbox/maehiro/個人用`直下には`AI会社`とは別に`daily/`, `inbox/`, `knowledge/`, `memory/`, `note/`, `personal/`という緩いフォルダ群があり、`memory/personal/note/affiliates/index.md`・`personal/note/kpi.md`など数ファイルのみ存在します。すべて2026-06-23作成のまま更新されておらず、`.obsidian`もなく、`AI会社`のVaultにも含まれない孤立したスクラッチファイルと判断しました（削除はしていません）。
+なお、`[retired Dropbox container]`直下には`AI会社`とは別に`daily/`, `inbox/`, `knowledge/`, `memory/`, `note/`, `personal/`という緩いフォルダ群があり、`memory/personal/note/affiliates/index.md`・`personal/note/kpi.md`など数ファイルのみ存在します。すべて2026-06-23作成のまま更新されておらず、`.obsidian`もなく、`AI会社`のVaultにも含まれない孤立したスクラッチファイルと判断しました（削除はしていません）。
 
 ## 個人用候補の比較
 
 | 候補 | パス | メリット | デメリット | 判断 |
 |---|---|---|---|---|
-| **AI会社** | `Dropbox/maehiro/個人用/AI会社` | 実運用中（3日前まで更新）／GitHub Vaultリポジトリ(ai-company-vault)そのもの／note・fund・goals・rules等の実データが揃っている／本番アプリの読み書き先と完全に一致 | フォルダ名がコードリポジトリ名「ai-company」と紛らわしい／会社側データがまだない | **推奨: 個人用の正Vaultとして採用** |
+| **AI会社** | `[retired Dropbox Vault]` | 実運用中（3日前まで更新）／GitHub Vaultリポジトリ(ai-company-vault)そのもの／note・fund・goals・rules等の実データが揃っている／本番アプリの読み書き先と完全に一致 | フォルダ名がコードリポジトリ名「ai-company」と紛らわしい／会社側データがまだない | **推奨: 個人用の正Vaultとして採用** |
 | personal-vault | `ai-company/vaults/personal-vault` | シンプルなダッシュボード的体裁 | 実データがほぼ空／2026-06-25以降更新なし／GitHub Vault同期経路と接続されていない | 除外候補 |
 
 ## 会社用候補の比較
@@ -44,7 +44,7 @@ Obsidian保管庫を、個人用AI会社と会社用AI会社の2つに整理す�
 ## 残すべき保管庫
 
 ### 個人用AI会社
-- 推奨保管庫: **AI会社**（`Dropbox/maehiro/個人用/AI会社`）
+- 推奨保管庫: **AI会社**（`[retired Dropbox Vault]`）
 - 理由: 本番Vercelアプリが実際に読み書きしているGitHub Vaultリポジトリ（`ai-company-vault`）のローカルクローンであり、直近3日以内まで実データが更新され続けている唯一のVault。note/fund/goals/rulesなど、これまでのPhase1〜3分析で扱ってきたPersonal OSの実データがすべてここに存在する。
 
 ### 会社用AI会社
@@ -66,10 +66,10 @@ Obsidian保管庫を、個人用AI会社と会社用AI会社の2つに整理す�
 
 | フォルダ | 理由 |
 |---|---|
-| `Dropbox/maehiro/個人用/AI会社`全体 | 本番Vercelアプリが実際に読み書きしているGitHub Vaultリポジトリのクローン。ここを消すと本番のmemory参照経路の実体が失われる |
+| `[retired Dropbox Vault]`全体 | 本番Vercelアプリが実際に読み書きしているGitHub Vaultリポジトリのクローン。ここを消すと本番のmemory参照経路の実体が失われる |
 | `ai-company/memory/**/*.md`（コードリポジトリのローカルmemory） | 開発時のローカルfallbackとして`vault.ts`が参照する。特に`memory/company/`は、GitHub Vaultにまだ一度も同期されていない**唯一のコピー**のため、絶対に消してはいけない |
 | `ai-company/vaults/`配下3フォルダ（personal/crestix/holding-vault） | Obsidian一覧から外すのと、フォルダ自体を消すのは別の操作。今回は一覧から外す判断材料の提示のみ |
-| `Dropbox/maehiro/個人用`直下の孤立`memory/`・`personal/`フォルダ | 用途不明の古いスクラッチ（2026-06-23作成、以降未更新）。実害はないが内容未確認のため現段階では削除不可 |
+| `[retired Dropbox container]`直下の孤立`memory/`・`personal/`フォルダ | 用途不明の古いスクラッチ（2026-06-23作成、以降未更新）。実害はないが内容未確認のため現段階では削除不可 |
 
 ## 次にユーザーがObsidian上で行う操作
 
@@ -94,7 +94,7 @@ Obsidian保管庫を、個人用AI会社と会社用AI会社の2つに整理す�
 ユーザーから「どれを削除すればいいのか含めて決めてください」と意思決定を委任されたため、A/B択を残さず確定した。
 
 ```
-個人用として残すべきVault: AI会社（Dropbox/maehiro/個人用/AI会社、git remote: ai-company-vault）
+個人用として残すべきVault: AI会社（[retired Dropbox Vault]、git remote: ai-company-vault）
 
 会社用として残すべきVault: 同じくAI会社（選択肢Aを採用・統合）
   理由: crestix-vault（選択肢B）はGitHub同期経路を持たず、育てるには
@@ -111,7 +111,7 @@ Obsidian保管庫を、個人用AI会社と会社用AI会社の2つに整理す�
   ai-company（リポジトリ全体をVault化したもの）、maehiro
 
 絶対に削除してはいけないフォルダ:
-  - Dropbox/maehiro/個人用/AI会社 全体
+  - [retired Dropbox Vault] 全体
   - ai-company/memory/**/*.md（ローカルmemory。特にmemory/company/はコピー元の原本）
 ```
 
@@ -119,7 +119,7 @@ Obsidian保管庫を、個人用AI会社と会社用AI会社の2つに整理す�
 
 - Claudeが読み書きアクセス可能な範囲: Coworkの接続フォルダのみ。具体的には
   - `ai-company`（コードリポジトリ、常時接続）
-  - `Dropbox/maehiro/個人用`（本タスクのため新規に接続。`AI会社`を含む）
+  - `[retired Dropbox container]`（本タスクのため新規に接続。`AI会社`を含む）
   - `maehiro`フォルダ自体・Dropboxルートは未接続・未確認のまま。
 - git remote同期が確認できているのは`AI会社`（Dropbox）のみ: `git@github.com:h1maekawa/ai-company-vault.git`。本番Vercelアプリが`GITHUB_OWNER`/`GITHUB_REPO`環境変数で実際に読み書きしているのはこのリポジトリ。
 - `ai-company/vaults/{personal,crestix,holding}-vault`の3つは独自gitを持たず、コードリポジトリの一部としてのみ存在（GitHub Vaultとは無関係）。

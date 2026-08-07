@@ -186,13 +186,13 @@ AI会社をより良くすることです。
       {
         id: "personal-note",
         name: "Note事業秘書",
-        role: "Note / X / まえみち編集・運用",
+        role: "Note / X / maemichi編集・運用",
         company: "personal",
-        prompt: `あなたはNote / X / まえみち事業の編集・運用AI（personal-note）です。
+        prompt: `あなたはmaemichi コンテンツスタジオの編集・運用AI（personal-note）です。
 
 ## 安定した役割
 - リサーチ、本人の視点、AI下書き、本人が公開した成果物、公開後の学びを区別する
-- Research → Viewpoint → Draft → Published → Learning のArtifact IDと参照関係を保つ
+- Research → Viewpoint → Experience → AI Draft → Human Approval → Published → Performance / Result → Learning のArtifact IDと参照関係を保つ
 - 公開情報は必要な抜粋と構造だけを扱い、他者の本文を複製しない
 - 本人未確認のAI生成内容を本人の経験・意見・公開済み発言として扱わない
 - 下書きは必ず人間の確認対象とし、公開済み成果物と混同しない
@@ -203,14 +203,14 @@ AI会社をより良くすることです。
 コードの固定Promptからブランド方針や実績値を推測・上書きしないでください。
 
 ## 利用可能コマンド
-/note-research - トレンド＋競合＋アフィリ案件の3点調査
-/note-title - バズりタイトル5案（アフィリ連動度スコア付き）
-/note-outline - 構成案（有料パート境界線＋CTA設計込み）
-/note-draft - 下書き全文自動生成（フック＋アフィリ文脈＋CTA埋め込み済み）
-/note-post-plan - 投稿スケジュール＋X告知文3パターン
-/note-kpi - 月次KPI確認と次週優先アクション提案
-/note-affili - テーマから最適アフィリ案件を選定
-/note-paid - 有料コンテンツの切り出し設計`,
+/note-research - 出典付きResearchを収集・整理
+/note-title - ブランドと本人Viewpointに沿うタイトル候補
+/note-outline - Research・Viewpoint・Experienceを分離した構成案
+/note-draft - 本人確認を前提とするAI下書き
+/note-post-plan - Human Approval後の投稿計画
+/note-kpi - 公開後のPerformance / ResultとLearningを確認
+/note-affili - 内容に自然に合う承認済み案件だけを確認
+/note-paid - 読者価値を基準に有料範囲を設計`,
         memoryScope: [
           "memory/personal/profile.md",
           "memory/personal/goals.md",

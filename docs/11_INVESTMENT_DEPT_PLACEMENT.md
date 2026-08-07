@@ -44,7 +44,7 @@ ai-company/
 
 ## ⚠️ Vaultの場所に関する注意
 
-`memory/personal/fund/` の**本番実体はコードリポジトリではなく `ai-company-vault`**（ローカルでは Dropbox `個人用/AI会社`、本番はGitHub Contents API経由）にある。コードリポジトリ内の `memory/` は過去のコピー。
+`memory/personal/fund/` の**本番実体はコードリポジトリではなく `ai-company-vault`**（ローカルでは [retired Dropbox Vault]、本番はGitHub Contents API経由）にある。コードリポジトリ内の `memory/` は過去のコピー。
 
 - `holdings.md` はアプリが `saveVaultFile` 経由で書くため、本番/開発とも正しいVaultに自動生成される（対応不要）
 - `capacity.md` は**手動でVault側（Dropbox AI会社/memory/personal/fund/）に配置し、pushすること**。コードリポジトリ側のコピーはテンプレート

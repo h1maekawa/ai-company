@@ -12,7 +12,8 @@
     "test:fund": "bash scripts/test-fund.sh",
     "test:maemichi": "bash scripts/test-maemichi.sh",
     "test:architecture": "bash scripts/test-architecture.sh",
-    "test": "npm run test:architecture && npm run test:maemichi && npm run test:fund"
+    "test:migration": "node --test tests/migration/*.test.mjs",
+    "test": "npm run test:architecture && npm run test:maemichi && npm run test:fund && npm run test:migration"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",

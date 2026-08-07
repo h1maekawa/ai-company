@@ -8,6 +8,11 @@ export const APP_MANAGED_VAULT_FILES = [
   "memory/personal/note/research-settings.md",
   "memory/personal/note/research-inbox.md",
   "memory/personal/note/trend-clusters.md",
+  "memory/personal/note/experience-library.md",
+  "memory/personal/note/content-briefs.md",
+  "memory/personal/note/publishing-history.md",
+  "memory/personal/note/content-performance.md",
+  "memory/personal/note/viewpoint-library.md",
   "memory/personal/note/social-drafts.md",
   "memory/personal/note/note-publish-queue.md",
   "memory/personal/fund/policy.md",
@@ -15,6 +20,7 @@ export const APP_MANAGED_VAULT_FILES = [
   "memory/personal/fund/holdings.md",
   "memory/personal/fund/recommendations.md",
   "memory/personal/fund/decisions.md",
+  "memory/company/sales/catalog.md",
 ] as const;
 
 export const APP_MANAGED_VAULT_DIRECTORIES = [

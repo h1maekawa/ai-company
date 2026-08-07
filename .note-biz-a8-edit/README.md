@@ -45,7 +45,7 @@ KPIは`data/kpi.csv`を直接編集するか、`/weekly`実行時に数値を伝
 現在確認済みの個人用Vaultは次です。
 
 ```text
-/Users/maekawahiroyuki/Library/CloudStorage/Dropbox/maehiro/個人用/AI会社/memory/personal
+[retired Dropbox Vault]/memory/personal
 ```
 
 既存AI秘書は`memory/personal/note/`を参照します。note-bizは独立リポジトリのまま運用し、必要なMarkdownとKPIだけを下記の同期コマンドでVaultへコピーします。`ai-company`本体のコードは変更しません。
@@ -75,7 +75,7 @@ node scripts/sync-to-ai-company.mjs --overwrite
 ### 同期先
 
 ```text
-/Users/maekawahiroyuki/Library/CloudStorage/Dropbox/maehiro/個人用/AI会社/memory/personal/note/
+[retired Dropbox Vault]/memory/personal/note/
 ```
 
 環境ごとにVaultの場所が異なる場合は、`AI_COMPANY_VAULT_ROOT`でAI会社Vaultのルートを指定できます。
@@ -106,7 +106,7 @@ node scripts/sync-to-ai-company.mjs --overwrite
 - Ollamaの現在の既定モデルは`qwen3:8b`。Phase 2要件の`qwen3:14b`へ変更するには、モデル導入と環境変数設定の確認が必要。
 - Geminiクライアントは通常の`generateContent`呼び出しで、Google Search Groundingのtool設定は現在見当たらない。Phase 2で追加実装が必要。
 - アフィリエイト情報はデータベースではなく`memory/personal/note/affiliates/index.md`の空のMarkdown表。Amazon利用可否を判定する列は未実装。
-- ローカルVaultはDropboxの`個人用/AI会社`、本番の保存先はGitHubの`h1maekawa/ai-company-vault`。
+- ローカル・本番とも正本は `ai-company-vault`。ローカルpathは `AI_COMPANY_VAULT_ROOT` で明示する。
 - 現行の同期スクリプトは`memory/personal`と`memory/shared`のコピーが中心で、note-biz専用の双方向同期ではない。
 
 ### Phase 2着手前の確認事項

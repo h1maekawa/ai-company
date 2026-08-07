@@ -5,9 +5,11 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
-const vaultRoot =
-  process.env.VAULT_ROOT ||
-  "/Users/maekawahiroyuki/Library/CloudStorage/Dropbox/maehiro/個人用/AI会社";
+const vaultRoot = process.env.VAULT_ROOT?.trim();
+if (!vaultRoot) {
+  console.error("VAULT_ROOT is required; point it to the canonical ai-company-vault root.");
+  process.exit(1);
+}
 const overwrite = process.argv.includes("--overwrite");
 const onlyFileArg = process.argv.find((arg) => arg.startsWith("--file="));
 const onlyFile = onlyFileArg?.slice("--file=".length).replace(/^\/+/, "");

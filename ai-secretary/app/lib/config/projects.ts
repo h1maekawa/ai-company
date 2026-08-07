@@ -11,10 +11,10 @@ export type Project = {
 export const PROJECTS: Project[] = [
   {
     id: "P001",
-    name: "Note収益化",
+    name: "maemichi コンテンツスタジオ",
     company: "personal",
     priority: "S",
-    description: "月1万→月30万を目標とするNote記事による収益化事業"
+    description: "話題を見つけ、本人の考えを加え、確認できる下書きと学習へつなげるコンテンツ事業"
   },
   {
     id: "P002",

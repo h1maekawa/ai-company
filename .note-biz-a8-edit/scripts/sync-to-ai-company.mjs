@@ -5,9 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const vaultRoot =
-  process.env.AI_COMPANY_VAULT_ROOT ||
-  "/Users/maekawahiroyuki/Library/CloudStorage/Dropbox/maehiro/個人用/AI会社";
+const vaultRoot = process.env.AI_COMPANY_VAULT_ROOT?.trim();
+if (!vaultRoot) {
+  console.error("AI_COMPANY_VAULT_ROOT is required; point it to the canonical ai-company-vault root.");
+  process.exit(1);
+}
 const noteRoot = path.join(vaultRoot, "memory", "personal", "note");
 const overwrite = process.argv.includes("--overwrite");
 

@@ -70,7 +70,7 @@ export const HUB_NODES: HubNode[] = [
     secretaryId: "personal-note",
     icon: "📝",
     name: "Note事業",
-    tagline: "Creator Workflow・記事作成・収益化",
+    tagline: "Research・Viewpoint・確認できる下書き",
     mode: "note",
     color: "#10b981",
     href: "/note",

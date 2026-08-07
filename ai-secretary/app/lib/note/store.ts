@@ -114,7 +114,7 @@ export async function loadIdeas(): Promise<IdeaFile> {
   const { data } = await readJson<IdeaFile>(PATHS.ideas);
   if (data && Array.isArray(data.ideas)) {
     if (data.genresVersion !== BRAND_VERSION) {
-      // 旧ジャンル体系（副業教育メディア期）から「まえみち」の5ジャンルへ一回だけ移行。
+      // 旧ジャンル体系（副業教育メディア期）から「maemichi」の5ジャンルへ一回だけ移行。
       // 既存のネタ（ideas）はgenreIdが旧idのままでも削除しない
       // （genreOfが見つからない場合はUI側で「未分類」表示になり、書き直せば再割り当てできる）
       const migrated: IdeaFile = { genresVersion: BRAND_VERSION, genres: DEFAULT_GENRES, ideas: data.ideas };
@@ -370,7 +370,7 @@ function unchanged<T>(value: T, legacy: T): boolean {
 }
 
 /**
- * 旧ブランド（副業教育メディア期）から「まえみち」への一回限りの移行。
+ * 旧ブランド（副業教育メディア期）から「maemichi」への一回限りの移行。
  * 前川さんが実際に編集した項目（旧デフォルトと一致しない項目）は上書きしない。
  * identity/personality/visualIdentityは今回新設したフィールドなので必ず新規に埋める。
  */
@@ -400,8 +400,8 @@ function migrateBrandToMaemichi(old: Brand): Brand {
 
 /**
  * Xアカウントの移行。
- * 全アカウントが未入力（空のデフォルト）なら1つの「まえみち」アカウントへ統合する。
- * 実データが入っているアカウントがあれば、先頭を「まえみち」に変えて新ジャンルを全部割り当て、
+ * 全アカウントが未入力（空のデフォルト）なら1つの「maemichi」アカウントへ統合する。
+ * 実データが入っているアカウントがあれば、先頭を「maemichi」に変えて新ジャンルを全部割り当て、
  * 他のアカウントはデータを消さずジャンル割り当てだけ解除する（後から再設定できる）。
  */
 function migrateXAccountsToMaemichi(existing: XAccount[]): XAccount[] {
@@ -415,7 +415,7 @@ function migrateXAccountsToMaemichi(existing: XAccount[]): XAccount[] {
   const [first, ...rest] = existing;
   const maemichi: XAccount = {
     ...first,
-    label: "まえみち",
+    label: "maemichi",
     genreIds: [...ALL_GENRE_IDS],
   };
   const others = rest.map((a) => ({ ...a, genreIds: [] }));
@@ -488,7 +488,7 @@ export async function loadBrand(): Promise<BrandFile> {
     return migrated;
   }
 
-  // 「まえみち」ブランドへの一回限りの移行。移行後は保存して以後は再実行しない
+  // 「maemichi」ブランドへの一回限りの移行。移行後は保存して以後は再実行しない
   const migrated: BrandFile = {
     brand: migrateBrandToMaemichi(data.brand),
     channels: channels.length > 0 ? channels : DEFAULT_CHANNELS,

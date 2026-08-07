@@ -35,7 +35,22 @@ test("managed registry keeps Planning, Note and Fund path contracts", () => {
   const registry = read("app/lib/vault/managed-files.ts");
   assert.match(registry, /memory\/personal\/planning/);
   assert.match(registry, /memory\/personal\/note\/brand\.md/);
+  assert.match(registry, /memory\/personal\/note\/viewpoint-library\.md/);
+  assert.match(registry, /memory\/personal\/note\/experience-library\.md/);
+  assert.match(registry, /memory\/personal\/note\/publishing-history\.md/);
+  assert.match(registry, /memory\/personal\/note\/content-performance\.md/);
   assert.match(registry, /memory\/personal\/fund\/policy\.md/);
+  assert.match(registry, /memory\/company\/sales\/catalog\.md/);
+});
+
+test("Sales Store separates primary sources from summaries and outcomes", () => {
+  const store = read("app/lib/sales/store.ts");
+  for (const type of ["primary-source", "ai-summary", "research", "decision", "result", "learning"]) {
+    assert.match(store, new RegExp(type));
+  }
+  assert.match(store, /review-pending/);
+  assert.match(store, /sensitive/);
+  assert.match(store, /一般Knowledgeへ自動昇格/);
 });
 
 test("runtime ContextBus remains Redis-first and Vault legacy file is not referenced", () => {
@@ -43,4 +58,3 @@ test("runtime ContextBus remains Redis-first and Vault legacy file is not refere
   assert.match(bus, /Redis \(source of truth\)/);
   assert.doesNotMatch(bus, /memory\/context\/current-bus\.md/);
 });
-

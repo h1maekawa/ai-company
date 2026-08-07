@@ -12,7 +12,7 @@
 │   └─ ai-secretary/  Next.js 14 アプリ本体
 │
 └─ ai-company-vault（データリポジトリ = Obsidian Vault）
-    ├─ ローカル実体: Dropbox「個人用/AI会社」（Obsidian Git同期）
+    ├─ ローカル実体: [retired Dropbox Vault]（Obsidian Git同期）
     └─ 本番アクセス: GitHub Contents API（GITHUB_TOKEN, fine-grained PAT）
 ```
 
