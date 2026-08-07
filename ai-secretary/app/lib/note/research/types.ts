@@ -319,6 +319,10 @@ export type SocialDraft = {
   id: string;
   briefId?: string;
   trendClusterId?: string;
+  /** Research / 本人視点 / 本人体験からこのAI下書きまでのLineage */
+  sourceResearchIds?: string[];
+  sourceViewpointIds?: string[];
+  sourceExperienceIds?: string[];
 
   xAccountId: string;
   purpose: ContentPurpose;
@@ -380,6 +384,7 @@ export type NoteArticleDraft = {
   headerImagePath?: string;
 
   sourceResearchItemIds: string[];
+  sourceViewpointIds?: string[];
   sourceExperienceIds: string[];
 
   status: NoteArticleStatus;

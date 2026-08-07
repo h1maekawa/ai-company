@@ -482,6 +482,11 @@ export type HistoryEntry = {
   id: string;
   platform: "x" | "note";
   contentId: string;
+  /** 公開物の元となったAI下書き。公開履歴自身は本人の正式な公開物を表す。 */
+  draftId?: string;
+  sourceResearchIds?: string[];
+  sourceViewpointIds?: string[];
+  sourceExperienceIds?: string[];
   action: string;
   at: string;
   detail?: string;
@@ -505,7 +510,7 @@ export async function appendHistory(entry: HistoryEntry): Promise<void> {
     .join("\n");
   await write(
     RESEARCH_PATHS.publishingHistory,
-    buildDoc("note_publishing_history", "実際に投稿・予約した記録です。", human || "（まだありません）", {
+    buildDoc("note_publishing_history", "実際に投稿・予約した記録です。下書きとは区別し、元Research・本人Viewpoint・公開結果をIDで追跡します。", human || "（まだありません）", {
       entries,
     })
   );

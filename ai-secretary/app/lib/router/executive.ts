@@ -74,16 +74,6 @@ export async function routeRequest(
       };
     }
 
-    if (normalized.includes("piro") || normalized.includes("ピロ")) {
-      return {
-        intent: "Piroコンテンツの相談",
-        department: "personal",
-        room: undefined,
-        secretary: "personal-piro",
-        confidence: 0.9,
-      };
-    }
-
     if (
       normalized.includes("個人用ai会社") ||
       normalized.includes("個人用ai") ||
@@ -134,8 +124,7 @@ ${JSON.stringify(registryList, null, 2)}
 6. 以下のいずれかに該当する場合は "personal-note" に割り当ててください（confidence: 0.95）：
    - /note-research, /note-title, /note-outline, /note-draft, /note-post-plan, /note-kpi, /note-affili, /note-paid のいずれかのコマンドが含まれる
    - 「note執筆」「note構成」「note下書き」「noteネタ」「バズり導入文」「CTAテンプレート」等の話題
-7. 以下のいずれかに該当する場合は "personal-piro" に割り当ててください（confidence: 0.95）：
-   - 「Piro」「ピロ」「クリエイターOS」の話題、リサーチ→記事→X告知パイプラインの相談
+7. リサーチ→記事→X告知パイプラインの相談は "personal-note" に統合してください。
 8. 以下のいずれかに該当する場合は "personal-morning" に割り当ててください（confidence: 0.95）：
     - /morning-report コマンドが含まれる
     - 「朝会」「モーニングレポート」「今日のやること」「日次タスク」「日次オペレーション」に関する話題
@@ -150,7 +139,7 @@ ${JSON.stringify(registryList, null, 2)}
   "intent": "ユーザーの意図（日本語）",
   "department": "所属部門（例: personal, executive）",
   "room": "所属室（ある場合のみ、例: personal-fund-room。ない場合は空文字列にするか省略）",
-  "secretary": "秘書ID（例: executive-assistant, personal-morning, personal-note, personal-fund, personal-piro）",
+  "secretary": "秘書ID（例: executive-assistant, personal-morning, personal-note, personal-fund）",
   "confidence": 0.0〜1.0の数値
 }
 `;

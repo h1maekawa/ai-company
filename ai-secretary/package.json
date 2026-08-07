@@ -11,7 +11,8 @@
     "import:x-archive": "bash scripts/run-x-archive-import.sh",
     "test:fund": "bash scripts/test-fund.sh",
     "test:maemichi": "bash scripts/test-maemichi.sh",
-    "test": "npm run test:maemichi && npm run test:fund"
+    "test:architecture": "bash scripts/test-architecture.sh",
+    "test": "npm run test:architecture && npm run test:maemichi && npm run test:fund"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
