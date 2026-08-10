@@ -5,7 +5,7 @@
  * verifiedByUser=false の間は「断定的な体験談」に使えない。
  */
 
-import { loadPlan } from "../../planning/store";
+import { getCompletedTasksForDate } from "../../content/core/providers/timebox";
 import { hashId } from "./fetcher";
 import { loadExperiences, saveExperiences } from "./store";
 import { ExperienceEntry, ExperienceSourceType } from "./types";
@@ -85,8 +85,9 @@ export async function harvestFromMorningPlan(date?: string): Promise<{
   doneCount: number;
 }> {
   const sourceDate = date ?? new Date().toISOString().slice(0, 10);
-  const plan = await loadPlan(sourceDate);
-  const done = plan.tasks.filter((t) => t.done);
+  // Timeboxの内部実装（planning/store）へは直接依存せず、狭いProviderインターフェースだけを使う。
+  // Timeboxが未接続・取得失敗でも例外を投げず {tasks: []} が返るため、Note側は壊れない。
+  const { tasks: done } = await getCompletedTasksForDate(sourceDate);
 
   const existing = await loadExperiences();
   const alreadyTaken = new Set(
