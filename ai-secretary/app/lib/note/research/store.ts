@@ -491,9 +491,18 @@ export type HistoryEntry = {
   at: string;
   detail?: string;
   url?: string;
+  /** Content Business OS: この操作に対応するPublishedContentのid */
+  publishedContentId?: string;
 };
 
-export type HistoryFile = { entries: HistoryEntry[] };
+export type HistoryFile = {
+  entries: HistoryEntry[];
+  /**
+   * Content Business OS: 正式な公開物の正（PublishedContent）。
+   * 型定義は app/lib/content/monetization/types.ts。draftは含まない。
+   */
+  published?: import("../../content/monetization/types").PublishedContent[];
+};
 
 const MAX_HISTORY = 300;
 
@@ -502,18 +511,57 @@ export async function loadHistory(): Promise<HistoryEntry[]> {
   return Array.isArray(data?.entries) ? data.entries : [];
 }
 
-export async function appendHistory(entry: HistoryEntry): Promise<void> {
-  const entries = [entry, ...(await loadHistory())].slice(0, MAX_HISTORY);
-  const human = entries
-    .slice(0, 40)
-    .map((e) => `- ${e.at} [${e.platform}] ${e.action}${e.detail ? ` — ${e.detail}` : ""}`)
-    .join("\n");
+export async function loadHistoryFile(): Promise<HistoryFile> {
+  const data = await readJson<HistoryFile>(RESEARCH_PATHS.publishingHistory);
+  return {
+    entries: Array.isArray(data?.entries) ? data.entries : [],
+    published: Array.isArray(data?.published) ? data.published : [],
+  };
+}
+
+async function writeHistoryFile(file: HistoryFile): Promise<void> {
+  const entries = file.entries.slice(0, MAX_HISTORY);
+  const published = file.published ?? [];
+  const human = [
+    entries
+      .slice(0, 40)
+      .map((e) => `- ${e.at} [${e.platform}] ${e.action}${e.detail ? ` — ${e.detail}` : ""}`)
+      .join("\n") || "（まだありません）",
+    "",
+    "## 公開済み記録（PublishedContent）",
+    published
+      .slice(0, 40)
+      .map((p) => `- ${p.publishedAt} [${p.channel}] ${p.title}${p.url ? `\n  ${p.url}` : ""}`)
+      .join("\n") || "（まだありません）",
+  ].join("\n");
   await write(
     RESEARCH_PATHS.publishingHistory,
-    buildDoc("note_publishing_history", "実際に投稿・予約した記録です。下書きとは区別し、元Research・本人Viewpoint・公開結果をIDで追跡します。", human || "（まだありません）", {
-      entries,
-    })
+    buildDoc(
+      "note_publishing_history",
+      "実際に投稿・予約した記録です。下書きとは区別し、元Research・本人Viewpoint・公開結果をIDで追跡します。本人操作か正式なPublish連携成功時のみPublishedContentとして扱います。",
+      human,
+      { entries, published }
+    )
   );
+}
+
+export async function appendHistory(entry: HistoryEntry): Promise<void> {
+  const file = await loadHistoryFile();
+  await writeHistoryFile({ ...file, entries: [entry, ...file.entries] });
+}
+
+export async function loadPublishedContent(): Promise<
+  import("../../content/monetization/types").PublishedContent[]
+> {
+  const file = await loadHistoryFile();
+  return file.published ?? [];
+}
+
+export async function savePublishedContent(
+  published: import("../../content/monetization/types").PublishedContent[]
+): Promise<void> {
+  const file = await loadHistoryFile();
+  await writeHistoryFile({ ...file, published });
 }
 
 /* ─── 投稿実績 ───────────────────────────── */
@@ -523,6 +571,12 @@ export type PerformanceFile = {
   policies: AffiliatePolicy[];
   revenueProgress: RevenueSharingProgress;
   monetizationRules: MonetizationRule[];
+  /**
+   * Content Business OS: 手入力中心の時系列スナップショット。
+   * `records` (旧: 投稿ごとの単発実績) とは別に、PublishedContentへ複数回の計測を積み上げる。
+   * 型定義は app/lib/content/monetization/types.ts の PerformanceSnapshot。
+   */
+  snapshots?: import("../../content/monetization/types").PerformanceSnapshot[];
 };
 
 const defaultRevenueProgress = (): RevenueSharingProgress => ({
@@ -556,6 +610,7 @@ export async function loadPerformance(): Promise<PerformanceFile> {
     monetizationRules: Array.isArray(data?.monetizationRules) && data.monetizationRules.length > 0
       ? data.monetizationRules
       : defaultMonetizationRules(),
+    snapshots: Array.isArray(data?.snapshots) ? data.snapshots : [],
   };
 }
 
@@ -580,7 +635,7 @@ export async function savePerformance(file: PerformanceFile): Promise<Performanc
       "note_content_performance",
       "投稿の反応です。取得できない数値は0ではなく未取得として扱います。",
       human,
-      file
+      { ...file, snapshots: file.snapshots ?? [] }
     )
   );
   return file;
