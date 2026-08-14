@@ -6,10 +6,10 @@ import {
   viewpointConfirmationBlocks,
 } from "@/app/lib/integrations/slack/blocks";
 import {
-  classifyConversation,
   cleanSlackMessage,
   followUpResearchTopic,
 } from "@/app/lib/integrations/slack/conversation";
+import { orchestrateSlackMessage } from "@/app/lib/integrations/slack/orchestrator";
 import { generateCandidateInBackground } from "@/app/lib/integrations/slack/generate";
 import { buildEditorialBrief } from "@/app/lib/integrations/slack/editorial-brief";
 import {
@@ -117,7 +117,17 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
   const cleanedText = cleanSlackMessage(text);
   const currentContext = await loadEditorialContext(channel, threadTs);
 
-  const intent = classifyConversation(text);
+  const { intent, plan } = await orchestrateSlackMessage(text, {
+    status: currentContext?.status,
+    topic: currentContext?.topic,
+    hasConfirmedViewpoint: currentContext?.authorViewpoint?.confirmedByUser,
+  });
+  console.info("[slack/orchestrator] task planned", {
+    source: plan.source,
+    actions: plan.actions,
+    confidence: plan.confidence,
+    publishRequested: plan.publishRequested,
+  });
   if (
     currentContext?.status === "awaiting-viewpoint" &&
     intent.type !== "research" &&
