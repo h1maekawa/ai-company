@@ -12,6 +12,7 @@ import type {
 import { Card, CardHeader } from "@/components/ui/primitives";
 import type { XTrend, XTrendLocation, XTrendResponse } from "@/app/lib/note/research/x-trends";
 import type { ContentSourceMode, DailyPostSeed } from "@/app/lib/note/types";
+import { notebookLMPrompt } from "@/app/lib/note/research/notebooklm";
 
 const GENRES = [
   ["", "指定なし"],
@@ -69,6 +70,9 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   const [outputType, setOutputType] = useState<OutputType>("x-and-note");
   const [xLength, setXLength] = useState<XPostLength>("standard");
   const [selectedId, setSelectedId] = useState("");
+  const [showNotebookLM, setShowNotebookLM] = useState(false);
+  const [notebookLMResult, setNotebookLMResult] = useState("");
+  const [notebookLMCopied, setNotebookLMCopied] = useState(false);
 
   const visibleCandidates = useMemo(() => {
     if (candidates.latestCandidateIds.length === 0) return [];
@@ -88,6 +92,11 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
       growthGoal,
       personalAngle: personalAngle.trim() || undefined,
     });
+  }
+
+  async function copyNotebookLMPrompt() {
+    await navigator.clipboard.writeText(notebookLMPrompt(focusTopic));
+    setNotebookLMCopied(true);
   }
 
   async function loadTrends(location: XTrendLocation) {
@@ -270,6 +279,33 @@ export function ContentStudio({ onOpenDrafts }: { onOpenDrafts: () => void }) {
             {candidates.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
             今の話題を調べる
           </button>
+          <div className="mt-3 rounded-xl border border-hairline bg-white/[0.02] p-3">
+            <button onClick={() => setShowNotebookLM((value) => !value)} className="w-full text-left text-xs font-semibold text-brand-light">
+              {showNotebookLM ? "NotebookLM連携を閉じる" : "NotebookLMで調べた結果を使う"}
+            </button>
+            {showNotebookLM && (
+              <div className="mt-3 space-y-3">
+                <p className="text-[10px] leading-5 text-sub">調査指示をNotebookLMへ貼り付け、返ってきたJSONをここへ戻します。出典URLがない内容は取り込みません。</p>
+                <button onClick={() => void copyNotebookLMPrompt()} className="w-full rounded-lg border border-brand/40 bg-brand/10 px-3 py-2 text-xs font-semibold text-white">
+                  {notebookLMCopied ? "調査指示をコピーしました" : "NotebookLM用の調査指示をコピー"}
+                </button>
+                <textarea
+                  value={notebookLMResult}
+                  onChange={(event) => setNotebookLMResult(event.target.value)}
+                  rows={8}
+                  placeholder="NotebookLMが返したJSONをそのまま貼り付け"
+                  className="w-full rounded-xl border border-hairline bg-white/[0.03] px-3 py-3 font-mono text-xs leading-5 text-white outline-none placeholder:text-sub/60 focus:border-brand/60"
+                />
+                <button
+                  onClick={() => void candidates.importNotebookLM(notebookLMResult)}
+                  disabled={candidates.running || !notebookLMResult.trim()}
+                  className="w-full rounded-lg bg-brand px-3 py-2.5 text-xs font-bold text-white disabled:opacity-40"
+                >
+                  NotebookLMの調査結果を取り込む
+                </button>
+              </div>
+            )}
+          </div>
         </section>}
 
         {sourceMode === "trend" && visibleCandidates.length > 0 && (

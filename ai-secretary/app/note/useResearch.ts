@@ -130,6 +130,28 @@ export function useCandidates() {
     }
   }
 
+  async function importNotebookLM(result: string) {
+    setRunning(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetch("/api/note/research/notebooklm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ result }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setLatestCandidateIds((data.topCandidates ?? []).map((candidate: TrendCluster) => candidate.id));
+      setNotice(`NotebookLMから${data.imported}件の出典を取り込みました`);
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "NotebookLMの取り込みに失敗しました");
+    } finally {
+      setRunning(false);
+    }
+  }
+
   async function setStatus(id: string, status: TrendCluster["status"]) {
     setClusters((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
     await fetch("/api/note/research/candidates", {
@@ -186,6 +208,7 @@ export function useCandidates() {
     notice,
     latestCandidateIds,
     runResearch,
+    importNotebookLM,
     setStatus,
     generate,
     reload,

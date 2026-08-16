@@ -16,6 +16,7 @@ npx tsc \
   app/lib/note/research/x-query.ts \
   app/lib/note/research/x-format.ts \
   app/lib/note/research/performance.ts \
+  app/lib/note/research/notebooklm.ts \
   app/lib/note/editor/types.ts \
   app/lib/note/editor/config.ts \
   app/lib/note/editor/brandRules.ts \
