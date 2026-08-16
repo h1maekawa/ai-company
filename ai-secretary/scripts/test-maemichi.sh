@@ -31,6 +31,7 @@ npx tsc \
   app/lib/integrations/slack/verify.ts \
   app/lib/integrations/slack/conversation.ts \
   app/lib/integrations/slack/orchestrator.ts \
+  app/lib/integrations/slack/voice.ts \
   app/lib/integrations/slack/editorial-context.ts \
   app/lib/integrations/slack/editorial-questions.ts \
   app/lib/integrations/slack/editorial-brief.ts \

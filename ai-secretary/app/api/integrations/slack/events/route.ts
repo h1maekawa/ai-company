@@ -25,6 +25,12 @@ import {
 } from "@/app/lib/integrations/slack/editorial-questions";
 import { verifySlackRequest } from "@/app/lib/integrations/slack/verify";
 import { runInBackground } from "@/app/lib/integrations/vercel-background";
+import {
+  extractVerbatimXDraft,
+  isSlackAudioFile,
+  SlackAudioFile,
+  transcribeSlackAudio,
+} from "@/app/lib/integrations/slack/voice";
 import { latestDraftLink } from "@/app/lib/note/drafts/mobile";
 import { withLock, claimOnce } from "@/app/lib/note/publishing/queue";
 import { runResearch } from "@/app/lib/note/research/run";
@@ -54,6 +60,7 @@ type SlackEventPayload = {
     channel_type?: string;
     thread_ts?: string;
     ts?: string;
+    files?: SlackAudioFile[];
   };
 };
 
@@ -85,7 +92,9 @@ export async function POST(req: Request): Promise<Response> {
   const supported =
     event?.type === "app_mention" ||
     (event?.type === "message" && event.channel_type === "im");
-  if (!supported || event?.subtype || event?.bot_id || !event.channel || !event.text) {
+  const audioFile = event?.files?.find(isSlackAudioFile);
+  const supportedSubtype = !event?.subtype || event.subtype === "file_share";
+  if (!supported || !supportedSubtype || event?.bot_id || !event.channel || (!event.text && !audioFile)) {
     return json({ ok: true });
   }
   if (payload.event_id && !(await claimOnce(`slack-event:${payload.event_id}`))) {
@@ -97,7 +106,7 @@ export async function POST(req: Request): Promise<Response> {
   // すでにスレッド内で話しかけられた場合だけ、そのスレッドへ返す。
   const threadTs = event.thread_ts;
   runInBackground(
-    handleConversation(event.text, channel, threadTs).catch(async (error) => {
+    handleIncomingMessage(event.text ?? "", audioFile, channel, threadTs).catch(async (error) => {
       console.error("[slack/events] 会話処理失敗", {
         errorType: error instanceof Error ? error.name : "unknown",
       });
@@ -105,6 +114,75 @@ export async function POST(req: Request): Promise<Response> {
     })
   );
   return json({ ok: true });
+}
+
+async function handleIncomingMessage(
+  text: string,
+  audioFile: SlackAudioFile | undefined,
+  channel: string,
+  threadTs?: string
+) {
+  if (!audioFile) {
+    const verbatimDraft = extractVerbatimXDraft(cleanSlackMessage(text));
+    if (!verbatimDraft) return handleConversation(text, channel, threadTs);
+    await saveVerbatimXDraft(verbatimDraft);
+    const lengthWarning = Array.from(verbatimDraft).length > 280
+      ? "\n\n⚠️ 280文字を超えています。内容は削らず保存しました。"
+      : "";
+    return reply(
+      `✅ Aqua Voiceなどで入力した文章を、AIで言い換えずX下書きへ保存しました。\n\n${verbatimDraft}${lengthWarning}\n\n外部公開はしていません。`,
+      channel,
+      threadTs
+    );
+  }
+  const transcript = await transcribeSlackAudio(audioFile);
+  const context = await loadEditorialContext(channel, threadTs);
+  if (context?.status === "awaiting-viewpoint") {
+    await reply(`🎙️ 文字起こし結果（未調整）\n\n${transcript}`, channel, threadTs);
+    return handleConversation(transcript, channel, threadTs);
+  }
+  await saveVerbatimXDraft(transcript);
+  const lengthWarning = Array.from(transcript).length > 280
+    ? "\n\n⚠️ 280文字を超えています。内容は削らず保存しました。"
+    : "";
+  return reply(
+    `🎙️ 話した内容を言い換えず、X下書きへ保存しました。\n\n${transcript}${lengthWarning}\n\n外部公開はしていません。`,
+    channel,
+    threadTs
+  );
+}
+
+async function saveVerbatimXDraft(transcript: string) {
+  const [{ loadBrand, loadIdeas }, store, typesMod] = await Promise.all([
+    import("@/app/lib/note/store"),
+    import("@/app/lib/note/research/store"),
+    import("@/app/lib/note/types"),
+  ]);
+  const [brandFile, ideaFile, drafts] = await Promise.all([
+    loadBrand(),
+    loadIdeas(),
+    store.loadSocialDrafts(),
+  ]);
+  const account = brandFile.xAccounts[0];
+  if (!account) throw new Error("X account is not configured");
+  const genre = ideaFile.genres[0] ?? typesMod.DEFAULT_GENRES[0];
+  const now = new Date().toISOString();
+  const draft = {
+    id: `voice-${crypto.randomUUID()}`,
+    xAccountId: account.id,
+    purpose: "reach" as const,
+    genreId: genre.id,
+    text: transcript,
+    pattern: "daily" as const,
+    length: Array.from(transcript).length > 280 ? "long" as const : "standard" as const,
+    mediaSuggestion: "text" as const,
+    urls: [],
+    needsDisclosure: false,
+    status: "draft" as const,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await store.saveSocialDrafts([draft, ...drafts]);
 }
 
 async function reply(text: string, channel: string, threadTs?: string) {
