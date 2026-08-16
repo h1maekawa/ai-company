@@ -135,6 +135,7 @@ export type ResearchSourceType =
   | "keyword"
   | "trend"
   | "featured"
+  | "notebooklm"
   | "manual";
 
 export type PublicMetrics = {

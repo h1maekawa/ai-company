@@ -16,6 +16,7 @@ npx tsc \
   app/lib/note/research/x-query.ts \
   app/lib/note/research/x-format.ts \
   app/lib/note/research/performance.ts \
+  app/lib/note/research/notebooklm.ts \
   app/lib/note/editor/types.ts \
   app/lib/note/editor/config.ts \
   app/lib/note/editor/brandRules.ts \
@@ -30,6 +31,8 @@ npx tsc \
   app/lib/note/publishing/queue.ts \
   app/lib/integrations/slack/verify.ts \
   app/lib/integrations/slack/conversation.ts \
+  app/lib/integrations/slack/orchestrator.ts \
+  app/lib/integrations/slack/voice.ts \
   app/lib/integrations/slack/editorial-context.ts \
   app/lib/integrations/slack/editorial-questions.ts \
   app/lib/integrations/slack/editorial-brief.ts \
