@@ -1,17 +1,10 @@
 import { listVaultDirectory, getVaultFile } from "../vault";
+import { CANONICAL_DOMAINS } from "../knowledge/domain";
 
 export type IdPrefix = "kn" | "nt" | "lg";
 
-const KNOWLEDGE_CATEGORIES = [
-  "sales",
-  "marketing",
-  "recruiting",
-  "investing",
-  "systems",
-  "content",
-  "strategy",
-  "misc",
-];
+// Knowledge は canonical domain 配下（memory/knowledge/<domain>）を走査する（ADR-G, docs/14）。
+const KNOWLEDGE_DOMAINS = CANONICAL_DOMAINS;
 
 const NOTE_SUBFOLDERS = ["ideas", "drafts", "published", "research", "templates"];
 
@@ -33,7 +26,7 @@ export async function generateUniqueId(prefix: IdPrefix): Promise<string> {
   let directoriesToScan: string[] = [];
 
   if (prefix === "kn") {
-    directoriesToScan = KNOWLEDGE_CATEGORIES.map(cat => `memory/knowledge/${cat}`);
+    directoriesToScan = KNOWLEDGE_DOMAINS.map((dom) => `memory/knowledge/${dom}`);
   } else if (prefix === "nt") {
     directoriesToScan = NOTE_SUBFOLDERS.map(sub => `memory/personal/note/${sub}`);
   } else if (prefix === "lg") {
