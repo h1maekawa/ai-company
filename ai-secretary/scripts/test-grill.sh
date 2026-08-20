@@ -24,6 +24,7 @@ npx tsc \
   app/lib/grill/decisions.ts \
   app/lib/grill/questions.ts \
   app/lib/grill/types.ts \
+  app/lib/grill/suGate.ts \
   --outDir "$OUT" --module commonjs --target es2020 \
   --moduleResolution node --esModuleInterop --skipLibCheck
 

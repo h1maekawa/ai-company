@@ -89,6 +89,28 @@ export interface GrillQuality {
   archetype?: string;
   /** 未確定検出による追加Round数（暴走防止のため上限あり） */
   completenessRounds?: number;
+  /** Frontierの並列度（過剰な直列化を発見するための観測用。合格値の強制はしない） */
+  frontierStats?: FrontierStats;
+  /** 生成の成否メタ（Secret・Prompt全文は保存しない） */
+  generation?: GenerationMeta;
+  /** Shared Understanding のQuality Gate結果 */
+  sharedUnderstandingWarnings?: string[];
+}
+
+/** Design Treeがどれだけ並列に答えられるか（10論点なのに10Roundのような直列化を検出する） */
+export interface FrontierStats {
+  initialFrontierSize: number;
+  averageVisibleQuestionsPerRound: number;
+  estimatedRounds: number;
+  maxDependencyDepth: number;
+}
+
+/** LLM生成の結果メタ。APIキー・プロンプト全文は保存しない。 */
+export interface GenerationMeta {
+  provider?: string;
+  attempts?: number;
+  /** invalid_json | quality_gate_failed | provider_error | timeout | empty_response */
+  fallbackReason?: string;
 }
 
 /** 壁打ちの品質評価（任意）。正式Knowledgeには入れない。 */

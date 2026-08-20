@@ -10,7 +10,8 @@
     "test:fund": "bash scripts/test-fund.sh",
     "test:maemichi": "bash scripts/test-maemichi.sh",
     "test:knowledge": "bash scripts/test-knowledge.sh",
-    "test:grill": "bash scripts/test-grill.sh"
+    "test:grill": "bash scripts/test-grill.sh",
+    "bench:grill": "bash scripts/bench-grill.sh"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",

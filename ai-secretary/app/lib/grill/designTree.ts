@@ -134,6 +134,52 @@ export function addNodes(session: GrillSession, newNodes: GrillNode[], now: stri
   };
 }
 
+/**
+ * Design Treeの並列度を観測する（docs/15補遺・Phase5.2）。
+ * 「論点は10個なのに10Round必要」のような過剰な直列化を発見するための指標。
+ * 合格値で強制はしない（観測用）。
+ */
+export function computeFrontierStats(
+  nodes: GrillNode[],
+  maxPerRound: number
+): { initialFrontierSize: number; averageVisibleQuestionsPerRound: number; estimatedRounds: number; maxDependencyDepth: number } {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+
+  const depthOf = (id: string, seen = new Set<string>()): number => {
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const node = byId.get(id);
+    if (!node || node.dependsOn.length === 0) return 0;
+    const deps = node.dependsOn.filter((d) => byId.has(d));
+    if (deps.length === 0) return 0;
+    return 1 + Math.max(...deps.map((d) => depthOf(d, new Set(seen))));
+  };
+
+  const maxDependencyDepth = nodes.length === 0 ? 0 : Math.max(...nodes.map((n) => depthOf(n.id)));
+  const initialFrontierSize = nodes.filter((n) => n.dependsOn.filter((d) => byId.has(d)).length === 0).length;
+
+  // 実際の進行をシミュレート（毎Round、frontierのうち上限件数まで回答すると仮定）
+  const answered = new Set<string>();
+  let rounds = 0;
+  let guard = 0;
+  while (answered.size < nodes.length && guard++ < 100) {
+    const frontier = nodes
+      .filter((n) => !answered.has(n.id))
+      .filter((n) => n.dependsOn.filter((d) => byId.has(d)).every((d) => answered.has(d)))
+      .map((n) => n.id);
+    if (frontier.length === 0) break; // 到達不能（循環等）
+    frontier.slice(0, maxPerRound).forEach((id) => answered.add(id));
+    rounds++;
+  }
+
+  return {
+    initialFrontierSize,
+    estimatedRounds: rounds,
+    averageVisibleQuestionsPerRound: rounds > 0 ? Math.round((answered.size / rounds) * 10) / 10 : 0,
+    maxDependencyDepth,
+  };
+}
+
 export function toSummary(session: GrillSession): GrillSessionSummary {
   return {
     id: session.id,

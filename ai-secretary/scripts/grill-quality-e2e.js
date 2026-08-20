@@ -10,6 +10,8 @@ const DEC = require(path.join(DIST, "grill/decisions.js"));
 const QS = require(path.join(DIST, "grill/questions.js"));
 const TYPES = require(path.join(DIST, "grill/types.js"));
 const FACTS = require(path.join(DIST, "grill/facts.js"));
+const DT = require(path.join(DIST, "grill/designTree.js"));
+const SUG = require(path.join(DIST, "grill/suGate.js"));
 
 const VAULT = process.env.VAULT_ROOT;
 let pass = 0, fail = 0;
@@ -105,7 +107,10 @@ const node = (id, deps, extra = {}) => ({
     designTree: [answeredNode], answers: { d1: "A案" }, currentFrontier: [], round: 2,
     facts: [], secretaryId: "executive-assistant", durability: "durable", createdAt: "x", updatedAt: "x",
   };
-  const su = await QS.generateSharedUnderstanding(sess, rej);
+  const suRes = await QS.generateSharedUnderstanding(sess, rej);
+  const su = suRes.su;
+  ok(typeof suRes.attempts === "number" && suRes.attempts >= 1, "SU生成のattemptsを記録 (" + suRes.attempts + ")");
+  ok(Array.isArray(suRes.warnings), "SU Quality Gateの警告を返す (" + suRes.warnings.length + "件)");
   for (const k of ["summary", "majorDecisions", "rejectedAlternatives", "risks", "remainingAssumptions", "implementationScope"]) {
     ok(su[k] !== undefined, `必須セクション ${k} が存在`);
   }
@@ -142,6 +147,69 @@ const node = (id, deps, extra = {}) => ({
   ok(!process.env.UPSTASH_REDIS_REST_URL, "Redis未設定の環境で実行されている");
   ok(v.session.id && fb.session.id === v.session.id, "未設定でもセッションの保存・読み出しが動く");
 
+  console.log("\n[Q11] frontierStats（過剰直列化の観測）");
+  const serial = [node("a", []), node("b", ["a"]), node("c", ["b"]), node("d", ["c"])];
+  const st1 = DT.computeFrontierStats(serial, 4);
+  ok(st1.initialFrontierSize === 1, "直列Tree: initialFrontierSize=1");
+  ok(st1.estimatedRounds === 4, "直列Tree: 4論点で4Round (" + st1.estimatedRounds + ")");
+  ok(st1.maxDependencyDepth === 3, "直列Tree: depth=3 (" + st1.maxDependencyDepth + ")");
+  const parallel = [node("a", []), node("b", []), node("c", ["a"]), node("d", ["a"])];
+  const st2 = DT.computeFrontierStats(parallel, 4);
+  ok(st2.initialFrontierSize === 2, "並列Tree: initialFrontierSize=2");
+  ok(st2.estimatedRounds === 2, "並列Tree: 4論点で2Round (" + st2.estimatedRounds + ")");
+  ok(st2.averageVisibleQuestionsPerRound > st1.averageVisibleQuestionsPerRound, "並列Treeの方が1Roundあたりの質問数が多い");
+  const capped = DT.computeFrontierStats([node("a",[]),node("b",[]),node("c",[]),node("d",[]),node("e",[]),node("f",[])], 4);
+  ok(capped.estimatedRounds === 2, "上限4問なら6論点は2Round (" + capped.estimatedRounds + ")");
+  const cyclic = DT.computeFrontierStats([node("x", ["y"]), node("y", ["x"])], 4);
+  ok(cyclic.estimatedRounds >= 0, "循環があっても無限ループしない");
+
+  console.log("\n[Q11b] archetypeが過剰に直列化していない（回帰防止）");
+  for (const a of ["sales", "software", "business", "investment", "productivity", "generic"]) {
+    const t = ARCH.archetypeTree(a);
+    const st = DT.computeFrontierStats(t, TYPES.MAX_QUESTIONS_PER_ROUND);
+    ok(st.initialFrontierSize >= 2, `${a}: 初期Frontierが2件以上 (${st.initialFrontierSize})`);
+    ok(st.maxDependencyDepth <= 4, `${a}: 依存の深さが4以下 (${st.maxDependencyDepth})`);
+    ok(st.estimatedRounds <= Math.ceil(t.length / 2), `${a}: ${t.length}論点を${st.estimatedRounds}Roundで消化（過剰直列でない）`);
+    ok(st.averageVisibleQuestionsPerRound >= 1.5, `${a}: 1Roundあたり平均${st.averageVisibleQuestionsPerRound}問`);
+  }
+
+  console.log("\n[Q12] Shared Understanding Quality Gate");
+  const sessionForGate = {
+    topic: "t",
+    designTree: [{ ...node("d1", []), status: "answered", title: "保存方式", answer: "Redis中心" }],
+  };
+  const goodSu = {
+    summary: "まとめ", majorDecisions: [{ decision: "保存方式: Redis中心", reason: "既存構成に合う" }],
+    rejectedAlternatives: [{ alternative: "A", reason: "B" }], risks: [], remainingAssumptions: [],
+    implementationScope: ["実装する"], acceptanceCriteria: ["完了条件"],
+  };
+  const g1 = SUG.validateSharedUnderstanding(goodSu, sessionForGate, 1);
+  ok(g1.shouldRetry === false, "十分なSUはretry不要");
+  ok(g1.unsupportedDecisions === 0, "根拠のある決定は捏造扱いしない");
+  const emptySu = { ...goodSu, majorDecisions: [] };
+  ok(SUG.validateSharedUnderstanding(emptySu, sessionForGate, 1).shouldRetry === true, "Major Decisionsが空ならretry対象");
+  ok(SUG.validateSharedUnderstanding({ ...goodSu, summary: "" }, sessionForGate, 1).shouldRetry === true, "summaryが空ならretry対象");
+  const fabricated = { ...goodSu, majorDecisions: [{ decision: "全く無関係な決定事項XYZ", reason: "理由" }] };
+  ok(SUG.validateSharedUnderstanding(fabricated, sessionForGate, 1).unsupportedDecisions === 1, "回答に根拠が無い決定を捏造として検出");
+  ok(SUG.validateSharedUnderstanding({ ...goodSu, implementationScope: [] }, sessionForGate, 1).warnings.some((w) => /Implementation Scope/.test(w)), "Implementation Scope空を警告");
+  ok(SUG.validateSharedUnderstanding({ ...goodSu, acceptanceCriteria: [] }, sessionForGate, 1).warnings.some((w) => /Acceptance Criteria/.test(w)), "Acceptance Criteria空を警告");
+  ok(SUG.validateSharedUnderstanding(goodSu, sessionForGate, 5).warnings.some((w) => /Rejected Alternatives/.test(w)), "却下案がSession実データと不一致なら警告");
+  ok(SUG.validateSharedUnderstanding(null, sessionForGate, 0).shouldRetry === true, "SU未生成はretry対象");
+
+  console.log("\n[Q13] fallbackReason の記録");
+  const vfb = await ORCH.startGrilling({ topic: "仕事の時間管理ルールを作りたい" });
+  const genMeta = vfb.session.quality.generation;
+  ok(!!genMeta, "generationメタが記録される");
+  if (vfb.session.quality.fallbackUsed) {
+    ok(!!genMeta.fallbackReason, "fallback時は理由コードを記録: " + genMeta.fallbackReason);
+    ok(/^(invalid_json|quality_gate_failed|provider_error|timeout|empty_response)$/.test(genMeta.fallbackReason), "理由コードは既定の集合内");
+  } else {
+    ok(genMeta.fallbackReason === undefined, "LLM成功時はfallbackReasonなし");
+  }
+  ok(typeof genMeta.attempts === "number", "attemptsを記録");
+  ok(!JSON.stringify(genMeta).includes("AIza"), "generationメタにSecretが含まれない");
+  ok(!!vfb.session.quality.frontierStats, "frontierStatsが記録される");
+
   console.log("\n========== Benchmark: 5シナリオ ==========");
   const scenarios = [
     ["A 営業", "HP制作商談の受注率を上げたい"],
@@ -166,6 +234,8 @@ const node = (id, deps, extra = {}) => ({
     const fps = sn.designTree.map((n) => VAL.questionFingerprint(n.question));
     ok(new Set(fps).size === fps.length, "重複Questionが無い");
     ok(sn.quality.providerIds.length > 0, `Provider選択: ${sn.quality.providerIds.join("/")}`);
+    const fs2 = sn.quality.frontierStats;
+    ok(!!fs2, `frontierStats: 初期${fs2.initialFrontierSize}問 / 推定${fs2.estimatedRounds}Round / depth${fs2.maxDependencyDepth} / 平均${fs2.averageVisibleQuestionsPerRound}問`);
     seenTitleSets.push(sn.designTree.map((n) => n.title).join("|"));
   }
   ok(new Set(seenTitleSets).size === scenarios.length, "5シナリオすべてTree構造が異なる（topic固有）");

@@ -11,7 +11,14 @@
  */
 
 import { captureKnowledgeCandidate } from "../knowledge/captureService";
-import { addNodes, applyAnswers, computeNodeStatuses, sanitizeTree, toSummary } from "./designTree";
+import {
+  addNodes,
+  applyAnswers,
+  computeFrontierStats,
+  computeNodeStatuses,
+  sanitizeTree,
+  toSummary,
+} from "./designTree";
 import {
   buildWithdrawnAlternative,
   deriveRejectedAlternatives,
@@ -138,6 +145,8 @@ export async function startGrilling(input: {
     validationWarnings: gen.warnings,
     archetype: gen.archetype,
     completenessRounds: 0,
+    frontierStats: computeFrontierStats(tree, MAX_QUESTIONS_PER_ROUND),
+    generation: gen.generation,
   };
 
   const session: GrillSession = {
@@ -205,8 +214,19 @@ export async function answerGrilling(input: {
       };
     }
 
-    const su = await generateSharedUnderstanding(next, rejected);
-    next = { ...next, sharedUnderstanding: su };
+    const suResult = await generateSharedUnderstanding(next, rejected);
+    next = {
+      ...next,
+      sharedUnderstanding: suResult.su,
+      quality: {
+        ...(next.quality as GrillQuality),
+        sharedUnderstandingWarnings: suResult.warnings,
+        generation: {
+          ...(next.quality?.generation ?? {}),
+          attempts: suResult.attempts,
+        },
+      },
+    };
   }
 
   const saved = await persist(next);
@@ -274,6 +294,7 @@ export async function reviseGrilling(input: {
       duplicateQuestionsRemoved:
         (next.quality?.duplicateQuestionsRemoved ?? 0) + gen.duplicateQuestionsRemoved,
       validationWarnings: [...(next.quality?.validationWarnings ?? []), ...gen.warnings],
+      frontierStats: computeFrontierStats(next.designTree, MAX_QUESTIONS_PER_ROUND),
     },
   };
 
