@@ -6,9 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "bash scripts/test-knowledge.sh",
+    "test": "npm run test:maemichi && npm run test:fund && npm run test:knowledge",
     "test:fund": "bash scripts/test-fund.sh",
-    "test:maemichi": "bash scripts/test-maemichi.sh"
+    "test:maemichi": "bash scripts/test-maemichi.sh",
+    "test:knowledge": "bash scripts/test-knowledge.sh"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
