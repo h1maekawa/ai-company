@@ -29,9 +29,11 @@ npx tsc \
   app/lib/grill/questions.ts \
   app/lib/grill/suGate.ts \
   app/lib/grill/types.ts \
+  app/lib/ai/client.ts \
   --outDir "$OUT" --module commonjs --target es2020 \
   --moduleResolution node --esModuleInterop --skipLibCheck
 
+set +e   # 実行中の失敗でもレポート/診断を出せるようにする
 echo "[2/2] 実LLMベンチマーク実行..."
 # .env.local を読み込む（値は表示しない）
 set -a; . ./.env.local; set +a
@@ -42,4 +44,13 @@ fi
 # 本番判定を避ける（ローカル実行）
 unset VERCEL
 
-GRILL_E2E_DIST="$OUT" NODE_PATH="$ROOT/node_modules" node "$ROOT/scripts/grill-llm-benchmark.js"
+GRILL_E2E_DIST="$OUT" NODE_PATH="$ROOT/node_modules" node "$ROOT/scripts/grill-llm-benchmark.js" 2>&1 | tee "${TMPDIR:-/tmp}/grill-bench.log"
+code=${PIPESTATUS[0]}
+echo ""
+echo "実行ログ: ${TMPDIR:-/tmp}/grill-bench.log"
+if [ "$code" = "2" ]; then
+  echo "⛔ 実LLMに到達できなかったため、docs/16 は更新していません（上の [preflight] を確認してください）。"
+elif [ "$code" != "0" ]; then
+  echo "⛔ ベンチマークが異常終了しました (exit $code)。上のログを確認してください。"
+fi
+exit $code

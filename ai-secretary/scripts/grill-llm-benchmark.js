@@ -18,6 +18,7 @@ const path = require("path");
 
 const DIST = process.env.GRILL_E2E_DIST || "/tmp/grill-bench-dist";
 const ORCH = require(path.join(DIST, "grill/orchestrator.js"));
+const AI = require(path.join(DIST, "ai/client.js"));
 const VAL = require(path.join(DIST, "grill/validate.js"));
 
 const OUT = process.env.BENCH_OUT || path.join(__dirname, "..", "..", "docs", "16_GRILLING_LLM_QUALITY_REPORT.md");
@@ -82,13 +83,62 @@ async function completeAll(view) {
   return cur;
 }
 
+/**
+ * プリフライト: Grillingが実際に使う callAI() で疎通を確認する。
+ * ここで失敗した場合、fallbackだらけの誤解を招くレポートで既存ファイルを
+ * 上書きしないよう、**書き込まずに終了**する（BENCH_FORCE=1 で強制続行可）。
+ */
+async function preflight() {
+  const provider = process.env.DEFAULT_PROVIDER || "(未設定)";
+  const model = process.env.GEMINI_MODEL || process.env.GROQ_MODEL || "(既定)";
+  console.log(`\n[preflight] provider=${provider} model=${model} で実LLMへの疎通を確認します...`);
+  const t0 = Date.now();
+  try {
+    const reply = await AI.callAI("OK とだけ返してください。", "あなたは疎通確認用です。短く答えてください。", {});
+    const ms = Date.now() - t0;
+    const text = String(reply || "").trim().slice(0, 40);
+    if (!text) throw new Error("空応答");
+    console.log(`[preflight] ✅ 実LLM応答あり (${ms}ms): "${text}"`);
+    return { ok: true, provider, model, ms, sample: text };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const ms = Date.now() - t0;
+    console.error(`\n[preflight] ❌ 実LLMへ到達できませんでした (${ms}ms)`);
+    console.error(`[preflight] provider=${provider} model=${model}`);
+    console.error(`[preflight] 失敗理由: ${msg.slice(0, 300)}`);
+    console.error(`
+────────────────────────────────────────────────────────
+このまま実行しても、全シナリオが fallback（archetype）になり
+実LLM品質の評価はできません。そのため docs/16 は上書きしません。
+
+確認してください:
+  1. ai-secretary/.env.local に GEMINI_API_KEY が設定されているか
+  2. そのマシンから https://generativelanguage.googleapis.com へ出られるか
+     （社内プロキシ・VPN・ファイアウォールでブロックされていないか）
+     例: curl -s -o /dev/null -w '%{http_code}\n' https://generativelanguage.googleapis.com
+  3. APIキーが有効か（期限切れ・課金停止・レート制限でないか）
+  4. GROQ_API_KEY がある場合は DEFAULT_PROVIDER=groq でも試せます
+
+どうしても fallback のまま記録したい場合のみ:
+  BENCH_FORCE=1 npm run bench:grill
+────────────────────────────────────────────────────────`);
+    return { ok: false, provider, model, ms, error: msg.slice(0, 200) };
+  }
+}
+
 (async () => {
+  const pre = await preflight();
+  if (!pre.ok && process.env.BENCH_FORCE !== "1") {
+    process.exit(2);
+  }
+
   const startedAt = new Date().toISOString();
   out(`# 16. Grilling 実LLM品質レポート（Phase 5.2）`);
   out();
   out(`- 実行日時: ${startedAt}`);
   out(`- Provider: ${process.env.DEFAULT_PROVIDER || "(未設定)"} / model: ${process.env.GEMINI_MODEL || process.env.GROQ_MODEL || "(既定)"}`);
   out(`- Vault: ${process.env.GRILL_BENCH_REAL_VAULT === "1" ? "実Vault（読み取り）" : "一時Vault（実データに触れない）"}`);
+  out(`- LLM疎通(preflight): ${pre.ok ? `✅ 応答あり (${pre.ms}ms)` : `❌ 到達不可（${pre.error}）— 以下はfallback結果`}`);
   out(`- 注意: APIキー等のSecretは本レポートに一切記載しない。`);
   out();
 
@@ -99,8 +149,10 @@ async function completeAll(view) {
     out();
     out(`## ${name} — ${topic}`);
     out();
+    console.error(`  → ${name} を生成中...`);
     const view = await ORCH.startGrilling({ topic });
     const s = view.session;
+    console.error(`     source=${view.session.quality?.designTreeSource} nodes=${view.session.designTree.length}`);
     const q = s.quality || {};
     const fstat = q.frontierStats || {};
 
@@ -142,6 +194,7 @@ async function completeAll(view) {
       estimatedRounds: fstat.estimatedRounds,
       maxDependencyDepth: fstat.maxDependencyDepth,
       warnings: (q.validationWarnings || []).length,
+      fallbackReason: q.generation?.fallbackReason,
     });
 
     if (MULTI_ROUND.includes(name)) {
@@ -209,6 +262,14 @@ async function completeAll(view) {
   out();
   const llmCount = summary.filter((r) => r.source === "llm").length;
   out(`**fallbackUsed:false（実LLM生成）: ${llmCount} / ${summary.length} 件**`);
+  out();
+  if (llmCount < summary.length) {
+    const reasons = summary.filter((r) => r.fallbackUsed).map((r) => r.fallbackReason || "unknown");
+    const counts = {};
+    for (const r of reasons) counts[r] = (counts[r] || 0) + 1;
+    out(`> ⚠️ fallbackが含まれます。理由の内訳: ${Object.entries(counts).map(([k, v]) => `${k}×${v}`).join(", ")}`);
+    out(`> 実LLM品質の評価には、全シナリオで fallbackUsed:false になる必要があります。`);
+  }
   out();
   out(`### 評価の観点（Phase 5.2）`);
   out();
