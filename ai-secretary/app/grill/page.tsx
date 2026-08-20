@@ -27,6 +27,20 @@ type SharedUnderstanding = {
   risks: string[];
   remainingAssumptions: string[];
   implementationScope: string[];
+  nonGoals?: string[];
+  constraints?: string[];
+  acceptanceCriteria?: string[];
+};
+
+type Quality = {
+  designTreeSource: "llm" | "fallback";
+  fallbackUsed: boolean;
+  providerIds: string[];
+  generatedNodeCount: number;
+  duplicateQuestionsRemoved: number;
+  validationWarnings: string[];
+  archetype?: string;
+  completenessRounds?: number;
 };
 
 type Session = {
@@ -39,11 +53,15 @@ type Session = {
   facts: { id: string; statement: string; source: string }[];
   sharedUnderstanding?: SharedUnderstanding;
   durability: "durable" | "volatile";
+  quality?: Quality;
+  feedback?: { rating: string; comment?: string };
 };
 
 type View = {
   session: Session;
   currentQuestions: GrillNode[];
+  visibleQuestions?: GrillNode[];
+  frontierCount?: number;
   durabilityWarning?: string;
   factProvidersUsed?: string[];
   captured?: { ok: boolean; path?: string; status?: string; error?: string };
@@ -70,6 +88,7 @@ function GrillInner() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [reviseText, setReviseText] = useState("");
+  const [feedbackText, setFeedbackText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -225,7 +244,12 @@ function GrillInner() {
                 <div className="min-w-0">
                   <h2 className="truncate text-sm font-semibold">{s.topic}</h2>
                   <p className="mt-1 text-[11px] text-slate-400">
-                    Round {s.round} ・ 回答済み {answered}/{total} ・ 残りFrontier {s.currentFrontier.length}
+                    Round {s.round} ・ 回答済み {answered}/{total} ・ 回答可能 {s.currentFrontier.length}
+                    {view && view.currentQuestions.length < s.currentFrontier.length && (
+                      <span className="ml-1 text-slate-500">
+                        （今回は{view.currentQuestions.length}問ずつ表示）
+                      </span>
+                    )}
                     {s.durability === "volatile" && <span className="ml-2 text-amber-300">(再開保証なし)</span>}
                   </p>
                 </div>
@@ -249,6 +273,32 @@ function GrillInner() {
                 <p className="mt-2 text-[10px] text-slate-500">
                   調査済み: {view.factProvidersUsed.join(" / ")}（{s.facts.length}件の前提を取得）
                 </p>
+              )}
+
+              {/* 開発/デバッグ用の小さな品質情報（通常UXの邪魔をしない位置） */}
+              {s.quality && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[10px] text-slate-600 hover:text-slate-400">
+                    品質情報
+                  </summary>
+                  <div className="mt-1 space-y-0.5 text-[10px] text-slate-500">
+                    <p>
+                      Design Tree:{" "}
+                      <span className={s.quality.fallbackUsed ? "text-amber-400" : "text-emerald-400"}>
+                        {s.quality.designTreeSource}
+                        {s.quality.archetype ? `（${s.quality.archetype}）` : ""}
+                      </span>
+                      {" ・ "}論点数 {s.quality.generatedNodeCount}
+                      {" ・ "}重複除去 {s.quality.duplicateQuestionsRemoved}
+                    </p>
+                    <p>Providers: {s.quality.providerIds.join(" / ") || "なし"}</p>
+                    {s.quality.validationWarnings.length > 0 && (
+                      <p className="text-amber-500">
+                        警告 {s.quality.validationWarnings.length}件: {s.quality.validationWarnings[0]}
+                      </p>
+                    )}
+                  </div>
+                </details>
               )}
             </section>
 
@@ -380,6 +430,21 @@ function GrillInner() {
                     <li key={i} className="text-[11px] text-slate-300">{r}</li>
                   ))}
                 </Block>
+                <Block title="今回やらないこと（Non-Goals）">
+                  {(s.sharedUnderstanding.nonGoals ?? []).map((r, i) => (
+                    <li key={i} className="text-[11px] text-slate-300">{r}</li>
+                  ))}
+                </Block>
+                <Block title="制約（Constraints）">
+                  {(s.sharedUnderstanding.constraints ?? []).map((r, i) => (
+                    <li key={i} className="text-[11px] text-slate-300">{r}</li>
+                  ))}
+                </Block>
+                <Block title="完了判定基準（Acceptance Criteria）">
+                  {(s.sharedUnderstanding.acceptanceCriteria ?? []).map((r, i) => (
+                    <li key={i} className="text-[11px] text-slate-300">{r}</li>
+                  ))}
+                </Block>
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
@@ -435,9 +500,55 @@ function GrillInner() {
                   このセッションは <span className="font-semibold">{s.status}</span> です。
                 </p>
                 {s.status === "confirmed" && (
-                  <Link href="/weekly-review" className="mt-2 inline-block text-xs text-blue-400 hover:underline">
-                    /weekly-review でKnowledge昇格を確認する →
-                  </Link>
+                  <>
+                    <Link href="/weekly-review" className="mt-2 inline-block text-xs text-blue-400 hover:underline">
+                      /weekly-review でKnowledge昇格を確認する →
+                    </Link>
+
+                    {/* 品質評価（任意）。正式Knowledgeには入らない */}
+                    <div className="mt-4 border-t border-slate-800 pt-3">
+                      {s.feedback ? (
+                        <p className="text-[11px] text-slate-400">
+                          評価を記録しました（{s.feedback.rating}）。ありがとうございます。
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-[11px] text-slate-400">この壁打ちは役に立ちましたか？（任意）</p>
+                          <div className="mt-1.5 flex flex-wrap gap-2">
+                            {([
+                              ["good", "👍 良かった"],
+                              ["neutral", "😐 普通"],
+                              ["bad", "👎 改善が必要"],
+                            ] as const).map(([r, label]) => (
+                              <button
+                                key={r}
+                                disabled={busy}
+                                onClick={() =>
+                                  call(
+                                    "/api/grill/feedback",
+                                    { sessionId: s.id, rating: r, comment: feedbackText.trim() || undefined },
+                                    "評価を記録しました（品質改善に使います）"
+                                  )
+                                }
+                                className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800 disabled:opacity-40"
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <input
+                            value={feedbackText}
+                            onChange={(e) => setFeedbackText(e.target.value)}
+                            placeholder="気になった点（任意）"
+                            className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs outline-none focus:border-blue-500"
+                          />
+                          <p className="mt-1 text-[10px] text-slate-600">
+                            この評価はGrillingの品質改善にのみ使われ、Knowledgeには保存されません。
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </>
                 )}
               </section>
             )}
@@ -448,13 +559,22 @@ function GrillInner() {
   );
 }
 
+/**
+ * Shared Understanding の各セクション。
+ * 空でも見出しを出す（Knowledge化されるMarkdownと同じ構成にし、
+ * 「そのセクションが未確定である」ことをユーザーが認識できるようにするため）。
+ */
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
-  const arr = Array.isArray(children) ? children : [children];
-  if (arr.length === 0) return null;
+  const arr = Array.isArray(children) ? children.flat() : [children];
+  const isEmpty = arr.filter(Boolean).length === 0;
   return (
     <div className="mt-3">
       <p className="text-[11px] font-semibold text-slate-400">{title}</p>
-      <ul className="mt-1 list-inside list-disc space-y-1">{children}</ul>
+      {isEmpty ? (
+        <p className="mt-1 text-[11px] text-slate-600">（なし／未確定）</p>
+      ) : (
+        <ul className="mt-1 list-inside list-disc space-y-1">{children}</ul>
+      )}
     </div>
   );
 }

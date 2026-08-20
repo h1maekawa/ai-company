@@ -19,6 +19,11 @@ npx tsc \
   app/lib/grill/store.ts \
   app/lib/grill/designTree.ts \
   app/lib/grill/facts.ts \
+  app/lib/grill/archetypes.ts \
+  app/lib/grill/validate.ts \
+  app/lib/grill/decisions.ts \
+  app/lib/grill/questions.ts \
+  app/lib/grill/types.ts \
   --outDir "$OUT" --module commonjs --target es2020 \
   --moduleResolution node --esModuleInterop --skipLibCheck
 
@@ -34,3 +39,9 @@ env -u GITHUB_TOKEN -u GITHUB_OWNER -u GITHUB_REPO \
     -u UPSTASH_REDIS_REST_URL -u UPSTASH_REDIS_REST_TOKEN -u VERCEL \
   VAULT_ROOT="$VAULT" GRILL_E2E_DIST="$OUT" KN_DIST="$KN_OUT" NODE_PATH="$ROOT/node_modules" \
   node "$ROOT/scripts/grill-e2e.js"
+
+echo "[3/3] 品質テスト + Benchmark..."
+env -u GITHUB_TOKEN -u GITHUB_OWNER -u GITHUB_REPO \
+    -u UPSTASH_REDIS_REST_URL -u UPSTASH_REDIS_REST_TOKEN -u VERCEL \
+  VAULT_ROOT="$VAULT" GRILL_E2E_DIST="$OUT" KN_DIST="$KN_OUT" NODE_PATH="$ROOT/node_modules" \
+  node "$ROOT/scripts/grill-quality-e2e.js"

@@ -65,7 +65,37 @@ export interface SharedUnderstanding {
   risks: string[];
   remainingAssumptions: string[];
   implementationScope: string[];
+  /** 今回やらないこと（スコープ外を明示して実装時の暴走を防ぐ） */
+  nonGoals?: string[];
+  /** 守るべき制約（既存を壊さない等） */
+  constraints?: string[];
+  /** 完了判定基準。ここまで書けてはじめて実装着手できる */
+  acceptanceCriteria?: string[];
   generatedAt: string;
+}
+
+/**
+ * 品質メタデータ（Machine State内のみ。Knowledgeには入れない）。
+ * 「なぜこのGrillの品質が低かったのか」を後から確認するための情報。
+ */
+export interface GrillQuality {
+  designTreeSource: "llm" | "fallback";
+  fallbackUsed: boolean;
+  providerIds: FactProviderId[];
+  generatedNodeCount: number;
+  duplicateQuestionsRemoved: number;
+  validationWarnings: string[];
+  /** fallback時に選ばれたtopic原型（sales/software/business/investment/productivity/generic） */
+  archetype?: string;
+  /** 未確定検出による追加Round数（暴走防止のため上限あり） */
+  completenessRounds?: number;
+}
+
+/** 壁打ちの品質評価（任意）。正式Knowledgeには入れない。 */
+export interface GrillFeedback {
+  rating: "good" | "neutral" | "bad";
+  comment?: string;
+  submittedAt: string;
 }
 
 /**
@@ -92,9 +122,16 @@ export interface GrillSession {
   secretaryId: string;
   /** 直近の保存が永続実体に届いたか（D3） */
   durability: "durable" | "volatile";
+  /** 品質メタデータ（additive・Machine State内のみ） */
+  quality?: GrillQuality;
+  /** ユーザーの品質評価（additive・Knowledgeには入れない） */
+  feedback?: GrillFeedback;
   createdAt: string;
   updatedAt: string;
 }
+
+/** 1Roundで画面に出す質問の上限。Design Tree上のFrontierは全件維持する。 */
+export const MAX_QUESTIONS_PER_ROUND = 4;
 
 /** セッション一覧（再開UI用）の軽量表現 */
 export interface GrillSessionSummary {
