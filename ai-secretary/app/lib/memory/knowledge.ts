@@ -1,54 +1,57 @@
 import { generateUniqueId } from "../utils/id";
-import { getVaultFile } from "../vault";
 import { vaultDocumentStore } from "../persistence/vaultStore";
 import { KnowledgeCategory } from "../parser/saveSuggestion";
 import { applyWikiLinks } from "../parser/wikilink";
-import {
-  CANONICAL_DOMAINS,
-  coerceDomainForWrite,
-  resolveDomain,
-  type CanonicalDomain,
-} from "../knowledge/domain";
-import { canAiAutoWrite } from "../knowledge/writePolicy";
-import { isKnowledgeStatus, type KnowledgeStatus } from "../knowledge/types";
+import { CANONICAL_DOMAINS, requireCanonicalDomain, type CanonicalDomain } from "../knowledge/domain";
+import { canWrite } from "../knowledge/writePolicy";
+import { isKnowledgeStatus, managedByForStatus, type KnowledgeStatus } from "../knowledge/types";
 
 export interface KnowledgeSaveInput {
   title: string;
   slug: string;
-  /** Legacy category（8種）または canonical domain（11種）どちらでも可。内部で canonical に解決する。 */
-  category: KnowledgeCategory | string;
-  /** 明示的に canonical domain を渡したい場合（未指定なら category から解決） */
+  /** Legacy category（8種）または canonical domain（11種）。未指定なら domain を使う。 */
+  category?: KnowledgeCategory | string;
+  /** canonical domain（優先）。未解決なら requireCanonicalDomain が throw する。 */
   domain?: string;
   importance: 1 | 2 | 3;
   content: string;
+  /** 既定は promoted（正式Knowledge）。promoted/merged は managed_by:human になる。 */
   status?: KnowledgeStatus | "raw" | "reviewed";
   tags?: string[];
   source_ref?: string[];
   related?: string[];
-  id?: string; // Reused when updating/overwriting status
-  sha?: string; // Required for GitHub API overwrite
+  /** レガシー: 既存Knowledgeの status を更新する明示操作（note/promote 等）。指定時は Approved Write 扱い。 */
+  id?: string;
+  sha?: string;
+  /**
+   * Human Approval 済みの明示書き込みか（promote / 直接保存API）。
+   * 正式Knowledge（Human Managed）へ書くため、既定 false では writePolicy に拒否される。
+   * id 指定（レガシー明示 promote）時は自動的に approved 扱いになる。
+   */
+  approved?: boolean;
 }
 
-/** 旧 status 文字列を新 status enum にマッピング（後方互換） */
 function normalizeStatus(status: KnowledgeSaveInput["status"]): KnowledgeStatus {
-  if (!status) return "captured";
+  if (!status) return "promoted";
   if (isKnowledgeStatus(status)) return status;
-  // legacy 値のマッピング
   if (status === "raw") return "captured";
   if (status === "reviewed") return "candidate";
-  return "captured";
+  return "promoted";
 }
 
 /**
- * Saves a new or existing knowledge markdown file to the Vault with Frontmatter metadata.
+ * 正式Knowledge（promoted/merged）を Vault へ書き込む low-level writer。
  *
- * ADR-A/C/F/G (docs/14):
- * - 保存先は canonical domain 配下（memory/knowledge/<domain>）に統一。
- * - frontmatter に domain / status / managed_by:ai を付与。
- * - Vault 書き込みポリシー(canAiAutoWrite)を通す（Human Managed 既存ファイルは自動上書きしない）。
- * Resolves naming conflicts by adding numerical suffixes, applies WikiLinks, and links related files.
+ * Phase4 修正:
+ *  - 修正1: managed_by は status から決定（promoted/merged → human）。
+ *  - 修正2: domain は requireCanonicalDomain で必須化（personal への自動fallback廃止）。未解決は throw。
+ *  - 修正3: Human Managed のため canWrite({approved}) 経路でのみ書ける。
+ *  - 修正4（案B）: 新規昇格は常に新規ファイルを作成する。
+ *    ただし id 指定のレガシー明示 promote（note/promote 等）は従来どおり同一idで更新する。
  */
-export async function saveKnowledge(input: KnowledgeSaveInput): Promise<{ success: boolean; path: string; id: string }> {
+export async function saveKnowledge(
+  input: KnowledgeSaveInput
+): Promise<{ success: boolean; path: string; id: string }> {
   const {
     title,
     slug,
@@ -62,30 +65,24 @@ export async function saveKnowledge(input: KnowledgeSaveInput): Promise<{ succes
     related = [],
     id: existingId,
     sha,
+    approved = false,
   } = input;
 
-  // Canonical domain へ解決（legacy category も alias で吸収）
-  const domain: CanonicalDomain = coerceDomainForWrite(domainInput ?? category);
-  const domainRes = resolveDomain(domainInput ?? category);
-  if (domainRes.warning) {
-    console.warn(`[knowledge] domain 解決: ${domainRes.warning}`);
-  }
+  const domain: CanonicalDomain = requireCanonicalDomain(domainInput ?? category);
   const normalizedStatus = normalizeStatus(status);
+  const managedBy = managedByForStatus(normalizedStatus);
+  // 正式Knowledge = Human Managed。直接保存/promote/レガシーid更新は明示的Approved Write。
+  const effectiveApproved = approved || Boolean(existingId);
 
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
+  const dateHyphen = `${year}-${month}-${day}`;
 
-  const dateHyphen = `${year}-${month}-${day}`; // YYYY-MM-DD
-
-  // Generate unique sequential ID or reuse existing
   const id = existingId || (await generateUniqueId("kn"));
-
-  // Apply WikiLinks to the content before saving
   const linkedContent = applyWikiLinks(content);
 
-  // Estimate related files dynamically if not provided（canonical domain を走査）
   const finalRelated = [...related];
   if (finalRelated.length === 0 && tags.length > 0) {
     try {
@@ -95,17 +92,14 @@ export async function saveKnowledge(input: KnowledgeSaveInput): Promise<{ succes
         for (const name of fileNames) {
           const filePath = `${dir}/${name}`;
           const { content: fileContent } = await vaultDocumentStore.getFile(filePath);
-
-          // Parse tag list in existing file Frontmatter
           const tagsMatch = fileContent.match(/tags:\s*\[([\s\S]*?)\]/);
           if (tagsMatch && tagsMatch[1]) {
             const existingTags = tagsMatch[1].split(",").map((t) => t.replace(/"/g, "").trim());
-            const hasCommonTag = tags.some((t) => existingTags.includes(t));
-            if (hasCommonTag) {
+            if (tags.some((t) => existingTags.includes(t))) {
               const idMatch = fileContent.match(/id:\s*(kn-\d+-\d+)/);
               if (idMatch && idMatch[1] && idMatch[1] !== id && !finalRelated.includes(idMatch[1])) {
                 finalRelated.push(idMatch[1]);
-                if (finalRelated.length >= 5) break; // Cap at 5 related links
+                if (finalRelated.length >= 5) break;
               }
             }
           }
@@ -117,14 +111,13 @@ export async function saveKnowledge(input: KnowledgeSaveInput): Promise<{ succes
     }
   }
 
-  // Construct Frontmatter（domain / status / managed_by を追加。legacy category も併記して後方互換）
   const frontmatter = `---
 id: ${id}
 type: knowledge
 domain: ${domain}
-category: ${category}
+category: ${category ?? domain}
 status: ${normalizedStatus}
-managed_by: ai
+managed_by: ${managedBy}
 created: ${dateHyphen}
 updated: ${dateHyphen}
 reviewed_at: null
@@ -141,10 +134,9 @@ ${linkedContent}
 
   const targetDir = `memory/knowledge/${domain}`;
 
-  // Conflict resolver - Skip file search if we are overwriting an existing ID/file
   let finalFileName = `${dateHyphen}-${slug}.md`;
-
   if (!existingId) {
+    // 修正4（案B）: 新規昇格は常に新規ファイル。同名衝突のみ連番回避。
     try {
       const existingFiles = await vaultDocumentStore.listFiles(targetDir);
       let counter = 1;
@@ -159,25 +151,15 @@ ${linkedContent}
 
   const targetFilePath = `${targetDir}/${finalFileName}`;
 
-  // ADR-F: 書き込みポリシー強制。既存ファイルの所有権を確認し、Human Managed の自動上書きを禁止。
-  let existingContent = "";
-  if (existingId) {
-    try {
-      existingContent = (await getVaultFile(targetFilePath)).content || "";
-    } catch {
-      existingContent = "";
-    }
-  }
-  const decision = canAiAutoWrite(targetFilePath, existingContent);
+  const decision = canWrite(targetFilePath, "", {
+    approved: effectiveApproved,
+    reason: "promotion",
+  });
   if (!decision.allowed) {
     throw new Error(`[knowledge] ${decision.reason} (${targetFilePath})`);
   }
 
-  await vaultDocumentStore.saveFile(targetFilePath, frontmatter, sha);
+  await vaultDocumentStore.saveFile(targetFilePath, frontmatter, existingId ? sha : undefined);
 
-  return {
-    success: true,
-    path: targetFilePath,
-    id,
-  };
+  return { success: true, path: targetFilePath, id };
 }

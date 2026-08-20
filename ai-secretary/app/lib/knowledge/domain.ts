@@ -4,7 +4,8 @@
  * - Canonical Domain = Knowledge の論理分類（11種）。物理フォルダ構成とは疎結合。
  * - 既存の固定8カテゴリ（Legacy Category）は Alias Resolver で Canonical へ無損失変換する。
  * - 既存 Markdown を一括 move/rename しない。読み込み時に alias 解決するための純関数群。
- * - 未知の domain は勝手に削除・置換せず、warning として検出できるようにする。
+ * - 未知の domain は勝手に削除・置換・personalへfallbackしない（Phase4 修正2）。
+ *   Promotion 前に11 canonical domain のいずれかを必ず確定させる。
  */
 
 /** Canonical Domain（新規Knowledgeはこの11種のみを使用する） */
@@ -40,17 +41,11 @@ export const LEGACY_DOMAIN_ALIASES: Record<string, CanonicalDomain> = {
 };
 
 export type DomainResolution = {
-  /** 入力そのまま */
   input: string;
-  /** 解決後の Canonical Domain（解決できなければ null） */
   domain: CanonicalDomain | null;
-  /** 既に Canonical だったか */
   isCanonical: boolean;
-  /** Legacy alias 経由で解決したか */
   isLegacyAlias: boolean;
-  /** 解決できなかったか（misc など） */
   isUnknown: boolean;
-  /** 未知/alias時の注意メッセージ（migration warning 用） */
   warning?: string;
 };
 
@@ -72,7 +67,7 @@ export function resolveDomain(input: string | undefined | null): DomainResolutio
       isCanonical: false,
       isLegacyAlias: false,
       isUnknown: true,
-      warning: "domain が空です。既定では未分類として扱います。",
+      warning: "domain が空です。Candidate として保持し、Promotion 時に確定してください。",
     };
   }
 
@@ -98,18 +93,21 @@ export function resolveDomain(input: string | undefined | null): DomainResolutio
     isCanonical: false,
     isLegacyAlias: false,
     isUnknown: true,
-    warning: `未知の domain "${raw}" です。自動置換せず未分類として扱います。手動で canonical domain を割り当ててください。`,
+    warning: `未知の domain "${raw}" です。自動置換・自動fallbackせず Candidate として保持します。手動で canonical domain を割り当ててください。`,
   };
 }
 
 /**
- * 保存時に使う「確定 domain」を返す。未知の場合はフォールバックを使う（既定 personal）が、
- * warning は resolveDomain 側で得られるので、呼び出し側でログ/検出できる。
+ * Promotion 等の「正式Knowledge書き込み」用に canonical domain を必須化する（Phase4 修正2）。
+ * 解決できない場合は **fallback せず throw** する。呼び出し側は Candidate に留めること。
  */
-export function coerceDomainForWrite(
-  input: string | undefined | null,
-  fallback: CanonicalDomain = "personal"
-): CanonicalDomain {
+export function requireCanonicalDomain(input: string | undefined | null): CanonicalDomain {
   const r = resolveDomain(input);
-  return r.domain ?? fallback;
+  if (!r.domain) {
+    throw new Error(
+      `domain "${input ?? ""}" は canonical domain に解決できません。` +
+        `正式Knowledgeへ昇格する前に、11 canonical domain のいずれかを確定してください。`
+    );
+  }
+  return r.domain;
 }

@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
     const { title, contentBody, frontmatter } = parseMarkdownContent(source.content);
     
     // Parse existing frontmatter values to carry over
-    const category = (frontmatter.category || "misc") as KnowledgeCategory;
+    const category = (frontmatter.category || "content") as KnowledgeCategory;
     const importance = parseInt(frontmatter.importance || "1", 10) as (1 | 2 | 3);
     const tags = parseArray(frontmatter.tags);
     const source_ref = parseArray(frontmatter.source_ref);

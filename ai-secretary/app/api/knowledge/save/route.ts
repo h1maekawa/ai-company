@@ -14,12 +14,15 @@ const LEGACY_CATEGORIES = [
   "misc",
 ];
 
+/**
+ * POST /api/knowledge/save
+ * 直接の正式Knowledge保存（ユーザーの明示操作）。Human Approval 相当の Approved Write として扱う。
+ * domain は canonical / legacy(alias) で解決できることが必須（未解決は 400）。
+ */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { title, slug, category, domain, importance, content } = body;
-
-    // category か domain のどちらか必須（後方互換: 旧クライアントは category を送る）
     const rawClass = domain ?? category;
 
     if (!title || !slug || !rawClass || !content) {
@@ -29,19 +32,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // canonical domain（11種）か legacy category（8種）のどちらかであれば受理。
     const isCanonical = isCanonicalDomain(rawClass);
     const isLegacy = LEGACY_CATEGORIES.includes(rawClass);
-    if (!isCanonical && !isLegacy) {
-      const resolved = resolveDomain(rawClass);
-      if (!resolved.domain) {
-        return NextResponse.json(
-          {
-            error: `無効な category/domain です。canonical domain もしくは legacy category を指定してください。`,
-          },
-          { status: 400 }
-        );
-      }
+    if (!isCanonical && !isLegacy && !resolveDomain(rawClass).domain) {
+      return NextResponse.json(
+        { error: "無効な category/domain です。canonical domain もしくは legacy category を指定してください。" },
+        { status: 400 }
+      );
     }
 
     const cleanImportance = importance === 1 || importance === 2 || importance === 3 ? importance : 1;
@@ -53,6 +50,8 @@ export async function POST(req: NextRequest) {
       domain: domain ?? undefined,
       importance: cleanImportance as 1 | 2 | 3,
       content,
+      status: "promoted",
+      approved: true, // 直接保存API = 明示的なHuman Approved Write
     });
 
     return NextResponse.json(result);

@@ -1,35 +1,33 @@
 /**
- * Vault 書き込み安全ポリシー（ADR-F, docs/14）。
+ * Vault 書き込み安全ポリシー（ADR-F, docs/14, Phase4修正3）。
  *
- * AI が自動書き込みできるのは AI Managed 領域のみ。Human Managed の既存 Markdown に対し、
- * AI は自動 overwrite / delete / rename / move を行わない。
- * Confirmation UI だけに依存せず、この関数群で「コード側で」ポリシーを強制する。
+ * ルール（コード側で強制。Confirmation UI に依存しない）:
+ *  1. AI による自動 create / overwrite は **AI Managed 領域のみ**。
+ *  2. AI Managed 領域外（Human Managed）への新規作成・更新も、自動では禁止。
+ *  3. managed_by: human の既存ファイルは、たとえ AI Managed パスでも自動書き込み禁止。
+ *  4. Human Managed への書き込みは「Explicit Approved Write」経路のみ許可
+ *     （AI Proposal → Diff → Human Approval → Apply。promote/merge がこれに当たる）。
  *
- * 破壊的操作（delete/move/rename）は vault.ts に存在しないため、ここでは
- * 「自動書き込み(create/overwrite)して良いか」だけを判定する。
+ * 破壊的操作（delete/move/rename）は vault.ts に存在しない（＝構造的に不可）。
  */
 
 import type { ManagedBy } from "./types";
 
 /**
- * AI が自動で書き込んでよい path プレフィックス（AI Managed 領域）。
- * 末尾 "/" のものはディレクトリ配下すべて。
+ * AI が自動で書き込んでよい path プレフィックス（AI Managed 作業領域のみ）。
+ * ※ memory/knowledge/ は **含めない**（正式Knowledge = Human Managed、promote 経由でのみ作成）。
  */
 export const AI_MANAGED_PREFIXES = [
   "memory/personal/inbox/",
   "memory/personal/note/drafts/",
-  "memory/personal/grilling/", // Grilling working state（将来）
-  "memory/personal/summaries/", // temporary summaries（将来）
-  "memory/personal/candidates/", // promotion candidates（将来）
+  "memory/personal/grilling/", // Grilling working state
+  "memory/personal/summaries/", // temporary summaries
+  "memory/personal/candidates/", // promotion candidates（別置きする場合）
   "memory/chat-log/",
   "memory/kaizen/",
-  "memory/knowledge/", // Knowledge は AI が生成する（作成は可・既存の human 上書きは別途ガード）
 ] as const;
 
-/**
- * 明示的に Human Managed（AIの自動上書き禁止）な既知 path。
- * これらは AI_MANAGED プレフィックスに一致しても Human 扱いを優先する。
- */
+/** 明示的に Human Managed（AIの自動書き込み禁止）な既知 path。 */
 export const HUMAN_MANAGED_PATHS = [
   "memory/personal/profile.md",
   "memory/personal/goals.md",
@@ -43,9 +41,7 @@ export function isAiManagedPath(path: string): boolean {
   return AI_MANAGED_PREFIXES.some((p) => clean.startsWith(p));
 }
 
-/**
- * frontmatter の managed_by を読む（無ければ null）。
- */
+/** frontmatter の managed_by を読む（無ければ null）。 */
 export function readManagedBy(content: string): ManagedBy | null {
   const m = content.match(/^\s*managed_by:\s*(ai|human)\s*$/im);
   if (!m) return null;
@@ -54,58 +50,73 @@ export function readManagedBy(content: string): ManagedBy | null {
 
 /**
  * ファイルの所有権を判定する（ADR-F 既定: 不明は human）。
- * @param existingContent 既存ファイル本文（新規作成なら undefined/空）
+ * frontmatter を最優先し、無ければ path で判定（AI Managed 領域なら ai、それ以外は human）。
  */
 export function classifyOwnership(path: string, existingContent?: string): ManagedBy {
   if (existingContent && existingContent.trim()) {
     const declared = readManagedBy(existingContent);
-    if (declared) return declared; // frontmatter を最優先
+    if (declared) return declared;
   }
-  // frontmatter が無い場合は path で判定。AI管理領域なら ai、それ以外は human（既定）。
   return isAiManagedPath(path) ? "ai" : "human";
 }
 
 export type WriteDecision = { allowed: boolean; ownership: ManagedBy; reason: string };
 
 /**
- * AI が自動で（承認フローなしで）このファイルを create/overwrite してよいか。
+ * AI が自動で（承認フローなしで）create/overwrite してよいか（Phase4修正3）。
  *
- * - 新規作成 or AI Managed 領域 → 許可
- * - 既存の Human Managed ファイルの上書き → 拒否（AI Proposal → Diff → Human Approval → Apply が必要）
+ * - managed_by: human の既存ファイル → 常に拒否
+ * - AI Managed 領域（かつ human でない）→ 許可（新規/更新とも）
+ * - それ以外（Human Managed 領域。新規作成含む）→ 拒否
  */
 export function canAiAutoWrite(path: string, existingContent?: string): WriteDecision {
-  const hasExisting = Boolean(existingContent && existingContent.trim());
-  const ownership = classifyOwnership(path, existingContent);
-
-  if (!hasExisting) {
-    // 新規作成: AI管理領域なら無条件OK。それ以外でも「新規作成」は破壊ではないので許可するが、
-    // human 既定領域への新規作成は呼び出し側が意図しているはずなので ownership を返して委ねる。
+  const declared = existingContent ? readManagedBy(existingContent) : null;
+  if (declared === "human") {
     return {
-      allowed: true,
-      ownership,
-      reason: isAiManagedPath(path)
-        ? "AI Managed 領域への新規作成"
-        : "新規作成（既存ファイルの破壊なし）",
+      allowed: false,
+      ownership: "human",
+      reason:
+        "managed_by: human のファイルは AI が自動編集できません（Approved Write 経路が必要）。",
     };
   }
 
-  // 既存あり
-  if (ownership === "ai") {
-    return { allowed: true, ownership, reason: "AI Managed ファイルの更新" };
+  if (isAiManagedPath(path)) {
+    return { allowed: true, ownership: "ai", reason: "AI Managed 領域への書き込み" };
   }
 
   return {
     allowed: false,
-    ownership,
+    ownership: "human",
     reason:
-      "Human Managed の既存ファイルは AI が自動上書きできません（AI Proposal → Diff → Human Approval → Apply が必要）。",
+      "AI Managed 領域外への自動 create/overwrite は禁止です（Human Managed。Approved Write 経路が必要）。",
   };
 }
 
-/** canAiAutoWrite が false のとき throw するヘルパー。 */
+/**
+ * Human Approval 済みの明示的書き込み（promote/merge/human_edit）。
+ * canAiAutoWrite を迂回してよい唯一の経路。呼び出し元は必ず人間承認を経ていること。
+ */
+export type ApprovedWriteReason = "promotion" | "merge" | "human_edit";
+
+export function canWrite(
+  path: string,
+  existingContent: string | undefined,
+  opts: { approved?: boolean; reason?: ApprovedWriteReason } = {}
+): WriteDecision {
+  if (opts.approved) {
+    return {
+      allowed: true,
+      ownership: classifyOwnership(path, existingContent),
+      reason: `Explicit Approved Write (${opts.reason ?? "human_edit"})`,
+    };
+  }
+  return canAiAutoWrite(path, existingContent);
+}
+
+/** canAiAutoWrite が false のとき throw するヘルパー（自動経路用）。 */
 export function assertAiAutoWritable(path: string, existingContent?: string): void {
   const d = canAiAutoWrite(path, existingContent);
   if (!d.allowed) {
-    throw new Error(`[writePolicy] 書き込み拒否: ${path} — ${d.reason}`);
+    throw new Error(`[writePolicy] 自動書き込み拒否: ${path} — ${d.reason}`);
   }
 }
