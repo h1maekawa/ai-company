@@ -1,5 +1,6 @@
 import { ChatMessage } from "./types";
 import { AIRateLimitError, parseRetryAfterMs } from "./errors";
+import type { AIResponseFormat } from "./client";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
@@ -7,7 +8,8 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 export async function callGemini(
   message: string,
   systemPrompt: string,
-  history: ChatMessage[] = []
+  history: ChatMessage[] = [],
+  responseFormat: AIResponseFormat = "text"
 ): Promise<string> {
   if (!GEMINI_API_KEY) {
     throw new Error("GeminiのAPIキーが未設定です。GEMINI_API_KEY を .env.local または Vercel Environment Variables に設定してください。");
@@ -29,6 +31,9 @@ export async function callGemini(
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents,
+        ...(responseFormat === "json"
+          ? { generationConfig: { responseMimeType: "application/json" } }
+          : {}),
       }),
     }
   );

@@ -109,7 +109,7 @@ export interface FrontierStats {
 export interface GenerationOutcome {
   source: "llm" | "fallback";
   provider?: string;
-  /** invalid_json | quality_gate_failed | provider_error | timeout | empty_response | rate_limited */
+  /** invalid_json | quality_gate_failed | provider_error | timeout | empty_response | provider-specific reason code */
   fallbackReason?: string;
   attempts?: number;
 }
@@ -124,7 +124,7 @@ export interface GenerationOutcome {
 export interface GenerationMeta {
   provider?: string;
   attempts?: number;
-  /** invalid_json | quality_gate_failed | provider_error | timeout | empty_response | rate_limited */
+  /** invalid_json | quality_gate_failed | provider_error | timeout | empty_response | provider-specific reason code */
   fallbackReason?: string;
   /** Design Tree生成の結果（Phase5.3.1・additive） */
   designTree?: GenerationOutcome;

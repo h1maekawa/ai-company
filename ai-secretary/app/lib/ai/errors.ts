@@ -7,7 +7,25 @@
  *   これにより Benchmark 側だけが Retry-After を尊重した再試行を行える（本番は fail-open のまま）。
  */
 
-export class AIRateLimitError extends Error {
+export type AIProviderErrorCode =
+  | "invalid_api_key"
+  | "model_permission"
+  | "model_unavailable"
+  | "rate_limited"
+  | "input_too_long"
+  | "provider_error";
+
+export class AIProviderError extends Error {
+  readonly code: AIProviderErrorCode;
+
+  constructor(code: AIProviderErrorCode) {
+    super(code);
+    this.name = "AIProviderError";
+    this.code = code;
+  }
+}
+
+export class AIRateLimitError extends AIProviderError {
   readonly isRateLimit = true;
   /** プロバイダが提示した待機時間（ms）。不明なら undefined。 */
   readonly retryAfterMs?: number;
@@ -17,6 +35,17 @@ export class AIRateLimitError extends Error {
     this.name = "AIRateLimitError";
     this.retryAfterMs = retryAfterMs;
   }
+}
+
+export function getAIProviderErrorCode(e: unknown): AIProviderErrorCode | undefined {
+  if (e instanceof AIProviderError) return e.code;
+  if (typeof e === "object" && e !== null && typeof (e as { code?: unknown }).code === "string") {
+    const code = (e as { code: string }).code;
+    if (["invalid_api_key", "model_permission", "model_unavailable", "rate_limited", "input_too_long", "provider_error"].includes(code)) {
+      return code as AIProviderErrorCode;
+    }
+  }
+  return undefined;
 }
 
 export function isRateLimitError(e: unknown): e is AIRateLimitError {

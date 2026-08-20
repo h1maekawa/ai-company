@@ -13,6 +13,8 @@ const FACTS = require(path.join(DIST, "grill/facts.js"));
 const DT = require(path.join(DIST, "grill/designTree.js"));
 const SUG = require(path.join(DIST, "grill/suGate.js"));
 const BM = require(path.join(DIST, "grill/benchmarks.js"));
+const GROQ = require(path.join(DIST, "ai/groq.js"));
+const AIERR = require(path.join(DIST, "ai/errors.js"));
 
 const VAULT = process.env.VAULT_ROOT;
 let pass = 0, fail = 0;
@@ -205,7 +207,7 @@ const node = (id, deps, extra = {}) => ({
   ok(!!genMeta, "generationメタが記録される");
   if (vfb.session.quality.fallbackUsed) {
     ok(!!genMeta.fallbackReason, "fallback時は理由コードを記録: " + genMeta.fallbackReason);
-    ok(/^(invalid_json|quality_gate_failed|provider_error|timeout|empty_response)$/.test(genMeta.fallbackReason), "理由コードは既定の集合内");
+    ok(/^(invalid_json|quality_gate_failed|invalid_api_key|model_permission|model_unavailable|rate_limited|input_too_long|provider_error|timeout|empty_response)$/.test(genMeta.fallbackReason), "理由コードは既定の集合内");
   } else {
     ok(genMeta.fallbackReason === undefined, "LLM成功時はfallbackReasonなし");
   }
@@ -307,6 +309,20 @@ const node = (id, deps, extra = {}) => ({
     await QS.retryRateLimitedOnce(async () => { prodCalls++; throw { isRateLimit: true }; }, false, async () => {});
   } catch {}
   ok(prodCalls === 1, "本番既定OFFでは再試行しない");
+
+  console.log("\n[Q21] Provider error taxonomy / Structured Output");
+  ok(GROQ.classifyGroqError(401, "") === "invalid_api_key", "Groq 401 → invalid_api_key");
+  ok(GROQ.classifyGroqError(403, "") === "model_permission", "Groq 403 → model_permission");
+  ok(GROQ.classifyGroqError(404, "") === "model_unavailable", "Groq 404 → model_unavailable");
+  ok(GROQ.classifyGroqError(429, "") === "rate_limited", "Groq 429 → rate_limited");
+  ok(GROQ.classifyGroqError(400, "maximum context token limit exceeded") === "input_too_long", "Groq context超過 → input_too_long");
+  ok(GROQ.classifyGroqError(500, "internal") === "provider_error", "Groq その他 → provider_error");
+  const jsonBody = GROQ.buildGroqRequestBody([{ role: "user", content: "x" }], "json");
+  const textBody = GROQ.buildGroqRequestBody([{ role: "user", content: "x" }], "text");
+  ok(jsonBody.response_format?.type === "json_object", "Groq JSON Object ModeをProvider層で設定");
+  ok(textBody.response_format === undefined, "通常呼び出しはStructured Outputを強制しない");
+  ok(AIERR.parseRetryAfterMs("2", "") === 2000, "Retry-After秒を解析");
+  ok(AIERR.parseRetryAfterMs(null, '{"retryDelay":"3.5s"}') === 3500, "API retryDelayを解析");
 
   console.log("\n========== Benchmark: 5シナリオ ==========");
   const scenarios = [

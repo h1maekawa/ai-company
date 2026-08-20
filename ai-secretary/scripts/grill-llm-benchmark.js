@@ -37,6 +37,13 @@ const SCENARIOS = SELECTED_SCENARIOS.map((sc) => [sc.name, sc.topic, sc]);
 const lines = [];
 const out = (s = "") => { lines.push(s); console.log(s); };
 
+function selectedModel() {
+  const provider = process.env.DEFAULT_PROVIDER || "gemini";
+  if (provider === "groq") return process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+  if (provider === "ollama") return process.env.OLLAMA_MODEL || "qwen3:8b";
+  return process.env.GEMINI_MODEL || "gemini-2.5-flash";
+}
+
 function treeTable(session) {
   const rows = ["| Node | 質問 | dependsOn | 推奨 | 推奨理由 |", "|---|---|---|---|---|"];
   for (const n of session.designTree) {
@@ -91,7 +98,7 @@ async function completeAll(view) {
  */
 async function preflight() {
   const provider = process.env.DEFAULT_PROVIDER || "(未設定)";
-  const model = process.env.GEMINI_MODEL || process.env.GROQ_MODEL || "(既定)";
+  const model = selectedModel();
   console.log(`\n[preflight] provider=${provider} model=${model} で実LLMへの疎通を確認します...`);
   const t0 = Date.now();
   try {
@@ -141,7 +148,8 @@ async function preflight() {
   out(`# 16. Grilling 実LLM品質レポート（Phase 5.2）`);
   out();
   out(`- 実行日時: ${startedAt}`);
-  out(`- Provider: ${process.env.DEFAULT_PROVIDER || "(未設定)"} / model: ${process.env.GEMINI_MODEL || process.env.GROQ_MODEL || "(既定)"}`);
+  out(`- Provider: ${process.env.DEFAULT_PROVIDER || "gemini"} / model: ${selectedModel()}`);
+  out(`- Structured output: ${process.env.GRILL_BENCH_STRUCTURED_OUTPUT === "1" ? "enabled" : "disabled"}`);
   out(`- Vault: ${process.env.GRILL_BENCH_REAL_VAULT === "1" ? "実Vault（読み取り）" : "一時Vault（実データに触れない）"}`);
   out(`- LLM疎通(preflight): ${pre.ok ? `✅ 応答あり (${pre.ms}ms)` : `❌ 到達不可（${pre.error}）— 以下はfallback結果`}`);
   out(`- 注意: APIキー等のSecretは本レポートに一切記載しない。`);
@@ -156,7 +164,9 @@ async function preflight() {
     out(`## ${name} — ${topic}`);
     out();
     console.error(`  → ${name} を生成中...`);
+    const scenarioStartedAt = Date.now();
     const view = await ORCH.startGrilling({ topic });
+    const designTreeLatencyMs = Date.now() - scenarioStartedAt;
     const s = view.session;
     console.error(`     source=${view.session.quality?.designTreeSource} nodes=${view.session.designTree.length}`);
     const q = s.quality || {};
@@ -171,6 +181,7 @@ async function preflight() {
     out(`| fallbackUsed | **${q.fallbackUsed}** ${q.generation?.fallbackReason ? `(${q.generation.fallbackReason})` : ""} |`);
     const dtGen = q.generation?.designTree;
     out("| designTree generation | " + (dtGen?.source || "—") + " / attempts=" + (dtGen?.attempts ?? "—") + (dtGen?.fallbackReason ? " / " + dtGen.fallbackReason : "") + " |");
+    out("| designTree latency | " + designTreeLatencyMs + "ms |");
     out(`| generatedNodeCount | ${q.generatedNodeCount} |`);
     out(`| duplicateQuestionsRemoved | ${q.duplicateQuestionsRemoved} |`);
     out(`| validationWarnings | ${(q.validationWarnings || []).length}件 ${(q.validationWarnings || []).slice(0, 3).map((w) => `\`${w}\``).join(" ")} |`);
@@ -220,6 +231,7 @@ async function preflight() {
       spec: spec.grade,
       rec: rec.grade,
       avgVisible: fstat.averageVisibleQuestionsPerRound,
+      latencyMs: designTreeLatencyMs,
     });
 
     if (scenario.multiRound) {
@@ -280,10 +292,10 @@ async function preflight() {
   out();
   out(`## サマリー`);
   out();
-  out(`| Scenario | Domain | source | fallback | Nodes | initFrontier | estRounds | depth | avgVisible | Scope | TopicSpec | RecQuality |`);
-  out(`|---|---|---|---|---|---|---|---|---|---|---|---|`);
+  out(`| Scenario | Domain | source | fallback | reason | latencyMs | Nodes | initFrontier | estRounds | depth | avgVisible | Scope | TopicSpec | RecQuality |`);
+  out(`|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`);
   for (const r of summary) {
-    out(`| ${r.name} | ${r.domain} | ${r.source} | ${r.fallbackUsed} | ${r.nodes} | ${r.initialFrontierSize} | ${r.estimatedRounds} | ${r.maxDependencyDepth} | ${r.avgVisible} | **${r.scope}** | **${r.spec}** | **${r.rec}** |`);
+    out(`| ${r.name} | ${r.domain} | ${r.source} | ${r.fallbackUsed} | ${r.fallbackReason || "—"} | ${r.latencyMs} | ${r.nodes} | ${r.initialFrontierSize} | ${r.estimatedRounds} | ${r.maxDependencyDepth} | ${r.avgVisible} | **${r.scope}** | **${r.spec}** | **${r.rec}** |`);
   }
   out();
   const llmCount = summary.filter((r) => r.source === "llm").length;

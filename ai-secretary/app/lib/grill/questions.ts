@@ -9,7 +9,7 @@
  */
 
 import { callAI, type AIProvider } from "../ai/client";
-import { isRateLimitError } from "../ai/errors";
+import { getAIProviderErrorCode, isRateLimitError } from "../ai/errors";
 import { fallbackTreeForTopic } from "./archetypes";
 import { rejectedToPromptBlock, type RejectedAlternative } from "./decisions";
 import { validateAndSanitizeTree } from "./validate";
@@ -31,6 +31,8 @@ function tryParseJson<T>(text: string): T | null {
  */
 export function classifyGenerationFailure(e: unknown): string {
   if (isRateLimitError(e)) return "rate_limited";
+  const providerCode = getAIProviderErrorCode(e);
+  if (providerCode) return providerCode;
   const msg = e instanceof Error ? e.message : String(e ?? "");
   if (/timeout|ETIMEDOUT|abort/i.test(msg)) return "timeout";
   return "provider_error";
@@ -75,7 +77,10 @@ async function callAIForGrill(
   system: string,
   opts: { provider?: AIProvider } = {}
 ): Promise<{ value: string; attempts: number }> {
-  return retryRateLimitedOnce(() => callAI(input, system, { provider: opts.provider ?? "auto" }));
+  return retryRateLimitedOnce(() => callAI(input, system, {
+    provider: opts.provider ?? "auto",
+    responseFormat: process.env.GRILL_BENCH_STRUCTURED_OUTPUT === "1" ? "json" : "text",
+  }));
 }
 
 function factBlock(facts: GrillFact[]): string {

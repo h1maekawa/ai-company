@@ -7,13 +7,12 @@ set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${TMPDIR:-/tmp}/grill-bench-dist"
 BENCH_VAULT="${TMPDIR:-/tmp}/grill-bench-vault"
+BENCH_PROVIDER_OVERRIDE="${BENCH_PROVIDER:-}"
+GEMINI_MODEL_OVERRIDE="${GEMINI_MODEL:-}"
+GROQ_MODEL_OVERRIDE="${GROQ_MODEL:-}"
+OLLAMA_MODEL_OVERRIDE="${OLLAMA_MODEL:-}"
 
 cd "$ROOT"
-if [ ! -f .env.local ]; then
-  echo "エラー: ai-secretary/.env.local が見つかりません（GEMINI_API_KEY 等が必要）" >&2
-  exit 1
-fi
-
 rm -rf "$OUT"
 mkdir -p "$BENCH_VAULT/memory/personal/inbox"
 
@@ -36,8 +35,31 @@ npx tsc \
 
 set +e   # 実行中の失敗でもレポート/診断を出せるようにする
 echo "[2/2] 実LLMベンチマーク実行..."
-# .env.local を読み込む（値は表示しない）
-set -a; . ./.env.local; set +a
+# .env.local を読み込む（値は表示しない）。Ollamaのみならファイル不要。
+if [ -f .env.local ]; then
+  set -a; . ./.env.local; set +a
+fi
+
+# CLIで明示した比較条件は.env.localより優先する。
+[ -n "$BENCH_PROVIDER_OVERRIDE" ] && export BENCH_PROVIDER="$BENCH_PROVIDER_OVERRIDE"
+[ -n "$GEMINI_MODEL_OVERRIDE" ] && export GEMINI_MODEL="$GEMINI_MODEL_OVERRIDE"
+[ -n "$GROQ_MODEL_OVERRIDE" ] && export GROQ_MODEL="$GROQ_MODEL_OVERRIDE"
+[ -n "$OLLAMA_MODEL_OVERRIDE" ] && export OLLAMA_MODEL="$OLLAMA_MODEL_OVERRIDE"
+
+case "${BENCH_PROVIDER:-}" in
+  "") ;;
+  gemini|groq|ollama) export DEFAULT_PROVIDER="$BENCH_PROVIDER" ;;
+  *) echo "エラー: BENCH_PROVIDER は gemini / groq / ollama のいずれかです" >&2; exit 1 ;;
+esac
+
+if [ "${DEFAULT_PROVIDER:-}" = "groq" ]; then
+  case "${GROQ_MODEL:-openai/gpt-oss-20b}" in
+    llama-3.1-8b-instant|llama-3.3-70b-versatile)
+      echo "エラー: GROQ_MODEL=${GROQ_MODEL} はshutdown済みです。qwen/qwen3.6-27b または openai/gpt-oss-120b/20b を指定してください" >&2
+      exit 1
+      ;;
+  esac
+fi
 
 if [ "${GRILL_BENCH_REAL_VAULT:-0}" != "1" ]; then
   export VAULT_ROOT="$BENCH_VAULT"
@@ -45,6 +67,7 @@ fi
 # 本番判定を避ける（ローカル実行）
 unset VERCEL
 export GRILL_LLM_RATE_LIMIT_RETRY=1
+export GRILL_BENCH_STRUCTURED_OUTPUT=1
 
 GRILL_E2E_DIST="$OUT" NODE_PATH="$ROOT/node_modules" node "$ROOT/scripts/grill-llm-benchmark.js" 2>&1 | tee "${TMPDIR:-/tmp}/grill-bench.log"
 code=${PIPESTATUS[0]}
