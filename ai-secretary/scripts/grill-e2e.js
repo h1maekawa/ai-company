@@ -118,6 +118,87 @@ const node = (id, deps, extra = {}) => ({
   try { await ORCH.answerGrilling({ sessionId: cur.session.id, answers: { x: "y" } }); } catch (e) { threw = e.message; }
   ok(threw !== null, "confirmed後の回答はthrow");
 
+  console.log("\n[13] 修正して再Grill → 新Node/Frontier追加 → 再度SUへ（D8）");
+  const v2 = await ORCH.startGrilling({ topic: "note事業の伸ばし方" });
+  let c2 = v2;
+  for (let i = 0; i < 12 && c2.session.status === "active"; i++) {
+    const a = {};
+    for (const q of c2.currentQuestions) a[q.id] = q.recommendation;
+    c2 = await ORCH.answerGrilling({ sessionId: c2.session.id, answers: a });
+  }
+  ok(c2.session.status === "ready_for_confirmation", "1周目でready_for_confirmation");
+  const beforeNodes = c2.session.designTree.length;
+  const revised = await ORCH.reviseGrilling({ sessionId: c2.session.id, request: "費用対効果の観点が抜けている" });
+  ok(revised.session.designTree.length > beforeNodes, `Nodeが増える ${beforeNodes} → ${revised.session.designTree.length}`);
+  ok(revised.session.status === "active", "statusがactiveへ戻る（Frontier復活）");
+  ok(revised.currentQuestions.length > 0, "新しいFrontier質問が出る " + revised.currentQuestions.length + "件");
+  ok(!revised.session.sharedUnderstanding, "再Grill中はSUがクリアされる");
+  let c3 = revised;
+  for (let i = 0; i < 12 && c3.session.status === "active"; i++) {
+    const a = {};
+    for (const q of c3.currentQuestions) a[q.id] = q.recommendation;
+    c3 = await ORCH.answerGrilling({ sessionId: c3.session.id, answers: a });
+  }
+  ok(c3.session.status === "ready_for_confirmation", "再度SUまで到達");
+
+  console.log("\n[14] cancelled → Knowledge Candidateにならない（否定系）");
+  const inboxDir2 = path.join(VAULT, "memory/personal/inbox");
+  const beforeCancel = fs.readdirSync(inboxDir2).filter((f) => f.endsWith(".md")).length;
+  const cancelled = await ORCH.cancelGrilling(c3.session.id);
+  ok(cancelled.session.status === "cancelled", "status=cancelled");
+  const afterCancel = fs.readdirSync(inboxDir2).filter((f) => f.endsWith(".md")).length;
+  ok(afterCancel === beforeCancel, "cancelでInboxは増えない（" + beforeCancel + "→" + afterCancel + "）");
+
+  console.log("\n[15] 不正な状態遷移の拒否（否定系）");
+  let rj1 = null;
+  try { await ORCH.confirmGrilling(cancelled.session.id); } catch (e) { rj1 = e.message; }
+  ok(rj1 !== null, "cancelled後のconfirmはthrow");
+  let rj2 = null;
+  try { await ORCH.reviseGrilling({ sessionId: cancelled.session.id, request: "x" }); } catch (e) { rj2 = e.message; }
+  ok(rj2 !== null, "cancelled後のreviseはthrow");
+  let rj3 = null;
+  try { await ORCH.confirmGrilling(view.session.id); } catch (e) { rj3 = e.message; }
+  ok(rj3 !== null, "confirmed後の再confirmはthrow");
+  let rj4 = null;
+  try { await ORCH.reviseGrilling({ sessionId: view.session.id, request: "x" }); } catch (e) { rj4 = e.message; }
+  ok(rj4 !== null, "confirmed後のreviseはthrow");
+  const v3 = await ORCH.startGrilling({ topic: "テスト" });
+  let rj5 = null;
+  try { await ORCH.confirmGrilling(v3.session.id); } catch (e) { rj5 = e.message; }
+  ok(rj5 !== null, "Frontierが残る状態でのconfirmはthrow（AI判断で途中終了しない）");
+
+  console.log("\n[16] Weekly Review側にGrilling由来Candidateが出る（D9接続）");
+  const KN = require(path.join(process.env.KN_DIST || "/tmp/kn-e2e-dist", "knowledge/lifecycle.js"));
+  let grillCandidates = [];
+  try {
+    const all = await KN.listCandidates();
+    grillCandidates = all.filter((c) => c.frontmatter.source === "grilling");
+    ok(grillCandidates.length === 1, "Grilling由来Candidateはちょうど1件（" + grillCandidates.length + "件）");
+  } catch (e) {
+    ok(false, "listCandidates失敗: " + e.message);
+  }
+
+  console.log("\n[17] Redis保存失敗時: 継続 + volatile + 警告（D3）");
+  const volatileSession = {
+    id: "gr-volatile-test", topic: "t", status: "active",
+    designTree: [node("n1", [])], answers: {}, currentFrontier: ["n1"], round: 1,
+    facts: [], secretaryId: "executive-assistant", durability: "durable",
+    createdAt: "x", updatedAt: "x",
+  };
+  // 本番相当（VERCEL=1）ではRedis未設定 → /tmp 保存 → volatile 判定になること
+  const prodStore = require(path.join(DIST, "grill/store.js"));
+  process.env.VERCEL = "1";
+  delete require.cache[require.resolve(path.join(DIST, "grill/store.js"))];
+  const prodStore2 = require(path.join(DIST, "grill/store.js"));
+  const pr = await prodStore2.grillSessionStore.save(volatileSession);
+  ok(pr.durability === "volatile", "本番相当×Redis未設定 → durability=volatile (" + pr.durability + ")");
+  ok(pr.backend === "tmp", "保存先は /tmp（永続実体ではない）: " + pr.backend);
+  ok(typeof pr.warning === "string" && pr.warning.length > 0, "UI表示用の警告文が返る: " + pr.warning);
+  const TYPES = require(path.join(DIST, "grill/types.js"));
+  ok(/再開保証されません/.test(TYPES.VOLATILE_WARNING), "警告文言が『再開保証されません』を含む");
+  delete process.env.VERCEL;
+  void prodStore;
+
   console.log("\n==========================================");
   console.log("RESULT: " + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);

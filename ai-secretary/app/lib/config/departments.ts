@@ -79,7 +79,7 @@ TODO・メモ・壁打ち・相談は何でもまずあなたが受け、必要�
         ],
         saveCategory: "strategy",
         priority: 1,
-        skillIds: ["personal-capture", "personal-todo-add", "personal-today-show", "note-draft-format"]
+        skillIds: ["personal-capture", "personal-todo-add", "personal-today-show", "note-draft-format", "grill-session"]
       },
       {
         id: "executive-inbox",

@@ -2,6 +2,32 @@ import { callAI } from "../ai/client";
 import { AIProvider } from "../ai/client";
 import { SECRETARY_REGISTRY } from "../config/registry";
 
+/**
+ * Grilling（壁打ち）を求めているかの判定（docs/15 D6）。
+ *
+ * Routerの責務は **intent検出と /grill への誘導まで**。
+ * ここでも Chat でも GrillSession の作成・Design Tree生成・Round開始は行わない
+ * （実体は /grill = lib/grill 側）。判定ロジックの重複を避けるためここに集約する。
+ */
+const GRILLING_KEYWORDS = ["壁打ち", "深掘り", "grill", "設計を詰め"];
+
+export function isGrillingRequest(message: string): boolean {
+  const normalized = (message || "").toLowerCase();
+  return GRILLING_KEYWORDS.some((k) => normalized.includes(k));
+}
+
+/** Chatの応答で /grill へ誘導するためのプロンプト指示（セッションはChatで作らない）。 */
+export const GRILL_GUIDANCE_INSTRUCTION = `
+
+## Grilling（壁打ち）への誘導ルール
+ユーザーは「壁打ち」「深掘り」「設計を詰めたい」といった意図を示しています。
+この場では論点を全部詰めようとせず、まず専用のGrilling画面へ案内してください。
+回答の最後に必ず次の形式で1行だけ添えてください（テーマはユーザーの発言から簡潔に）。
+
+Grillingを開始しますか？ → /grill?topic=<テーマ>
+
+あなた自身がDesign Treeを作ったり、質問を大量に並べたりはしないでください。`;
+
 export type RoutingResult = {
   intent: string;
   department: string;
@@ -74,12 +100,7 @@ export async function routeRequest(
       };
     }
 
-    if (
-      normalized.includes("壁打ち") ||
-      normalized.includes("深掘り") ||
-      normalized.includes("grill") ||
-      normalized.includes("設計を詰め")
-    ) {
+    if (isGrillingRequest(message)) {
       // Grillingは複数ターンのセッションのため、実体は /grill（docs/15 D6）。
       // ここではintentとして識別し、秘書からは /grill へ誘導する。
       return {

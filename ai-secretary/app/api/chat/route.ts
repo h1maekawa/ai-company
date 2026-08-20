@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadBus, saveBus } from "@/app/lib/context/bus-server";
 import { switchSecretary } from "@/app/lib/context/bus";
-import { routeRequest } from "@/app/lib/router/executive";
+import { routeRequest, isGrillingRequest, GRILL_GUIDANCE_INSTRUCTION } from "@/app/lib/router/executive";
 import { findSecretary } from "@/app/lib/config/registry";
 import { loadScopedMemory } from "@/app/lib/memory/loader";
 import { saveChatLog } from "@/app/lib/memory/logs";
@@ -152,6 +152,12 @@ export async function POST(req: NextRequest) {
 
     // 6.6 Knowledge保存提案ルールを注入（Phase4: 再利用可能な知見が出たときだけAIが申告する）
     systemPrompt += SAVE_SUGGESTION_PROMPT_INSTRUCTION;
+
+    // 6.7 Grilling意図なら /grill への誘導だけを促す（docs/15 D6）。
+    // Chat側でGrillSessionを作らない／Design Treeを持たない（Grilling Stateは持ち込まない）。
+    if (isGrillingRequest(message)) {
+      systemPrompt += GRILL_GUIDANCE_INSTRUCTION;
+    }
 
     // 7. Call LLM
     const rawReply = await callAI(message, systemPrompt, {

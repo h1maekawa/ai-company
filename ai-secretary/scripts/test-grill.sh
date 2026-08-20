@@ -22,8 +22,15 @@ npx tsc \
   --outDir "$OUT" --module commonjs --target es2020 \
   --moduleResolution node --esModuleInterop --skipLibCheck
 
+# [16] で Weekly Review 側の Candidate 一覧を検証するため Knowledge 側もトランスパイルする
+KN_OUT="${TMPDIR:-/tmp}/grill-e2e-kn"
+rm -rf "$KN_OUT"
+npx tsc app/lib/knowledge/lifecycle.ts \
+  --outDir "$KN_OUT" --module commonjs --target es2020 \
+  --moduleResolution node --esModuleInterop --skipLibCheck
+
 echo "[2/2] E2E実行..."
 env -u GITHUB_TOKEN -u GITHUB_OWNER -u GITHUB_REPO \
     -u UPSTASH_REDIS_REST_URL -u UPSTASH_REDIS_REST_TOKEN -u VERCEL \
-  VAULT_ROOT="$VAULT" GRILL_E2E_DIST="$OUT" NODE_PATH="$ROOT/node_modules" \
+  VAULT_ROOT="$VAULT" GRILL_E2E_DIST="$OUT" KN_DIST="$KN_OUT" NODE_PATH="$ROOT/node_modules" \
   node "$ROOT/scripts/grill-e2e.js"
