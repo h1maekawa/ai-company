@@ -105,12 +105,31 @@ export interface FrontierStats {
   maxDependencyDepth: number;
 }
 
-/** LLM生成の結果メタ。APIキー・プロンプト全文は保存しない。 */
+/** LLM生成1回分の結果（Design Tree / Shared Understanding それぞれ）。 */
+export interface GenerationOutcome {
+  source: "llm" | "fallback";
+  provider?: string;
+  /** invalid_json | quality_gate_failed | provider_error | timeout | empty_response | rate_limited */
+  fallbackReason?: string;
+  attempts?: number;
+}
+
+/**
+ * LLM生成の結果メタ。APIキー・プロンプト全文は保存しない。
+ *
+ * Phase5.3.1: Design Tree と Shared Understanding は別々のLLM呼び出しであり、
+ * 片方だけ失敗する（例: Design Tree成功 / SUがrate limit）ため生成メタを分離する。
+ * 既存の provider / attempts / fallbackReason は Design Tree のものとして後方互換で残す。
+ */
 export interface GenerationMeta {
   provider?: string;
   attempts?: number;
-  /** invalid_json | quality_gate_failed | provider_error | timeout | empty_response */
+  /** invalid_json | quality_gate_failed | provider_error | timeout | empty_response | rate_limited */
   fallbackReason?: string;
+  /** Design Tree生成の結果（Phase5.3.1・additive） */
+  designTree?: GenerationOutcome;
+  /** Shared Understanding生成の結果（生成前は undefined・Phase5.3.1・additive） */
+  sharedUnderstanding?: GenerationOutcome;
 }
 
 /** 壁打ちの品質評価（任意）。正式Knowledgeには入れない。 */

@@ -21,10 +21,18 @@ const ORCH = require(path.join(DIST, "grill/orchestrator.js"));
 const AI = require(path.join(DIST, "ai/client.js"));
 const VAL = require(path.join(DIST, "grill/validate.js"));
 const BM = require(path.join(DIST, "grill/benchmarks.js"));
+const QS = require(path.join(DIST, "grill/questions.js"));
 
 const OUT = process.env.BENCH_OUT || path.join(__dirname, "..", "..", "docs", "16_GRILLING_LLM_QUALITY_REPORT.md");
 
-const SCENARIOS = BM.BENCHMARK_SCENARIOS.map((sc) => [sc.name, sc.topic, sc]);
+let SELECTED_SCENARIOS;
+try {
+  SELECTED_SCENARIOS = BM.selectBenchmarkScenarios(process.env.BENCH_SCENARIOS);
+} catch (e) {
+  console.error("[benchmark] " + (e instanceof Error ? e.message : String(e)));
+  process.exit(1);
+}
+const SCENARIOS = SELECTED_SCENARIOS.map((sc) => [sc.name, sc.topic, sc]);
 
 const lines = [];
 const out = (s = "") => { lines.push(s); console.log(s); };
@@ -87,7 +95,11 @@ async function preflight() {
   console.log(`\n[preflight] provider=${provider} model=${model} で実LLMへの疎通を確認します...`);
   const t0 = Date.now();
   try {
-    const reply = await AI.callAI("OK とだけ返してください。", "あなたは疎通確認用です。短く答えてください。", {});
+    const result = await QS.retryRateLimitedOnce(
+      () => AI.callAI("OK とだけ返してください。", "あなたは疎通確認用です。短く答えてください。", {}),
+      true
+    );
+    const reply = result.value;
     const ms = Date.now() - t0;
     const text = String(reply || "").trim().slice(0, 40);
     if (!text) throw new Error("空応答");
@@ -157,6 +169,8 @@ async function preflight() {
     out(`| selected providers | ${(q.providerIds || []).join(" / ") || "—"} |`);
     out(`| designTreeSource | **${q.designTreeSource}** |`);
     out(`| fallbackUsed | **${q.fallbackUsed}** ${q.generation?.fallbackReason ? `(${q.generation.fallbackReason})` : ""} |`);
+    const dtGen = q.generation?.designTree;
+    out("| designTree generation | " + (dtGen?.source || "—") + " / attempts=" + (dtGen?.attempts ?? "—") + (dtGen?.fallbackReason ? " / " + dtGen.fallbackReason : "") + " |");
     out(`| generatedNodeCount | ${q.generatedNodeCount} |`);
     out(`| duplicateQuestionsRemoved | ${q.duplicateQuestionsRemoved} |`);
     out(`| validationWarnings | ${(q.validationWarnings || []).length}件 ${(q.validationWarnings || []).slice(0, 3).map((w) => `\`${w}\``).join(" ")} |`);
@@ -255,7 +269,8 @@ async function preflight() {
         const suW = done.session.quality?.sharedUnderstandingWarnings || [];
         out(`SU Quality Gate 警告: ${suW.length}件`);
         for (const w of suW) out(`- ${w}`);
-        out(`SU生成attempts: ${done.session.quality?.generation?.attempts ?? "-"}`);
+        const suGen = done.session.quality?.generation?.sharedUnderstanding;
+        out("SU生成: source=" + (suGen?.source ?? "-") + " / attempts=" + (suGen?.attempts ?? "-") + (suGen?.fallbackReason ? " / " + suGen.fallbackReason : ""));
         out();
       }
     }

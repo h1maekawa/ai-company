@@ -146,7 +146,15 @@ export async function startGrilling(input: {
     archetype: gen.archetype,
     completenessRounds: 0,
     frontierStats: computeFrontierStats(tree, MAX_QUESTIONS_PER_ROUND),
-    generation: gen.generation,
+    generation: {
+      ...gen.generation,
+      designTree: {
+        source: gen.source,
+        provider: gen.generation.provider,
+        attempts: gen.generation.attempts,
+        fallbackReason: gen.generation.fallbackReason,
+      },
+    },
   };
 
   const session: GrillSession = {
@@ -223,7 +231,12 @@ export async function answerGrilling(input: {
         sharedUnderstandingWarnings: suResult.warnings,
         generation: {
           ...(next.quality?.generation ?? {}),
-          attempts: suResult.attempts,
+          sharedUnderstanding: {
+            source: suResult.source,
+            provider: suResult.provider,
+            attempts: suResult.attempts,
+            fallbackReason: suResult.fallbackReason,
+          },
         },
       },
     };

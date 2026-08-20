@@ -1,4 +1,5 @@
 import { ChatMessage } from "./types";
+import { AIRateLimitError, parseRetryAfterMs } from "./errors";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
@@ -34,10 +35,18 @@ export async function callGemini(
 
   if (!res.ok) {
     let detail = `Gemini error: ${res.status}`;
+    let rawBody = "";
     try {
-      const err = await res.json();
+      rawBody = await res.text();
+      const err = JSON.parse(rawBody);
       detail = err?.error?.message ?? detail;
     } catch {}
+
+    // 429（レート制限/クォータ）は「待てば成功しうる失敗」として区別する。
+    // 本番の挙動は変えない（呼び出し側は従来どおり catch して fail-open する）。
+    if (res.status === 429) {
+      throw new AIRateLimitError(parseRetryAfterMs(res.headers.get("retry-after"), rawBody));
+    }
 
     const normalized = detail.toLowerCase();
     if (

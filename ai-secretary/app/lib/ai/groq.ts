@@ -1,4 +1,5 @@
 import { ChatMessage } from "./types";
+import { AIRateLimitError, parseRetryAfterMs } from "./errors";
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY ?? "";
 const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.1-8b-instant";
@@ -33,8 +34,14 @@ export async function callGroq(
   });
 
   if (!res.ok) {
-    const err = await res.json();
-    const detail = err?.error?.message ?? `Groq error: ${res.status}`;
+    const rawBody = await res.text().catch(() => "");
+    if (res.status === 429) {
+      throw new AIRateLimitError(parseRetryAfterMs(res.headers.get("retry-after"), rawBody));
+    }
+    let detail = `Groq error: ${res.status}`;
+    try {
+      detail = JSON.parse(rawBody)?.error?.message ?? detail;
+    } catch {}
     throw new Error(`Groqの設定に問題があります。GROQ_API_KEY が設定されているか確認してください。詳細: ${detail}`);
   }
 

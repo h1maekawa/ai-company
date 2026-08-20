@@ -111,6 +111,8 @@ const node = (id, deps, extra = {}) => ({
   const suRes = await QS.generateSharedUnderstanding(sess, rej);
   const su = suRes.su;
   ok(typeof suRes.attempts === "number" && suRes.attempts >= 1, "SU生成のattemptsを記録 (" + suRes.attempts + ")");
+  ok(suRes.source === "llm" || suRes.source === "fallback", "SU段階のsourceを記録");
+  if (suRes.source === "fallback") ok(!!suRes.fallbackReason, "SU fallback理由を段階別に記録");
   ok(Array.isArray(suRes.warnings), "SU Quality Gateの警告を返す (" + suRes.warnings.length + "件)");
   for (const k of ["summary", "majorDecisions", "rejectedAlternatives", "risks", "remainingAssumptions", "implementationScope"]) {
     ok(su[k] !== undefined, `必須セクション ${k} が存在`);
@@ -208,6 +210,8 @@ const node = (id, deps, extra = {}) => ({
     ok(genMeta.fallbackReason === undefined, "LLM成功時はfallbackReasonなし");
   }
   ok(typeof genMeta.attempts === "number", "attemptsを記録");
+  ok(genMeta.designTree?.source === vfb.session.quality.designTreeSource, "Design Tree段階のsourceを記録");
+  ok(typeof genMeta.designTree?.attempts === "number", "Design Tree段階のattemptsを記録");
   ok(!JSON.stringify(genMeta).includes("AIza"), "generationメタにSecretが含まれない");
   ok(!!vfb.session.quality.frontierStats, "frontierStatsが記録される");
 
@@ -225,6 +229,11 @@ const node = (id, deps, extra = {}) => ({
   ok(BM.getScenario("H").multiRound === true && BM.getScenario("H").sharedUnderstanding === true, "H: Round3+SUまで実行する設定");
   ok(BM.getScenario("G").multiRound !== true, "G: 単発記事なのでRound3までは必須にしない");
   ok(BM.BENCHMARK_SCENARIOS.filter((x) => ["A","B","C","D","E"].includes(x.id)).length === 5, "既存A〜Eを削除していない");
+  ok(BM.selectBenchmarkScenarios(undefined).length === 8, "BENCH_SCENARIOS未指定はA〜H");
+  ok(BM.selectBenchmarkScenarios("g,H,g").map((x) => x.id).join(",") === "G,H", "部分指定を正規化・重複除去");
+  let unknownRejected = false;
+  try { BM.selectBenchmarkScenarios("G,Z"); } catch (e) { unknownRejected = /Unknown BENCH_SCENARIOS/.test(String(e.message)); }
+  ok(unknownRejected, "未知scenarioを実行前に拒否");
 
   console.log("\n[Q15] Scope Fidelity（Scope外への拡張を検出）");
   const mkn = (id, title, q) => ({ id, title, question: q, dependsOn: [], status: "blocked", recommendation: "A案", recommendationReason: "十分な長さの理由をここに記載します", children: [] });
@@ -272,11 +281,32 @@ const node = (id, deps, extra = {}) => ({
                    { ...mkn("n4", "n4", "n4について、AとBのどちらにしますか。"), dependsOn: ["n1", "n2", "n3"] },
                    { ...mkn("n5", "n5", "n5について、AとBのどちらにしますか。"), dependsOn: ["n1", "n2", "n3", "n4"] }];
   const trimmed = VAL.validateAndSanitizeTree(overDep);
-  ok(trimmed.nodes.every((n) => n.dependsOn.length <= 2), "dependsOnが最大2件に制限される");
-  ok(trimmed.warnings.some((w) => /依存が多すぎる/.test(w)), "削減を警告として記録");
+  ok(trimmed.nodes.find((n) => n.id === "n4").dependsOn.length === 3, "本当に必要な3依存を保持可能");
+  ok(trimmed.warnings.some((w) => /推奨2件以下/.test(w)), "Soft Limit超過を警告として記録");
+  ok(trimmed.nodes.find((n) => n.id === "n5").dependsOn.length === 4, "4依存も警告のみで保持");
   const beforeStats = DT.computeFrontierStats(DT.sanitizeTree(overDep), 4);
   const afterStats = DT.computeFrontierStats(DT.computeNodeStatuses(trimmed.nodes), 4);
   ok(afterStats.maxDependencyDepth <= beforeStats.maxDependencyDepth, `依存の深さが悪化しない (${beforeStats.maxDependencyDepth}→${afterStats.maxDependencyDepth})`);
+
+  console.log("\n[Q20] Benchmark限定Rate Limit retry（最大1回）");
+  let retryCalls = 0, waited = -1;
+  const retryResult = await QS.retryRateLimitedOnce(async () => {
+    retryCalls++;
+    if (retryCalls === 1) throw { isRateLimit: true, retryAfterMs: 7 };
+    return "ok";
+  }, true, async (ms) => { waited = ms; });
+  ok(retryResult.value === "ok" && retryResult.attempts === 2 && retryCalls === 2, "429時だけ1回再試行");
+  ok(waited === 7, "Retry-After待機時間を尊重");
+  let maxCalls = 0;
+  try {
+    await QS.retryRateLimitedOnce(async () => { maxCalls++; throw { isRateLimit: true, retryAfterMs: 0 }; }, true, async () => {});
+  } catch {}
+  ok(maxCalls === 2, "再試行失敗時も合計2回で停止");
+  let prodCalls = 0;
+  try {
+    await QS.retryRateLimitedOnce(async () => { prodCalls++; throw { isRateLimit: true }; }, false, async () => {});
+  } catch {}
+  ok(prodCalls === 1, "本番既定OFFでは再試行しない");
 
   console.log("\n========== Benchmark: 5シナリオ ==========");
   const scenarios = [

@@ -9,6 +9,7 @@
  */
 
 import { callAI, type AIProvider } from "../ai/client";
+import { isRateLimitError } from "../ai/errors";
 import { fallbackTreeForTopic } from "./archetypes";
 import { rejectedToPromptBlock, type RejectedAlternative } from "./decisions";
 import { validateAndSanitizeTree } from "./validate";
@@ -23,6 +24,58 @@ function tryParseJson<T>(text: string): T | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 失敗理由コードへの分類。例外メッセージ本文は保存しない（Secret混入回避）。
+ */
+export function classifyGenerationFailure(e: unknown): string {
+  if (isRateLimitError(e)) return "rate_limited";
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  if (/timeout|ETIMEDOUT|abort/i.test(msg)) return "timeout";
+  return "provider_error";
+}
+
+/** Benchmark専用のRate Limit再試行を有効にするか（本番既定はOFF＝従来どおりfail-open）。 */
+function rateLimitRetryEnabled(): boolean {
+  return process.env.GRILL_LLM_RATE_LIMIT_RETRY === "1";
+}
+
+const RATE_LIMIT_RETRY_MAX_WAIT_MS = 65_000;
+const RATE_LIMIT_RETRY_DEFAULT_WAIT_MS = 20_000;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Grillingが使うLLM呼び出し。
+ *
+ * 既定（本番）は callAI と完全に同じ挙動（再試行なし・失敗はそのまま呼び出し側のfail-openへ）。
+ * GRILL_LLM_RATE_LIMIT_RETRY=1 のときだけ、**429に限り最大1回**、Retry-Afterを尊重して再試行する。
+ * これは無料枠クォータで Benchmark が fallback に落ちるのを避けるためのもので、
+ * 本番のユーザー応答をブロックしないよう既定はOFFのままにする。
+ */
+export async function retryRateLimitedOnce<T>(
+  operation: () => Promise<T>,
+  enabled = rateLimitRetryEnabled(),
+  wait: (ms: number) => Promise<void> = sleep
+): Promise<{ value: T; attempts: number }> {
+  try {
+    return { value: await operation(), attempts: 1 };
+  } catch (e) {
+    if (!enabled || !isRateLimitError(e)) throw e;
+    const waitMs = Math.min(e.retryAfterMs ?? RATE_LIMIT_RETRY_DEFAULT_WAIT_MS, RATE_LIMIT_RETRY_MAX_WAIT_MS);
+    console.warn(`[grill/questions] rate limited. ${Math.round(waitMs / 1000)}秒待って1回だけ再試行します。`);
+    await wait(waitMs);
+    return { value: await operation(), attempts: 2 };
+  }
+}
+
+async function callAIForGrill(
+  input: string,
+  system: string,
+  opts: { provider?: AIProvider } = {}
+): Promise<{ value: string; attempts: number }> {
+  return retryRateLimitedOnce(() => callAI(input, system, { provider: opts.provider ?? "auto" }));
 }
 
 function factBlock(facts: GrillFact[]): string {
@@ -68,7 +121,8 @@ const TREE_RULES = `
     価格(deps:[ICP,Offer]) / 集客(deps:[ICP,Offer]) / 営業プロセス(deps:[ICP,Offer])
 - 目安: **最初に前提なしで答えられる論点（dependsOn: []）を2〜4個作る**。
   依存の深さ（チェーンの長さ）は3〜4程度までに収める。
-- **dependsOn は1論点あたり最大2件まで**。3件以上並べるのは「関連しているだけ」の状態であり禁止。
+- **dependsOn は1論点あたり2件以下を推奨**。3件以上なら、各依存が「無いと選択肢自体が変わる」かを再評価する。
+  本当に3つすべてが必要なら保持してよいが、単に関連しているだけの依存は削除する。
 - **評価・検証・改善・レビュー・KPI測定などの論点は、原則 dependsOn: [] にする**
   （何を測るかは他の決定を待たずに決められるため）。
 - 1ラウンドで2〜4問を同時に出せる構造が理想。ただし無理に質問を増やさない。
@@ -79,6 +133,23 @@ const TREE_RULES = `
 - 選択肢で表現できない論点（固有名詞・数値・自由記述が必要なもの）だけ options を省略してよい。
 - recommendation は必須。recommendationReason には「なぜその案か」「どの制約に効くか」「他案と比べて何が良いか」を簡潔に含める。
 - 推奨は下の調査済み情報・既存の制約・既に決まったことを踏まえたものにする。一般論を書かない。`;
+
+const NARROW_DECISION_RULES = `
+
+### 狭い意思決定テーマのScopeを守る
+- テーマが特定の局面・対象・期間における意思決定なら、最終Actionに直接影響するDecision Variablesから分解する。
+- テーマより大きな人生目標・事業目標・全体戦略を最初から聞かない。
+- 一般論としての情報源選択を独立した主要論点にせず、その局面で判断条件となる事実・変化・閾値を優先する。
+- 最終Actionと、状態を別Actionへ遷移させる条件、再評価する期間・条件へつなげる。
+- テーマ外の大きな戦略へ広げない。`;
+
+const EXISTING_ASSET_RULES = `
+
+### Factsに既存資産がある場合の推奨順序
+- Factsに利用可能な既存システム・運用・チャネル・機能・資産がある場合、推奨ではまずtopicへの適合性を評価する。
+- 原則として「既存資産を使う → 既存資産を拡張する → 新規導入する」の順で比較する。
+- 既存資産がtopicや制約に適さない根拠がある場合は新規導入を推奨してよい。
+- 特定サービス名を前提にせず、Factsに実際に存在する資産だけを扱う。`;
 
 const TREE_FORMAT = `
 ## 返答フォーマット（JSONのみ。説明・マークダウン・コードフェンス禁止）
@@ -159,15 +230,15 @@ export async function generateDesignTree(
   const providerName = opts.provider ?? process.env.DEFAULT_PROVIDER ?? "auto";
   let fallbackReason: string | undefined;
   try {
-    const system = `あなたは設計・意思決定を詰める「Grilling（壁打ち）担当」です。${TREE_RULES}${TREE_FORMAT}`;
+    const system = `あなたは設計・意思決定を詰める「Grilling（壁打ち）担当」です。${TREE_RULES}${NARROW_DECISION_RULES}${EXISTING_ASSET_RULES}${TREE_FORMAT}`;
     const input = `テーマ: ${topic}
 
 ## 調査済みの前提情報（これらは質問にしないこと）
 ${factBlock(facts)}
 
 このテーマ固有の論点だけでDesign Treeを作ってください。`;
-    const raw = await callAI(input, system, { provider: opts.provider ?? "auto" });
-    const parsed = tryParseJson<{ nodes?: RawNode[] }>(raw);
+    const generated = await callAIForGrill(input, system, { provider: opts.provider ?? "auto" });
+    const parsed = tryParseJson<{ nodes?: RawNode[] }>(generated.value);
     if (parsed?.nodes) {
       const normalized = normalizeNodes(parsed.nodes);
       const gate = validateAndSanitizeTree(normalized);
@@ -178,7 +249,7 @@ ${factBlock(facts)}
           source: "llm",
           warnings: warningsAll,
           duplicateQuestionsRemoved: gate.duplicateQuestionsRemoved,
-          generation: { provider: providerName, attempts: 1 },
+          generation: { provider: providerName, attempts: generated.attempts },
         };
       }
       fallbackReason = "quality_gate_failed";
@@ -188,8 +259,7 @@ ${factBlock(facts)}
       warningsAll.push("LLM応答をJSONとして解釈できませんでした");
     }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "unknown";
-    fallbackReason = /timeout|ETIMEDOUT|abort/i.test(msg) ? "timeout" : "provider_error";
+    fallbackReason = classifyGenerationFailure(e);
     // 例外メッセージはそのまま保存しない（Secret混入を避けるため理由コードのみ残す）
     warningsAll.push(`Design Tree生成に失敗（${fallbackReason}）`);
   }
@@ -240,8 +310,8 @@ ${rejectedToPromptBlock(rejected)}
 ## 追加で詰めたいこと
 ${request}`;
 
-    const raw = await callAI(input, system, { provider: opts.provider ?? "auto" });
-    const parsed = tryParseJson<{ nodes?: RawNode[] }>(raw);
+    const raw = await callAIForGrill(input, system, { provider: opts.provider ?? "auto" });
+    const parsed = tryParseJson<{ nodes?: RawNode[] }>(raw.value);
     if (parsed?.nodes) {
       const gate = validateAndSanitizeTree(
         normalizeNodes(parsed.nodes),
@@ -320,8 +390,8 @@ ${answeredBlock(session)}
 ## 選ばれなかった案
 ${rejectedToPromptBlock(rejected)}`;
 
-    const raw = await callAI(input, system, { provider: opts.provider ?? "auto" });
-    const parsed = tryParseJson<{ nodes?: RawNode[] }>(raw);
+    const raw = await callAIForGrill(input, system, { provider: opts.provider ?? "auto" });
+    const parsed = tryParseJson<{ nodes?: RawNode[] }>(raw.value);
     const rawNodes = parsed?.nodes ?? [];
     if (rawNodes.length === 0) return { proposedNodes: [], notes: [] };
 
@@ -393,7 +463,7 @@ async function generateSharedUnderstandingOnce(
   rejected: RejectedAlternative[],
   opts: { provider?: AIProvider } = {},
   extraInstruction = ""
-): Promise<SharedUnderstanding | null> {
+): Promise<{ su: SharedUnderstanding | null; attempts: number; fallbackReason?: string }> {
   try {
     const qa = session.designTree
       .filter((n) => n.status === "answered")
@@ -414,11 +484,11 @@ ${qa}
 ## 選ばれなかった案（これをrejectedAlternativesの根拠にする。捏造しないこと）
 ${rejectedToPromptBlock(rejected)}`;
 
-    const raw = await callAI(input, `${SU_PROMPT}${extraInstruction}`, { provider: opts.provider ?? "auto" });
-    const parsed = tryParseJson<Partial<SharedUnderstanding>>(raw);
+    const generated = await callAIForGrill(input, `${SU_PROMPT}${extraInstruction}`, { provider: opts.provider ?? "auto" });
+    const parsed = tryParseJson<Partial<SharedUnderstanding>>(generated.value);
     if (parsed && typeof parsed.summary === "string" && parsed.summary.trim()) {
       const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
-      return {
+      return { attempts: generated.attempts, su: {
         summary: parsed.summary,
         majorDecisions: Array.isArray(parsed.majorDecisions) ? parsed.majorDecisions : [],
         // 却下案はSessionの実データを正とする（LLMの想像で置き換えない）
@@ -430,12 +500,13 @@ ${rejectedToPromptBlock(rejected)}`;
         constraints: strArr(parsed.constraints),
         acceptanceCriteria: strArr(parsed.acceptanceCriteria),
         generatedAt: new Date().toISOString(),
-      };
+      }};
     }
+    return { su: null, attempts: generated.attempts, fallbackReason: generated.value.trim() ? "invalid_json" : "empty_response" };
   } catch (e) {
-    console.warn("[grill/questions] Shared Understanding生成に失敗:", e);
+    console.warn("[grill/questions] Shared Understanding生成に失敗（理由コードのみ記録）");
+    return { su: null, attempts: 1, fallbackReason: classifyGenerationFailure(e) };
   }
-  return null;
 }
 
 /**
@@ -446,13 +517,15 @@ export async function generateSharedUnderstanding(
   session: GrillSession,
   rejected: RejectedAlternative[],
   opts: { provider?: AIProvider } = {}
-): Promise<{ su: SharedUnderstanding; warnings: string[]; attempts: number }> {
-  let attempts = 1;
-  let su = await generateSharedUnderstandingOnce(session, rejected, opts);
+): Promise<{ su: SharedUnderstanding; warnings: string[]; attempts: number; source: "llm" | "fallback"; fallbackReason?: string; provider?: string }> {
+  const provider = opts.provider ?? process.env.DEFAULT_PROVIDER ?? "auto";
+  const first = await generateSharedUnderstandingOnce(session, rejected, opts);
+  let attempts = first.attempts;
+  let su = first.su;
+  let fallbackReason = first.fallbackReason;
   let gate = validateSharedUnderstanding(su, session, rejected.length);
 
   if (su && gate.shouldRetry) {
-    attempts = 2;
     const retryHint = `
 
 ## 再生成の指示（前回の出力に不足がありました）
@@ -460,20 +533,22 @@ export async function generateSharedUnderstanding(
 - 実際に回答された内容だけをmajorDecisionsに書き、確認されていないことはremainingAssumptionsへ入れること。
 - implementationScope と acceptanceCriteria を具体的に書くこと。`;
     const retried = await generateSharedUnderstandingOnce(session, rejected, opts, retryHint);
-    const retriedGate = validateSharedUnderstanding(retried, session, rejected.length);
-    if (retried && retriedGate.warnings.length <= gate.warnings.length) {
-      su = retried;
+    attempts += retried.attempts;
+    const retriedGate = validateSharedUnderstanding(retried.su, session, rejected.length);
+    if (retried.su && retriedGate.warnings.length <= gate.warnings.length) {
+      su = retried.su;
       gate = retriedGate;
+      fallbackReason = undefined;
     }
   }
 
   if (!su) {
     const fb = fallbackSharedUnderstanding(session, rejected);
     const fbGate = validateSharedUnderstanding(fb, session, rejected.length);
-    return { su: fb, warnings: [...fbGate.warnings, "Shared Understandingはフォールバックで生成しました"], attempts };
+    return { su: fb, warnings: [...fbGate.warnings, "Shared Understandingはフォールバックで生成しました"], attempts, source: "fallback", fallbackReason: fallbackReason ?? "empty_response", provider };
   }
 
-  return { su, warnings: gate.warnings, attempts };
+  return { su, warnings: gate.warnings, attempts, source: "llm", provider };
 }
 
 /** Shared Understanding を Knowledge Capture 用のMarkdownへ整形（D9）。 */

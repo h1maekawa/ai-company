@@ -44,6 +44,7 @@ if [ "${GRILL_BENCH_REAL_VAULT:-0}" != "1" ]; then
 fi
 # 本番判定を避ける（ローカル実行）
 unset VERCEL
+export GRILL_LLM_RATE_LIMIT_RETRY=1
 
 GRILL_E2E_DIST="$OUT" NODE_PATH="$ROOT/node_modules" node "$ROOT/scripts/grill-llm-benchmark.js" 2>&1 | tee "${TMPDIR:-/tmp}/grill-bench.log"
 code=${PIPESTATUS[0]}

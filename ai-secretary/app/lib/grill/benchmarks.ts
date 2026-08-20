@@ -120,6 +120,17 @@ export function getScenario(id: string): BenchmarkScenario | undefined {
   return BENCHMARK_SCENARIOS.find((s) => s.id === id);
 }
 
+/** BENCH_SCENARIOS を解析。未指定時は全件、指定時は入力順で重複を除く。 */
+export function selectBenchmarkScenarios(value?: string): BenchmarkScenario[] {
+  if (value === undefined || value.trim() === "") return [...BENCHMARK_SCENARIOS];
+  const ids = [...new Set(value.split(",").map((id) => id.trim().toUpperCase()).filter(Boolean))];
+  const unknown = ids.filter((id) => !getScenario(id));
+  if (unknown.length > 0) {
+    throw new Error("Unknown BENCH_SCENARIOS: " + unknown.join(", ") + ". Valid IDs: " + BENCHMARK_SCENARIOS.map((s) => s.id).join(","));
+  }
+  return ids.map((id) => getScenario(id) as BenchmarkScenario);
+}
+
 /* ─── 決定論的な採点 ─────────────────────────────────────── */
 
 export type Grade = "A" | "B" | "C" | "D";

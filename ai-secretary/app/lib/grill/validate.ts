@@ -20,9 +20,12 @@ const MIN_QUESTION_LENGTH = 12;
  * dependsOn の上限（Phase5.3）。
  * 実LLM Benchmarkで「関連しているだけの論点」まで dependsOn に入れる傾向が確認され、
  * 10論点で7ラウンド（平均1.4問/Round）まで直列化していた。
- * Frontier計算そのものは変更せず、**依存の付けすぎだけ**をここで機械的に是正する。
+ * Frontier計算そのものは変更せず、**依存の付けすぎだけ**をここで是正する。
+ *
+ * Phase5.3.1: 上限2件は Hard Limit ではなく Soft Limit とする。
+ *   - 2件超: warning のみ。本当に必要な依存関係は件数によらず壊さない。
  */
-const MAX_DEPENDS_ON = 2;
+const DEPENDS_ON_SOFT_LIMIT = 2;
 
 /**
  * 質問の指紋。表記ゆれを吸収して「実質同じ質問」を検出する。
@@ -130,11 +133,12 @@ export function validateAndSanitizeTree(
       recommendationReason: (raw.recommendationReason ?? "").trim(),
       dependsOn: (() => {
         const deps = Array.isArray(raw.dependsOn) ? raw.dependsOn.filter((d) => d !== id) : [];
-        if (deps.length > MAX_DEPENDS_ON) {
+
+        // Soft Limit 超過は警告のみ。本当に必要な3件目以降は許容する（Frontier計算は不変）。
+        if (deps.length > DEPENDS_ON_SOFT_LIMIT) {
           warnings.push(
-            `依存が多すぎるため${deps.length}→${MAX_DEPENDS_ON}件に削減: ${title || question.slice(0, 16)}`
+            `依存が${deps.length}件です（推奨${DEPENDS_ON_SOFT_LIMIT}件以下・不要な依存がないか要確認）: ${title || question.slice(0, 16)}`
           );
-          return deps.slice(0, MAX_DEPENDS_ON);
         }
         return deps;
       })(),
