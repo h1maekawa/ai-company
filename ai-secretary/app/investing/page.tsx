@@ -49,7 +49,7 @@ export default function InvestingDashboard() {
             に保有を記録すると、この画面に実データが表示されます。
           </p>
           <Link
-            href="/fund"
+            href="/investing/import"
             className="mt-3 inline-block rounded-xl bg-brand px-4 py-2 text-xs font-semibold text-white hover:bg-brand/85"
           >
             投資部門でCSVを取り込む

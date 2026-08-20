@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getVaultFile } from "@/app/lib/vault";
 import { extractHoldingsJson } from "@/app/lib/fund/rakutenCsv";
+import { loadCapacity } from "@/app/lib/investing/capacity";
 
 const HOLDINGS_PATH = "memory/personal/fund/holdings.md";
-const CAPACITY_PATH = "memory/personal/fund/capacity.md";
 
 export interface CapacityData {
   target_month: string | null;
@@ -14,21 +14,13 @@ export interface CapacityData {
   calculated_at: string | null;
 }
 
-/** capacity.md のjsonブロックを読み取る。Phase 2/3でFlow+ API自動取得に置換予定 */
-function parseCapacity(markdown: string): CapacityData | null {
-  const match = markdown.match(/```json\s*\n([\s\S]*?)\n```/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[1]) as CapacityData;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * GET /api/fund/allocation
  * 保有スナップショット（50:50差分・集中度）と当月投資可能額を返す。
- * 投資可能額はPhase 1では手動入力（capacity.md）、未設定なら「未確定」。
+ *
+ * Phase 3 (docs/14): capacity は Canonical Service = lib/investing/capacity.ts に一本化。
+ * 以前この route が持っていた capacity.md 直読みの重複パーサは廃止し、loadCapacity() を使う。
+ * レスポンス形状（capacity フィールド）は後方互換のため不変。
  */
 export async function GET(): Promise<NextResponse> {
   try {
@@ -40,10 +32,20 @@ export async function GET(): Promise<NextResponse> {
       // 未取込
     }
 
+    // Canonical capacity service（Flow+自動取得 → capacity.md手入力 → null）
     let capacity: CapacityData | null = null;
     try {
-      const capacityFile = await getVaultFile(CAPACITY_PATH);
-      capacity = parseCapacity(capacityFile.content || "");
+      const cap = await loadCapacity();
+      if (cap) {
+        capacity = {
+          target_month: cap.target_month ?? null,
+          investable_amount: cap.investable_amount ?? null,
+          personal_cash_floor: cap.personal_cash_floor ?? null,
+          already_invested: cap.already_invested ?? null,
+          source: cap.source === "flow_plus" ? "flow-plus" : "manual",
+          calculated_at: cap.calculated_at ?? null,
+        };
+      }
     } catch {
       // 未設定
     }
@@ -55,8 +57,7 @@ export async function GET(): Promise<NextResponse> {
       summary: holdingsData?.summary ?? null,
       holdings: holdingsData?.holdings ?? [],
       capacity,
-      capacityStatus:
-        capacity?.investable_amount != null ? "set" : "未確定",
+      capacityStatus: capacity?.investable_amount != null ? "set" : "未確定",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

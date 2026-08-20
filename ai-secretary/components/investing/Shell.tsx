@@ -9,15 +9,18 @@ import {
   ChevronLeft,
   CircleDollarSign,
   Filter,
+  Gauge,
   LayoutDashboard,
   LineChart,
   Menu,
   Newspaper,
   PieChart,
+  Scale,
   Search,
   Settings,
   Sparkles,
   Star,
+  Upload,
   User,
   X,
 } from "lucide-react";
@@ -35,6 +38,8 @@ const ICON = "h-[18px] w-[18px]";
 export const NAV_ITEMS: NavItem[] = [
   { href: "/investing", label: "ダッシュボード", icon: <LayoutDashboard className={ICON} />, mobile: true },
   { href: "/investing/holdings", label: "保有株", icon: <Briefcase className={ICON} />, mobile: true },
+  { href: "/investing/allocation", label: "配分・集中度", icon: <Scale className={ICON} /> },
+  { href: "/investing/policy", label: "投資判断エンジン", icon: <Gauge className={ICON} /> },
   { href: "/investing/news", label: "ニュース", icon: <Newspaper className={ICON} />, mobile: true },
   { href: "/investing/analysis", label: "AI分析", icon: <Sparkles className={ICON} />, mobile: true },
   { href: "/investing/portfolio", label: "ポートフォリオ", icon: <PieChart className={ICON} /> },
@@ -42,6 +47,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/investing/watchlist", label: "ウォッチリスト", icon: <Star className={ICON} /> },
   { href: "/investing/dividends", label: "配当管理", icon: <CircleDollarSign className={ICON} /> },
   { href: "/investing/transactions", label: "取引履歴", icon: <LineChart className={ICON} /> },
+  { href: "/investing/import", label: "CSV取込", icon: <Upload className={ICON} /> },
   { href: "/investing/settings", label: "設定", icon: <Settings className={ICON} /> },
 ];
 

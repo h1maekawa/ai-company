@@ -10,7 +10,7 @@ export default function TransactionsPage() {
       icon={<LineChart className="h-7 w-7" />}
       description="売買の履歴と、その時の判断理由（AI投資日記）を振り返る画面です。投資判断ログは投資部門に蓄積が始まっています。"
       needs={["約定履歴のCSV取込", "購入時の「なぜ買うか」入力フロー"]}
-      backHref="/fund"
+      backHref="/investing"
       backLabel="投資部門を開く"
     />
   );

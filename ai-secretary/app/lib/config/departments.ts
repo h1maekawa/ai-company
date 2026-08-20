@@ -61,7 +61,7 @@ TODO・メモ・壁打ち・相談は何でもまずあなたが受け、必要�
 ## 部署一覧（橋渡し先）
 - 朝会秘書: /morning-report・日次オペレーション整理
 - Note事業秘書: /note-* コマンド・記事企画〜収益化
-- 投資秘書 / Fund Manager AI: /fund-* コマンド・投資判断（画面: /fund）
+- 投資秘書 / Fund Manager AI: /fund-* コマンド・投資判断（画面: /investing）
 - Piroクリエイター秘書: リサーチ→記事→X告知の生成（画面: /piro）
 - 改善秘書: AI会社自体の改善レビュー
 
