@@ -17,6 +17,14 @@ import type { GrillNode } from "./types";
 const MIN_QUESTION_LENGTH = 12;
 
 /**
+ * dependsOn の上限（Phase5.3）。
+ * 実LLM Benchmarkで「関連しているだけの論点」まで dependsOn に入れる傾向が確認され、
+ * 10論点で7ラウンド（平均1.4問/Round）まで直列化していた。
+ * Frontier計算そのものは変更せず、**依存の付けすぎだけ**をここで機械的に是正する。
+ */
+const MAX_DEPENDS_ON = 2;
+
+/**
  * 質問の指紋。表記ゆれを吸収して「実質同じ質問」を検出する。
  * Vector DBは使わない（正規化した文字列比較で十分・デバッグ可能）。
  */
@@ -120,7 +128,16 @@ export function validateAndSanitizeTree(
       question,
       recommendation,
       recommendationReason: (raw.recommendationReason ?? "").trim(),
-      dependsOn: Array.isArray(raw.dependsOn) ? raw.dependsOn.filter((d) => d !== id) : [],
+      dependsOn: (() => {
+        const deps = Array.isArray(raw.dependsOn) ? raw.dependsOn.filter((d) => d !== id) : [];
+        if (deps.length > MAX_DEPENDS_ON) {
+          warnings.push(
+            `依存が多すぎるため${deps.length}→${MAX_DEPENDS_ON}件に削減: ${title || question.slice(0, 16)}`
+          );
+          return deps.slice(0, MAX_DEPENDS_ON);
+        }
+        return deps;
+      })(),
       status: "blocked",
       children: [],
       options,

@@ -30,6 +30,7 @@ npx tsc \
   app/lib/grill/suGate.ts \
   app/lib/grill/types.ts \
   app/lib/ai/client.ts \
+  app/lib/grill/benchmarks.ts \
   --outDir "$OUT" --module commonjs --target es2020 \
   --moduleResolution node --esModuleInterop --skipLibCheck
 

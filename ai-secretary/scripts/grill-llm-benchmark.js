@@ -20,18 +20,11 @@ const DIST = process.env.GRILL_E2E_DIST || "/tmp/grill-bench-dist";
 const ORCH = require(path.join(DIST, "grill/orchestrator.js"));
 const AI = require(path.join(DIST, "ai/client.js"));
 const VAL = require(path.join(DIST, "grill/validate.js"));
+const BM = require(path.join(DIST, "grill/benchmarks.js"));
 
 const OUT = process.env.BENCH_OUT || path.join(__dirname, "..", "..", "docs", "16_GRILLING_LLM_QUALITY_REPORT.md");
 
-const SCENARIOS = [
-  ["A. Sales", "HP制作商談の受注率を上げたい"],
-  ["B. Software Architecture", "新しいタスク管理システムを設計したい"],
-  ["C. Business", "AI受託事業の営業モデルを設計したい"],
-  ["D. Investment", "個別株の売買ルールを決めたい"],
-  ["E. Productivity", "仕事の時間管理ルールを作りたい"],
-];
-/** 複数Roundを実際に進めるシナリオ（最低2件） */
-const MULTI_ROUND = ["A. Sales", "B. Software Architecture"];
+const SCENARIOS = BM.BENCHMARK_SCENARIOS.map((sc) => [sc.name, sc.topic, sc]);
 
 const lines = [];
 const out = (s = "") => { lines.push(s); console.log(s); };
@@ -144,7 +137,8 @@ async function preflight() {
 
   const summary = [];
 
-  for (const [name, topic] of SCENARIOS) {
+  const treesByName = {};
+  for (const [name, topic, scenario] of SCENARIOS) {
     out(`---`);
     out();
     out(`## ${name} — ${topic}`);
@@ -166,6 +160,7 @@ async function preflight() {
     out(`| generatedNodeCount | ${q.generatedNodeCount} |`);
     out(`| duplicateQuestionsRemoved | ${q.duplicateQuestionsRemoved} |`);
     out(`| validationWarnings | ${(q.validationWarnings || []).length}件 ${(q.validationWarnings || []).slice(0, 3).map((w) => `\`${w}\``).join(" ")} |`);
+    out(`| domain | ${scenario.domain} |`);
     out(`| currentFrontier | ${s.currentFrontier.length}件 |`);
     out(`| visibleQuestions | ${view.visibleQuestions.length}件 |`);
     out(`| initialFrontierSize | ${fstat.initialFrontierSize} |`);
@@ -178,12 +173,22 @@ async function preflight() {
     out(treeTable(s));
     out();
 
-    // 重複質問の実測
+    // 決定論的な品質採点
     const fps = s.designTree.map((n) => VAL.questionFingerprint(n.question));
     const dupCount = fps.length - new Set(fps).size;
-    out(`- 重複質問(指紋一致): ${dupCount}件`);
-    out(`- 推奨が全Nodeにある: ${s.designTree.every((n) => n.recommendation) ? "はい" : "**いいえ**"}`);
-    out(`- 推奨理由が全Nodeにある: ${s.designTree.every((n) => n.recommendationReason) ? "はい" : "**いいえ**"}`);
+    const scope = BM.scoreScopeFidelity(s.designTree, scenario);
+    const spec = BM.scoreTopicSpecificity(s.designTree, scenario);
+    const rec = BM.scoreRecommendationQuality(s.designTree);
+    treesByName[name] = s.designTree;
+
+    out(`### 品質採点（決定論的）`);
+    out();
+    out(`| 指標 | 評価 | 詳細 |`);
+    out(`|---|---|---|`);
+    out(`| Scope Fidelity | **${scope.grade}** | Scope外ノード ${scope.outOfScopeCount}/${scope.totalNodes}${scope.outOfScopeNodes.length ? `（${scope.outOfScopeNodes.map((x) => `${x.title}←"${x.signal}"`).join(", ")}）` : ""} |`);
+    out(`| Topic Specificity | **${spec.grade}** | シグナル一致 ${Math.round(spec.signalCoverage * 100)}%（${spec.matchedSignals.slice(0, 8).join(", ")}）${spec.genericTitles.length ? ` / 汎用タイトル: ${spec.genericTitles.join(", ")}` : ""} |`);
+    out(`| Recommendation Quality | **${rec.grade}** | 推奨欠落${rec.missingRecommendation.length} / 理由欠落${rec.missingReason.length} / 一般論${rec.genericPhrases.length}${rec.genericPhrases.length ? `（${rec.genericPhrases.map((g) => g.phrase).join(", ")}）` : ""} |`);
+    out(`| 重複質問 | ${dupCount === 0 ? "**A**" : "**C**"} | 指紋一致 ${dupCount}件 |`);
     out();
 
     summary.push({
@@ -195,9 +200,15 @@ async function preflight() {
       maxDependencyDepth: fstat.maxDependencyDepth,
       warnings: (q.validationWarnings || []).length,
       fallbackReason: q.generation?.fallbackReason,
+      domain: scenario.domain,
+      nodesRef: s.designTree,
+      scope: scope.grade,
+      spec: spec.grade,
+      rec: rec.grade,
+      avgVisible: fstat.averageVisibleQuestionsPerRound,
     });
 
-    if (MULTI_ROUND.includes(name)) {
+    if (scenario.multiRound) {
       out(`### Round 1〜3（推奨をそのまま採用して進行）`);
       out();
       const { log, view: after } = await runRounds(view, 3);
@@ -254,10 +265,10 @@ async function preflight() {
   out();
   out(`## サマリー`);
   out();
-  out(`| シナリオ | source | fallback | 論点数 | 初期Frontier | 推定Round | depth | 警告 |`);
-  out(`|---|---|---|---|---|---|---|---|`);
+  out(`| Scenario | Domain | source | fallback | Nodes | initFrontier | estRounds | depth | avgVisible | Scope | TopicSpec | RecQuality |`);
+  out(`|---|---|---|---|---|---|---|---|---|---|---|---|`);
   for (const r of summary) {
-    out(`| ${r.name} | ${r.source} | ${r.fallbackUsed} | ${r.nodes} | ${r.initialFrontierSize} | ${r.estimatedRounds} | ${r.maxDependencyDepth} | ${r.warnings} |`);
+    out(`| ${r.name} | ${r.domain} | ${r.source} | ${r.fallbackUsed} | ${r.nodes} | ${r.initialFrontierSize} | ${r.estimatedRounds} | ${r.maxDependencyDepth} | ${r.avgVisible} | **${r.scope}** | **${r.spec}** | **${r.rec}** |`);
   }
   out();
   const llmCount = summary.filter((r) => r.source === "llm").length;
@@ -271,6 +282,37 @@ async function preflight() {
     out(`> 実LLM品質の評価には、全シナリオで fallbackUsed:false になる必要があります。`);
   }
   out();
+  // ── Cross-domain 比較 / Domain Genericity ──
+  out(`## Cross-domain 比較（Tree使い回しの検出）`);
+  out();
+  out(`ノード見出しのJaccard類似度。高いほど「同じTreeの言い換え」に近い。`);
+  out();
+  const names = summary.map((r) => r.name);
+  out(`| | ${names.map((n) => n.split(".")[0]).join(" | ")} |`);
+  out(`|---|${names.map(() => "---").join("|")}|`);
+  const genericity = [];
+  for (const a of summary) {
+    const sims = [];
+    const row = [];
+    for (const b of summary) {
+      if (a.name === b.name) { row.push("—"); continue; }
+      const sim = BM.treeSimilarity(a.nodesRef, b.nodesRef);
+      sims.push(sim);
+      row.push(sim.toFixed(2));
+    }
+    out(`| ${a.name.split(".")[0]} | ${row.join(" | ")} |`);
+    genericity.push({ name: a.name, ...BM.scoreDomainGenericity(sims) });
+  }
+  out();
+  out(`## Domain Genericity（未知domainでもtopic固有Treeを作れているか）`);
+  out();
+  out(`| シナリオ | 他シナリオとの最大類似度 | 評価 |`);
+  out(`|---|---|---|`);
+  for (const g of genericity) out(`| ${g.name} | ${g.maxSimilarity.toFixed(2)} | **${g.grade}** |`);
+  out();
+  out(`※ 類似度が低い＝そのdomain固有の意思決定になっている。0.45超は使い回しの疑い。`);
+  out();
+
   out(`### 評価の観点（Phase 5.2）`);
   out();
   out(`- Topic Specificity: 5topicのTree構造が互いに異なり、topic固有の論点になっているか`);

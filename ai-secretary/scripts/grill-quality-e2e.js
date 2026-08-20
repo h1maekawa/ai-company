@@ -12,6 +12,7 @@ const TYPES = require(path.join(DIST, "grill/types.js"));
 const FACTS = require(path.join(DIST, "grill/facts.js"));
 const DT = require(path.join(DIST, "grill/designTree.js"));
 const SUG = require(path.join(DIST, "grill/suGate.js"));
+const BM = require(path.join(DIST, "grill/benchmarks.js"));
 
 const VAULT = process.env.VAULT_ROOT;
 let pass = 0, fail = 0;
@@ -209,6 +210,73 @@ const node = (id, deps, extra = {}) => ({
   ok(typeof genMeta.attempts === "number", "attemptsを記録");
   ok(!JSON.stringify(genMeta).includes("AIza"), "generationメタにSecretが含まれない");
   ok(!!vfb.session.quality.frontierStats, "frontierStatsが記録される");
+
+  console.log("\n[Q14] Benchmark定義 A〜H（Phase5.3クロスドメイン）");
+  const ids = BM.BENCHMARK_SCENARIOS.map((x) => x.id);
+  ok(JSON.stringify(ids) === JSON.stringify(["A","B","C","D","E","F","G","H"]), "A〜Hが定義されている: " + ids.join(","));
+  for (const id of ["F", "G", "H"]) {
+    const sc = BM.getScenario(id);
+    ok(!!sc && sc.topic.length > 5, `${id}: topic定義あり (${sc.topic.slice(0, 24)}…)`);
+    ok(sc.expectedSignals.length >= 8, `${id}: expectedSignals ${sc.expectedSignals.length}件`);
+    ok(sc.outOfScopeSignals.length >= 4, `${id}: outOfScopeSignals ${sc.outOfScopeSignals.length}件`);
+    ok(!!sc.domain, `${id}: domain=${sc.domain}`);
+  }
+  ok(BM.getScenario("F").multiRound === true && BM.getScenario("F").sharedUnderstanding === true, "F: Round3+SUまで実行する設定");
+  ok(BM.getScenario("H").multiRound === true && BM.getScenario("H").sharedUnderstanding === true, "H: Round3+SUまで実行する設定");
+  ok(BM.getScenario("G").multiRound !== true, "G: 単発記事なのでRound3までは必須にしない");
+  ok(BM.BENCHMARK_SCENARIOS.filter((x) => ["A","B","C","D","E"].includes(x.id)).length === 5, "既存A〜Eを削除していない");
+
+  console.log("\n[Q15] Scope Fidelity（Scope外への拡張を検出）");
+  const mkn = (id, title, q) => ({ id, title, question: q, dependsOn: [], status: "blocked", recommendation: "A案", recommendationReason: "十分な長さの理由をここに記載します", children: [] });
+  const gScenario = BM.getScenario("G");
+  const inScope = [mkn("a", "読者の悩み", "この記事の読者はどんな悩みを持っていますか。"), mkn("b", "無料と有料の境界", "どこまでを無料にしますか。")];
+  const outScope = [...inScope, mkn("c", "組織体制", "組織体制をどう設計しますか。"), mkn("d", "営業チャネル", "営業チャネルをどう作りますか。")];
+  const sIn = BM.scoreScopeFidelity(inScope, gScenario);
+  const sOut = BM.scoreScopeFidelity(outScope, gScenario);
+  ok(sIn.grade === "A" && sIn.outOfScopeCount === 0, "Scope内のみ → A");
+  ok(sOut.outOfScopeCount === 2, "Scope外ノードを2件検出");
+  ok(sOut.grade === "D" || sOut.grade === "C", "Scope外が多いと降格: " + sOut.grade);
+  ok(sOut.outOfScopeNodes.some((x) => x.signal === "組織体制"), "検出したシグナルを記録");
+
+  console.log("\n[Q16] Topic Specificity（汎用Treeの検出）");
+  const fScenario = BM.getScenario("F");
+  const genericTree = [mkn("g1", "目的", "目的は何ですか。"), mkn("g2", "対象", "対象は誰ですか。"), mkn("g3", "方法", "方法はどうしますか。"), mkn("g4", "スケジュール", "スケジュールは。")];
+  const specificTree = [mkn("f1", "ターゲット読者", "誰に向けて書きますか。"), mkn("f2", "無料と有料の設計", "何を有料にしますか。"), mkn("f3", "記事本数と頻度", "何本をどの頻度で出しますか。"), mkn("f4", "価格とCTA", "価格とCTAをどうしますか。"), mkn("f5", "KPI", "どのKPIを見ますか。")];
+  const gGen = BM.scoreTopicSpecificity(genericTree, fScenario);
+  const gSpec = BM.scoreTopicSpecificity(specificTree, fScenario);
+  ok(gGen.genericTitles.length >= 3, "汎用タイトルを検出 " + gGen.genericTitles.length + "件");
+  ok(gGen.grade === "D" || gGen.grade === "C", "汎用Treeは低評価: " + gGen.grade);
+  ok(gSpec.signalCoverage > gGen.signalCoverage, "topic固有Treeの方がシグナル一致率が高い");
+  ok(gSpec.grade === "A" || gSpec.grade === "B", "topic固有Treeは高評価: " + gSpec.grade);
+
+  console.log("\n[Q17] Recommendation品質（一般論の検出）");
+  const genericRec = [{ ...mkn("r1", "T", "Q?"), recommendation: "ケースバイケースです", recommendationReason: "状況によります" }];
+  const goodRec = [{ ...mkn("r2", "T", "Q?"), recommendation: "Redis中心", recommendationReason: "既存Context Busが同方式で、Vercelの読み取り専用FSでも永続化できるため" }];
+  ok(BM.scoreRecommendationQuality(genericRec).genericPhrases.length >= 1, "一般論フレーズを検出");
+  ok(BM.scoreRecommendationQuality(genericRec).grade === "C" || BM.scoreRecommendationQuality(genericRec).grade === "D", "一般論は低評価");
+  ok(BM.scoreRecommendationQuality(goodRec).grade === "A", "Session固有の推奨はA");
+  ok(BM.scoreRecommendationQuality([{ ...mkn("r3", "T", "Q?"), recommendationReason: "" }]).missingReason.length === 1, "理由欠落を検出");
+
+  console.log("\n[Q18] Cross-domain 類似度 / Domain Genericity");
+  const same = BM.treeSimilarity(specificTree, specificTree);
+  const diff = BM.treeSimilarity(specificTree, genericTree);
+  ok(same > diff, `同一Tree(${same}) > 別Tree(${diff}) の類似度`);
+  ok(same >= 0.9, "同一Treeの類似度はほぼ1: " + same);
+  ok(BM.scoreDomainGenericity([0.05, 0.1]).grade === "A", "類似度が低ければ A（domain固有）");
+  ok(BM.scoreDomainGenericity([0.5]).grade === "D", "類似度が高ければ D（使い回しの疑い）");
+
+  console.log("\n[Q19] 依存の付けすぎを機械的に是正（実LLM対策）");
+  const overDep = [mkn("n1", "n1", "n1について、AとBのどちらにしますか。"),
+                   { ...mkn("n2", "n2", "n2について、AとBのどちらにしますか。"), dependsOn: ["n1"] },
+                   { ...mkn("n3", "n3", "n3について、AとBのどちらにしますか。"), dependsOn: ["n1", "n2"] },
+                   { ...mkn("n4", "n4", "n4について、AとBのどちらにしますか。"), dependsOn: ["n1", "n2", "n3"] },
+                   { ...mkn("n5", "n5", "n5について、AとBのどちらにしますか。"), dependsOn: ["n1", "n2", "n3", "n4"] }];
+  const trimmed = VAL.validateAndSanitizeTree(overDep);
+  ok(trimmed.nodes.every((n) => n.dependsOn.length <= 2), "dependsOnが最大2件に制限される");
+  ok(trimmed.warnings.some((w) => /依存が多すぎる/.test(w)), "削減を警告として記録");
+  const beforeStats = DT.computeFrontierStats(DT.sanitizeTree(overDep), 4);
+  const afterStats = DT.computeFrontierStats(DT.computeNodeStatuses(trimmed.nodes), 4);
+  ok(afterStats.maxDependencyDepth <= beforeStats.maxDependencyDepth, `依存の深さが悪化しない (${beforeStats.maxDependencyDepth}→${afterStats.maxDependencyDepth})`);
 
   console.log("\n========== Benchmark: 5シナリオ ==========");
   const scenarios = [
