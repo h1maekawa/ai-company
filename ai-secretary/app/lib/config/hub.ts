@@ -108,6 +108,18 @@ export const HUB_NODES: HubNode[] = [
     examples: ["今月の収支を整理したい", "固定費の見直しをしたい", "予算の相談"],
   },
   {
+    id: "grill",
+    group: "shared",
+    secretaryId: "executive-assistant",
+    icon: "🔥",
+    name: "壁打ち",
+    tagline: "論点分解→合意形成（Grilling）",
+    mode: "personal",
+    color: "#f97316",
+    href: "/grill",
+    examples: ["新しい企画を壁打ちしたい", "設計を詰めたい", "意思決定を整理したい"],
+  },
+  {
     id: "kaizen",
     group: "shared",
     secretaryId: "executive-kaizen",

@@ -74,6 +74,23 @@ export async function routeRequest(
       };
     }
 
+    if (
+      normalized.includes("壁打ち") ||
+      normalized.includes("深掘り") ||
+      normalized.includes("grill") ||
+      normalized.includes("設計を詰め")
+    ) {
+      // Grillingは複数ターンのセッションのため、実体は /grill（docs/15 D6）。
+      // ここではintentとして識別し、秘書からは /grill へ誘導する。
+      return {
+        intent: "Grilling（壁打ちで設計・意思決定を詰める）",
+        department: "executive",
+        room: undefined,
+        secretary: "executive-assistant",
+        confidence: 0.9,
+      };
+    }
+
     if (normalized.includes("piro") || normalized.includes("ピロ")) {
       return {
         intent: "Piroコンテンツの相談",
