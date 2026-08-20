@@ -73,6 +73,7 @@ interface GrillSession {
   facts: GrillFact[];
   sharedUnderstanding?: SharedUnderstanding;
   secretaryId: string;               // 既定 executive-assistant
+  durability: "durable" | "volatile"; // 直近の保存が永続実体に届いたか（D3参照）
   createdAt: string;
   updatedAt: string;
 }
@@ -103,15 +104,54 @@ RedisSessionStore   FileSessionStore    SupabaseSessionStore
 - Context Bus と同じ **fail-open**（`redisSafeGet/Set` は失敗してもthrowしない）。
 - Redis未設定でも file にフォールバックして動作する。**Supabase未設定でも全機能が動く**（ADR-E継承）。
 - Redis key namespace: `grill:session:<id>` / `grill:index:active`（`REDIS_KEYS` に追加）。
-- File fallback: `memory/personal/grilling/sessions/<id>.json`（AI Managed領域・F6で許可済み）。
-  本番Vercelでは EROFS になるため `/tmp` 退避（Context Bus と同じ扱い）。
+- File: `memory/personal/grilling/sessions/<id>.json`（AI Managed領域・F6で許可済み）。開発環境の実体。
 
-### D4. Facts は AI が自動調査する
-起動時に以下を調査し `facts[]` に格納、質問文には「調査済み前提」として明示する。
-- Knowledge Search（**promoted のみ** — Phase4 ADR準拠、`buildKnowledgeContext()` を利用）
-- Vault の関連既存ファイル
-- Repo構造（該当機能の実装有無）
-「調べれば分かることをユーザーに質問しない」を満たす最小構成。
+#### 永続性の定義（重要・誤認防止）
+
+```text
+Production (Vercel):
+  Redis = Session State の唯一の永続実体
+  /tmp  = temporary fallback のみ（永続化とは扱わない）
+```
+
+本番の `/tmp` は**インスタンス毎に揮発**するため、そこへ書けても「永続保存された」とは扱わない。
+Redis 保存に失敗した場合の挙動を次のように定める。
+
+- Grilling 自体は**継続可能**（fail-openを維持し、セッションを落とさない）。
+- ただし `sessionDurability: "volatile"` を返す（成功時は `"durable"`）。
+- UI は volatile のとき **「このセッションは再開保証されません」** を明示する。
+
+`GrillSessionStore.save()` は書き込み先を示す結果を返す:
+```ts
+type PersistResult = {
+  durability: "durable" | "volatile";  // durable = Redis(本番) / file(開発) に確実に書けた
+  backend: "redis" | "file" | "tmp" | "none";
+  warning?: string;                    // volatile 時の理由（UI表示用）
+};
+```
+
+### D4. Facts は AI が自動調査する（FactResolver + Provider方式）
+
+「調べれば分かることをユーザーに質問しない」という思想はそのまま。ただし**毎回全Providerを無条件実行しない**。
+
+```text
+FactResolver
+ ├ KnowledgeFactProvider   … Knowledge Search（promoted のみ・Phase4 ADR準拠）
+ ├ VaultFactProvider       … Vault の関連既存ファイル
+ └ RepoFactProvider        … Repo構造・実装有無
+```
+
+`FactResolver` が topic に応じて**必要なProviderだけ**を選択して実行する。
+
+| topic の例 | 実行するProvider |
+|---|---|
+| 営業商談の壁打ち | Knowledge / Vault |
+| GitHubシステム設計 | Knowledge / Repo / Vault |
+| 投資方針の検討 | Knowledge / Vault |
+
+- Provider は共通interface（`resolve(topic, ctx) => GrillFact[]`）を実装し、**個別に失敗してもResolver全体は落とさない**（fail-open）。
+- 選択ロジックは決定論的（キーワード判定）を基本とし、判断をLLMに委ねない（D7と同じ原則）。
+- 新しい情報源（外部API等）はProviderを1つ足すだけで拡張できる。
 
 ### D5. UI — 専用ページ `/grill`
 - Round単位で「今回の質問群（Frontier）」をカード表示。選択肢はボタン、自由記述も可。
@@ -144,10 +184,26 @@ Frontierが空 → Shared Understanding 全文提示 → 3択
 - Grilling中の個々の回答は保存しない（Working State は Machine State であってKnowledgeではない）。
 - 昇格は既存 `/weekly-review` の人間承認のみ。正式Knowledgeを直接作らない（Phase4のApproved Write境界を維持）。
 - 実装差分: `CaptureSource` に `"grilling"` を追加するのみ。
+- **confirmed 後の長期保存経路はこれ1本に統一する**（D10参照。Grilling独自のVault保存は作らない）。
 
 ### D10. 再開・履歴管理 / Supabase初導入範囲
-- 今回は Redis（＋fileミラー）で **`active` セッションのみ**管理し、`/grill` に「再開」一覧を表示。
-- `confirmed` 後は要約を Vault（F5流儀）に残す。
+- 今回は Redis（＋fileフォールバック）で **`active` セッションのみ**管理し、`/grill` に「再開」一覧を表示。
+- **`confirmed` 後の長期保存は D9 の Phase4 Capture Flow のみに統一する。**
+  Grilling独自の正式Knowledge保存・確定要約のVault書き込みは**行わない**（Working State を Knowledge として二重保存しない）。
+
+```text
+active session
+  → Redis（唯一の永続実体・D3）
+
+confirmed
+  → Shared Understanding
+  → captureKnowledgeCandidate(source: "grilling")
+  → Inbox Candidate
+  → Weekly Review
+  → Human Approval
+  → Formal Knowledge   ← 長期保存はここだけが担保する
+```
+
 - **Supabaseは今回導入しない。** interface と Schema 定義のみ確定し、実運用で必要性が判明した段階で
   `SupabaseSessionStore` を1つ足す（テーブル案: `grill_sessions(id, topic, status, state jsonb, created_at, updated_at)`）。
 
