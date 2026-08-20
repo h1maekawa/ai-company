@@ -22,6 +22,7 @@ import {
   saveResearchSettings,
 } from "./store";
 import { ResearchItem, TrendCluster } from "./types";
+import { captureKnowledgeCandidate } from "../../knowledge/captureService";
 
 export type ResearchRunResult = {
   fetched: number;
@@ -107,6 +108,23 @@ export async function runResearch(): Promise<ResearchRunResult> {
   const topCandidates = saved
     .filter((c) => c.status === "candidate" && !c.blocked)
     .slice(0, 5);
+
+  // Phase4 修正4: リサーチで有望テーマが出たときだけ、学び候補としてInboxへCaptureする。
+  // 全アイテムは保存しない（上位候補のダイジェスト1件のみ）。失敗しても実行結果は返す。
+  if (topCandidates.length > 0 && fresh.length > 0) {
+    try {
+      const digest = topCandidates
+        .map((c, i) => `${i + 1}. ${c.title}（スコア: ${c.totalScore}）`)
+        .join("\n");
+      await captureKnowledgeCandidate({
+        content: `今回のリサーチで浮上した有望テーマ:\n\n${digest}\n\n新規取得 ${fresh.length}件 / 総取得 ${fetched.length}件。`,
+        source: "research",
+        title: `research-${ranAt.slice(0, 10)}`,
+      });
+    } catch (captureErr) {
+      console.error("[research] Knowledge Capture failed (non-fatal):", captureErr);
+    }
+  }
 
   return {
     fetched: fetched.length,

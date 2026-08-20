@@ -22,6 +22,14 @@ import {
 } from "./types";
 import { requireCanonicalDomain, resolveDomain, type CanonicalDomain } from "./domain";
 import { canAiAutoWrite, canWrite } from "./writePolicy";
+import { issueApprovalGrant } from "./approval";
+import {
+  buildDiffLines,
+  buildMergeBlock,
+  buildProposedContent,
+  computePreviewToken,
+  type MergePreview,
+} from "./diff";
 import { saveKnowledge } from "../memory/knowledge";
 
 const INBOX_DIR = "memory/personal/inbox";
@@ -237,7 +245,8 @@ export async function promoteCandidate(
     status: "promoted",
     tags,
     source_ref: [item.path],
-    approved: true,
+    // サーバー内部で発行した承認トークン（ユーザーのWeekly Review操作に基づく）
+    grant: issueApprovalGrant("promotion", `weekly-review promote: ${item.frontmatter.id}`),
   });
 
   // Candidate を promoted に更新（作業データは AI Managed のまま）
@@ -255,24 +264,69 @@ export async function promoteCandidate(
   return { candidate: { path, frontmatter: fm, body: item.body }, knowledgePath: saved.path };
 }
 
-/** 既存 Promoted Knowledge（Human Managed）へ統合する。Human Approval 済みの Approved Write。 */
-export async function mergeCandidate(
+/**
+ * Merge の Diff/Preview を作る（Phase4 修正2）。書き込みは一切しない。
+ * ユーザーがこの内容を見て承認したときだけ、previewToken 付きで mergeCandidate() を呼べる。
+ */
+export async function buildMergePreviewFor(
   path: string,
   targetPath: string
-): Promise<{ candidate: CaptureItem; targetPath: string }> {
+): Promise<MergePreview> {
   const { content } = await vaultDocumentStore.getFile(path);
   if (!content.trim()) throw new Error(`[lifecycle] candidate が見つかりません: ${path}`);
   const item = parseCaptureFile(path, content);
 
   const target = await vaultDocumentStore.getFile(targetPath);
-  if (!target.content.trim()) throw new Error(`[lifecycle] 統合先Knowledgeが見つかりません: ${targetPath}`);
+  if (!target.content.trim())
+    throw new Error(`[lifecycle] 統合先Knowledgeが見つかりません: ${targetPath}`);
 
-  // Human Managed への書き込みは Approved 経路のみ許可
-  const decision = canWrite(targetPath, target.content, { approved: true, reason: "merge" });
+  const addedBlock = buildMergeBlock(item.frontmatter.id, today(), item.body);
+  const proposedContent = buildProposedContent(target.content, addedBlock);
+
+  return {
+    targetPath,
+    candidatePath: path,
+    currentContent: target.content,
+    proposedContent,
+    addedBlock,
+    diff: buildDiffLines(target.content, addedBlock),
+    previewToken: computePreviewToken(proposedContent),
+  };
+}
+
+/**
+ * 既存 Promoted Knowledge（Human Managed）へ統合する。
+ *
+ * Phase4 修正2: **previewToken 必須**。ユーザーが Diff/Preview を見て承認した内容と
+ * 実際に書き込む内容が一致することをサーバー側で再計算・検証する。
+ * 一致しない場合（対象が変わった等）は書き込まず、再Previewを促す。
+ */
+export async function mergeCandidate(
+  path: string,
+  targetPath: string,
+  previewToken: string
+): Promise<{ candidate: CaptureItem; targetPath: string }> {
+  if (!previewToken) {
+    throw new Error("[lifecycle] merge には previewToken が必要です（Diff/Previewの承認が未完了）。");
+  }
+
+  const preview = await buildMergePreviewFor(path, targetPath);
+  if (preview.previewToken !== previewToken) {
+    throw new Error(
+      "[lifecycle] previewToken が一致しません。統合先が変更された可能性があります。再度Previewして承認してください。"
+    );
+  }
+
+  const { content } = await vaultDocumentStore.getFile(path);
+  const item = parseCaptureFile(path, content);
+  const target = await vaultDocumentStore.getFile(targetPath);
+
+  // Human Managed への書き込み: サーバー内部発行の承認トークンでのみ許可
+  const grant = issueApprovalGrant("merge", `weekly-review merge: ${item.frontmatter.id} -> ${targetPath}`);
+  const decision = canWrite(targetPath, target.content, grant);
   if (!decision.allowed) throw new Error(`[lifecycle] merge 拒否: ${decision.reason}`);
 
-  const appended = `${target.content.trimEnd()}\n\n## 統合メモ（${today()} / ${item.frontmatter.id}）\n\n${item.body.trim()}\n`;
-  await vaultDocumentStore.saveFile(targetPath, appended, target.version);
+  await vaultDocumentStore.saveFile(targetPath, preview.proposedContent, target.version);
 
   const fm: CaptureFrontmatter = {
     ...item.frontmatter,

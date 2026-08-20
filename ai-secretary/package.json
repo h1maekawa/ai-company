@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "bash scripts/test-knowledge.sh",
     "test:fund": "bash scripts/test-fund.sh",
     "test:maemichi": "bash scripts/test-maemichi.sh"
   },

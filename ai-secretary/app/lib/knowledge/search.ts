@@ -106,28 +106,10 @@ function scoreDoc(
   const title = (firstHeadingTitle(parsed.body) || asString(data.id)).toLowerCase();
 
   if (!text) {
-    // フィルタのみ: importance と recency で薄く付ける
+    // フィルタのみ: importance で薄く付ける
     score = importance;
   } else {
-    if (title && title === text) {
-      score += W.titleExact;
-      matchedIn.push("title:exact");
-    } else if (title.includes(text)) {
-      score += W.titlePartial;
-      matchedIn.push("title:partial");
-    }
-
-    if (tags.some((t) => t.includes(text) || text.includes(t))) {
-      score += W.tagMatch;
-      matchedIn.push("tag");
-    }
-
     const headings = (parsed.body.match(/^#{1,6}\s+.*$/gm) || []).join("\n").toLowerCase();
-    if (headings.includes(text)) {
-      score += W.headingMatch;
-      matchedIn.push("heading");
-    }
-
     const metaBlob = [
       asString(data.domain),
       asString(data.category),
@@ -136,17 +118,60 @@ function scoreDoc(
     ]
       .join(" ")
       .toLowerCase();
-    if (metaBlob.includes(text)) {
-      score += W.metadataMatch;
-      matchedIn.push("metadata");
+    const body = parsed.body.toLowerCase();
+
+    // 質問文はフレーズ全体では一致しないことが多いため、語に分割して語ごとに採点する。
+    // （例:「ヒアリング 商談 受注率」→ 3語それぞれを各フィールドに照合）
+    const terms = text
+      .split(/[\s\u3000、。,.:;!?・/|「」『』（）()\[\]]+/)
+      .map((t) => t.trim())
+      .filter((t) => t.length >= 2);
+    const needles = terms.length > 0 ? terms : [text];
+
+    // フレーズ全体がタイトルと完全一致 / 部分一致した場合は最優先で加点
+    if (title && title === text) {
+      score += W.titleExact;
+      matchedIn.push("title:exact");
+    } else if (title && title.includes(text)) {
+      score += W.titlePartial;
+      matchedIn.push("title:partial");
     }
 
-    if (parsed.body.toLowerCase().includes(text)) {
-      score += W.bodyMatch;
-      matchedIn.push("body");
+    let matchedTerms = 0;
+    for (const needle of needles) {
+      let best = 0;
+      let where = "";
+      if (title && title === needle) {
+        best = W.titleExact;
+        where = "title:exact";
+      } else if (tags.some((t) => t.includes(needle) || needle.includes(t))) {
+        best = W.tagMatch;
+        where = "tag";
+      } else if (title.includes(needle)) {
+        best = W.titlePartial;
+        where = "title:partial";
+      } else if (headings.includes(needle)) {
+        best = W.headingMatch;
+        where = "heading";
+      } else if (metaBlob.includes(needle)) {
+        best = W.metadataMatch;
+        where = "metadata";
+      } else if (body.includes(needle)) {
+        best = W.bodyMatch;
+        where = "body";
+      }
+      if (best > 0) {
+        matchedTerms++;
+        score += best;
+        if (!matchedIn.includes(where)) matchedIn.push(where);
+      }
     }
 
     if (score === 0) return null;
+
+    // 質問の語をどれだけ広くカバーできたか（部分一致だけの文書より、全語一致を上位に）
+    const coverage = matchedTerms / needles.length;
+    score += Math.round(coverage * 20);
 
     // importance / recency の軽い加点
     score += importance;

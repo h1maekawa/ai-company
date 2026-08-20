@@ -12,6 +12,7 @@
  */
 
 import type { ManagedBy } from "./types";
+import { isValidApprovalGrant } from "./approval";
 
 /**
  * AI が自動で書き込んでよい path プレフィックス（AI Managed 作業領域のみ）。
@@ -94,20 +95,23 @@ export function canAiAutoWrite(path: string, existingContent?: string): WriteDec
 
 /**
  * Human Approval 済みの明示的書き込み（promote/merge/human_edit）。
- * canAiAutoWrite を迂回してよい唯一の経路。呼び出し元は必ず人間承認を経ていること。
+ * canAiAutoWrite を迂回してよい唯一の経路。
+ *
+ * Phase4 修正1: boolean フラグではなく **ApprovalGrant オブジェクト** を要求する。
+ * grant はサーバー内部でしか発行できず、HTTPリクエストのJSONからは偽造不可能。
+ * これにより「外部入力で approved:true を渡して Human Managed 領域を書き換える」経路を
+ * コード上で塞ぐ。
  */
-export type ApprovedWriteReason = "promotion" | "merge" | "human_edit";
-
 export function canWrite(
   path: string,
   existingContent: string | undefined,
-  opts: { approved?: boolean; reason?: ApprovedWriteReason } = {}
+  grant?: unknown
 ): WriteDecision {
-  if (opts.approved) {
+  if (isValidApprovalGrant(grant)) {
     return {
       allowed: true,
       ownership: classifyOwnership(path, existingContent),
-      reason: `Explicit Approved Write (${opts.reason ?? "human_edit"})`,
+      reason: `Explicit Approved Write (${grant.reason})`,
     };
   }
   return canAiAutoWrite(path, existingContent);

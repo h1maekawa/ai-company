@@ -5,6 +5,13 @@ import { runPersonalTodoAdd } from "./implementations/personalTodoAdd";
 import { runPersonalTodayShow } from "./implementations/personalTodayShow";
 import { runNoteDraftFormat } from "./implementations/noteDraftFormat";
 import { runFundLogFormat } from "./implementations/fundLogFormat";
+import { captureKnowledgeCandidate } from "../knowledge/captureService";
+
+/**
+ * Phase4 修正4: 出力が「再利用可能な学び」になりうるSkillだけをCapture対象にする。
+ * 全Skill実行を無条件保存しない。input.captureToKnowledge === true でも明示的にCaptureできる。
+ */
+const CAPTURE_WORTHY_SKILLS = new Set<string>(["personal-capture"]);
 
 type SkillHandler = (input: Record<string, unknown>) => {
   markdown: string;
@@ -71,6 +78,22 @@ export async function executeSkill(
     }
 
     const result = handler(input ?? {});
+
+    // 学び候補のCapture（非致命。失敗してもSkill結果は返す）
+    const wantCapture =
+      CAPTURE_WORTHY_SKILLS.has(skillId) || (input as Record<string, unknown>)?.captureToKnowledge === true;
+    if (wantCapture && result.markdown) {
+      try {
+        await captureKnowledgeCandidate({
+          content: result.markdown,
+          source: "skill",
+          title: skillId,
+        });
+      } catch (captureErr) {
+        console.error("[skills] Knowledge Capture failed (non-fatal):", captureErr);
+      }
+    }
+
     return {
       skillId,
       secretaryId,

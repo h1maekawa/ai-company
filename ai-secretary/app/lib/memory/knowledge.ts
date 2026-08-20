@@ -4,6 +4,7 @@ import { KnowledgeCategory } from "../parser/saveSuggestion";
 import { applyWikiLinks } from "../parser/wikilink";
 import { CANONICAL_DOMAINS, requireCanonicalDomain, type CanonicalDomain } from "../knowledge/domain";
 import { canWrite } from "../knowledge/writePolicy";
+import type { ApprovalGrant } from "../knowledge/approval";
 import { isKnowledgeStatus, managedByForStatus, type KnowledgeStatus } from "../knowledge/types";
 
 export interface KnowledgeSaveInput {
@@ -24,11 +25,12 @@ export interface KnowledgeSaveInput {
   id?: string;
   sha?: string;
   /**
-   * Human Approval 済みの明示書き込みか（promote / 直接保存API）。
-   * 正式Knowledge（Human Managed）へ書くため、既定 false では writePolicy に拒否される。
-   * id 指定（レガシー明示 promote）時は自動的に approved 扱いになる。
+   * Human Approval 済みであることを示す承認トークン（Phase4 修正1）。
+   * サーバー内部の Promotion / Merge ハンドラだけが issueApprovalGrant() で発行できる。
+   * HTTPリクエストのJSONからは偽造できないため、外部入力で Human Managed 領域を
+   * 書き換えることはできない。未指定なら writePolicy により拒否される。
    */
-  approved?: boolean;
+  grant?: ApprovalGrant;
 }
 
 function normalizeStatus(status: KnowledgeSaveInput["status"]): KnowledgeStatus {
@@ -45,7 +47,7 @@ function normalizeStatus(status: KnowledgeSaveInput["status"]): KnowledgeStatus 
  * Phase4 修正:
  *  - 修正1: managed_by は status から決定（promoted/merged → human）。
  *  - 修正2: domain は requireCanonicalDomain で必須化（personal への自動fallback廃止）。未解決は throw。
- *  - 修正3: Human Managed のため canWrite({approved}) 経路でのみ書ける。
+ *  - 修正3: Human Managed のため canWrite(grant) 経路でのみ書ける（grantはサーバー内部発行）。
  *  - 修正4（案B）: 新規昇格は常に新規ファイルを作成する。
  *    ただし id 指定のレガシー明示 promote（note/promote 等）は従来どおり同一idで更新する。
  */
@@ -65,14 +67,12 @@ export async function saveKnowledge(
     related = [],
     id: existingId,
     sha,
-    approved = false,
+    grant,
   } = input;
 
   const domain: CanonicalDomain = requireCanonicalDomain(domainInput ?? category);
   const normalizedStatus = normalizeStatus(status);
   const managedBy = managedByForStatus(normalizedStatus);
-  // 正式Knowledge = Human Managed。直接保存/promote/レガシーid更新は明示的Approved Write。
-  const effectiveApproved = approved || Boolean(existingId);
 
   const now = new Date();
   const year = now.getFullYear();
@@ -151,10 +151,7 @@ ${linkedContent}
 
   const targetFilePath = `${targetDir}/${finalFileName}`;
 
-  const decision = canWrite(targetFilePath, "", {
-    approved: effectiveApproved,
-    reason: "promotion",
-  });
+  const decision = canWrite(targetFilePath, "", grant);
   if (!decision.allowed) {
     throw new Error(`[knowledge] ${decision.reason} (${targetFilePath})`);
   }

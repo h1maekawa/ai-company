@@ -7,16 +7,20 @@ import {
 import { resolveDomain } from "@/app/lib/knowledge/domain";
 
 /**
- * POST /api/knowledge/promote
+ * POST /api/knowledge/promote — Weekly Review からの人間承認アクション。
+ *
  * body: {
- *   path: string,                         // Candidate の path
+ *   path: string,                                  // Candidate の path
  *   action: "promote" | "merge" | "hold" | "reject",
- *   domain?: string,                      // promote 時必須（11 canonical のいずれか）
- *   title?, slug?, importance?, tags?,    // promote 任意
- *   targetPath?: string,                  // merge 時必須（統合先Knowledge path）
+ *   domain?: string,                               // promote 時必須（11 canonical のいずれか）
+ *   title?, slug?, importance?, tags?,             // promote 任意
+ *   targetPath?: string,                           // merge 時必須（統合先Knowledge path）
+ *   previewToken?: string,                         // merge 時必須（merge-preview の承認トークン）
  * }
  *
- * Promotion 時のみ Human Managed の正式Knowledgeを作成する（Human Approval）。
+ * セキュリティ（Phase4 修正1）: このAPIは `approved` 等のフラグを受け取らない。
+ * Human Managed 領域への書き込み承認は、promote/merge ハンドラ内部でのみ発行される
+ * ApprovalGrant によって行われる（クライアントからは偽造不可能）。
  */
 export async function POST(req: NextRequest) {
   try {
@@ -48,10 +52,20 @@ export async function POST(req: NextRequest) {
 
     if (action === "merge") {
       const targetPath = typeof body?.targetPath === "string" ? body.targetPath : "";
+      const previewToken = typeof body?.previewToken === "string" ? body.previewToken : "";
       if (!targetPath) {
         return NextResponse.json({ error: "merge には targetPath が必須です。" }, { status: 400 });
       }
-      const result = await mergeCandidate(path, targetPath);
+      if (!previewToken) {
+        return NextResponse.json(
+          {
+            error:
+              "merge には previewToken が必須です。先に /api/knowledge/merge-preview でDiffを確認・承認してください。",
+          },
+          { status: 400 }
+        );
+      }
+      const result = await mergeCandidate(path, targetPath, previewToken);
       return NextResponse.json({ status: "merged", ...result });
     }
 

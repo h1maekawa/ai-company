@@ -25,6 +25,18 @@ type Candidate = {
   body: string;
 };
 
+type DiffLine = { type: "context" | "added"; text: string };
+
+type MergePreview = {
+  targetPath: string;
+  candidatePath: string;
+  currentContent: string;
+  proposedContent: string;
+  addedBlock: string;
+  diff: DiffLine[];
+  previewToken: string;
+};
+
 const ACTION_LABEL: Record<string, string> = {
   promote: "昇格",
   merge: "統合",
@@ -40,6 +52,7 @@ export default function WeeklyReviewPage() {
   const [domainSel, setDomainSel] = useState<Record<string, string>>({});
   const [targetSel, setTargetSel] = useState<Record<string, string>>({});
   const [flash, setFlash] = useState<string | null>(null);
+  const [preview, setPreview] = useState<MergePreview | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,7 +62,6 @@ export default function WeeklyReviewPage() {
       if (!res.ok) throw new Error(json.error || "取得に失敗しました");
       const list: Candidate[] = json.items ?? [];
       setItems(list);
-      // domain初期値: 最初のdomain候補
       const d: Record<string, string> = {};
       const t: Record<string, string> = {};
       for (const it of list) {
@@ -69,7 +81,8 @@ export default function WeeklyReviewPage() {
     load();
   }, [load]);
 
-  const act = async (item: Candidate, action: "promote" | "merge" | "hold" | "reject") => {
+  /** 昇格 / 保留 / 破棄（Mergeはpreviewを挟むので別経路） */
+  const act = async (item: Candidate, action: "promote" | "hold" | "reject") => {
     setBusy(item.path);
     setError(null);
     setFlash(null);
@@ -82,11 +95,6 @@ export default function WeeklyReviewPage() {
         payload.title = item.frontmatter.title;
         payload.tags = item.frontmatter.tags ?? [];
       }
-      if (action === "merge") {
-        const targetPath = targetSel[item.path];
-        if (!targetPath) throw new Error("統合先を選択してください。");
-        payload.targetPath = targetPath;
-      }
       const res = await fetch("/api/knowledge/promote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -97,13 +105,65 @@ export default function WeeklyReviewPage() {
       setFlash(
         action === "promote"
           ? `昇格しました → ${json.knowledgePath}`
-          : action === "merge"
-            ? `統合しました → ${json.targetPath}`
-            : `「${ACTION_LABEL[action]}」を記録しました`
+          : `「${ACTION_LABEL[action]}」を記録しました`
       );
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "処理に失敗しました");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Merge step1: Diff/Previewを取得して表示（この時点では一切書き込まない） */
+  const openMergePreview = async (item: Candidate) => {
+    const targetPath = targetSel[item.path];
+    if (!targetPath) {
+      setError("統合先を選択してください。");
+      return;
+    }
+    setBusy(item.path);
+    setError(null);
+    setFlash(null);
+    try {
+      const res = await fetch("/api/knowledge/merge-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: item.path, targetPath }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Previewの取得に失敗しました");
+      setPreview(json as MergePreview);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Previewの取得に失敗しました");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Merge step2: ユーザーがDiffを承認したときだけ実行（previewToken必須） */
+  const confirmMerge = async () => {
+    if (!preview) return;
+    setBusy(preview.candidatePath);
+    setError(null);
+    try {
+      const res = await fetch("/api/knowledge/promote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: preview.candidatePath,
+          action: "merge",
+          targetPath: preview.targetPath,
+          previewToken: preview.previewToken,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "統合に失敗しました");
+      setFlash(`統合しました → ${json.targetPath}`);
+      setPreview(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "統合に失敗しました");
     } finally {
       setBusy(null);
     }
@@ -117,7 +177,7 @@ export default function WeeklyReviewPage() {
             <h1 className="text-xl font-bold">Weekly Review — Knowledge昇格</h1>
             <p className="mt-1 text-xs text-slate-400">
               Inboxに溜まったCandidateを確認し、昇格 / 統合 / 保留 / 破棄を選びます。
-              昇格したものだけが正式Knowledge（Human Managed）になります。
+              昇格・統合したものだけが正式Knowledge（Human Managed）になります。
             </p>
           </div>
           <Link href="/" className="text-xs text-blue-400 hover:underline">
@@ -136,20 +196,66 @@ export default function WeeklyReviewPage() {
           </p>
         )}
 
+        {/* ─── Merge Diff/Preview（承認するまで書き込まれない） ─── */}
+        {preview && (
+          <section className="mb-5 rounded-xl border border-blue-500/40 bg-slate-900 p-4">
+            <h2 className="text-sm font-semibold text-blue-300">統合プレビュー</h2>
+            <p className="mt-1 text-[11px] text-slate-400">
+              統合先: <code className="text-slate-300">{preview.targetPath}</code>
+              <br />
+              以下の内容が既存Knowledgeの末尾に追記されます。承認するまで書き込みは行われません。
+            </p>
+
+            <pre className="mt-3 max-h-72 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-3 text-[11px] leading-relaxed">
+              {preview.diff.map((line, i) => (
+                <div
+                  key={i}
+                  className={
+                    line.type === "added"
+                      ? "bg-emerald-500/10 text-emerald-300"
+                      : "text-slate-500"
+                  }
+                >
+                  {line.type === "added" ? "+ " : "  "}
+                  {line.text}
+                </div>
+              ))}
+            </pre>
+
+            <div className="mt-3 flex gap-2">
+              <button
+                disabled={busy !== null}
+                onClick={confirmMerge}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
+              >
+                この内容で統合
+              </button>
+              <button
+                disabled={busy !== null}
+                onClick={() => setPreview(null)}
+                className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+              >
+                キャンセル
+              </button>
+            </div>
+          </section>
+        )}
+
         {loading ? (
           <p className="text-sm text-slate-400">読み込み中...</p>
         ) : items.length === 0 ? (
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
             <p className="text-sm text-slate-300">レビュー待ちのCandidateはありません。</p>
             <p className="mt-1 text-xs text-slate-500">
-              会話や調査から <code className="text-slate-300">/api/knowledge/capture</code> でCaptureすると、ここに整理済み候補が並びます。
+              会話・調査・Skill・Workflowから学び候補が出ると、ここに整理済み候補が並びます。
             </p>
           </div>
         ) : (
           <div className="space-y-4">
             {items.map((it) => {
               const fm = it.frontmatter;
-              const needDomain = fm.domain_resolution_required || (fm.domain_candidates?.length ?? 0) === 0;
+              const needDomain =
+                fm.domain_resolution_required || (fm.domain_candidates?.length ?? 0) === 0;
               return (
                 <section key={it.path} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
                   <div className="mb-2 flex items-start justify-between gap-3">
@@ -173,7 +279,10 @@ export default function WeeklyReviewPage() {
 
                   {fm.recommended_action && (
                     <p className="mb-2 text-[11px] text-slate-400">
-                      AI推奨: <span className="font-semibold text-slate-200">{ACTION_LABEL[fm.recommended_action] ?? fm.recommended_action}</span>
+                      AI推奨:{" "}
+                      <span className="font-semibold text-slate-200">
+                        {ACTION_LABEL[fm.recommended_action] ?? fm.recommended_action}
+                      </span>
                     </p>
                   )}
 
@@ -188,7 +297,6 @@ export default function WeeklyReviewPage() {
                     </p>
                   )}
 
-                  {/* domain選択（昇格に必須） */}
                   <div className="mb-3 flex flex-wrap items-center gap-2">
                     <label className="text-[11px] text-slate-400">domain:</label>
                     <select
@@ -208,7 +316,6 @@ export default function WeeklyReviewPage() {
                     )}
                   </div>
 
-                  {/* 統合先選択 */}
                   {(fm.promotion_targets?.length ?? 0) > 0 && (
                     <div className="mb-3 flex flex-wrap items-center gap-2">
                       <label className="text-[11px] text-slate-400">統合先:</label>
@@ -236,11 +343,15 @@ export default function WeeklyReviewPage() {
                       昇格
                     </button>
                     <button
-                      disabled={busy === it.path || (fm.promotion_targets?.length ?? 0) === 0 || !targetSel[it.path]}
-                      onClick={() => act(it, "merge")}
+                      disabled={
+                        busy === it.path ||
+                        (fm.promotion_targets?.length ?? 0) === 0 ||
+                        !targetSel[it.path]
+                      }
+                      onClick={() => openMergePreview(it)}
                       className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
                     >
-                      統合
+                      統合（差分を確認）
                     </button>
                     <button
                       disabled={busy === it.path}

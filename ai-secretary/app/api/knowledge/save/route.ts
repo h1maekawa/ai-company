@@ -1,28 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveKnowledge } from "@/app/lib/memory/knowledge";
-import { resolveDomain, isCanonicalDomain } from "@/app/lib/knowledge/domain";
-
-// 後方互換の legacy カテゴリ（alias で canonical domain に解決される）
-const LEGACY_CATEGORIES = [
-  "sales",
-  "marketing",
-  "recruiting",
-  "investing",
-  "systems",
-  "content",
-  "strategy",
-  "misc",
-];
+import { captureToInbox, prepareCandidate } from "@/app/lib/knowledge/lifecycle";
+import { resolveDomain } from "@/app/lib/knowledge/domain";
+import type { AiOrganizeResult } from "@/app/lib/knowledge/types";
+import type { CanonicalDomain } from "@/app/lib/knowledge/domain";
 
 /**
  * POST /api/knowledge/save
- * 直接の正式Knowledge保存（ユーザーの明示操作）。Human Approval 相当の Approved Write として扱う。
- * domain は canonical / legacy(alias) で解決できることが必須（未解決は 400）。
+ *
+ * Phase4 修正1（重要な仕様変更）:
+ * このAPIは **正式Knowledge（Human Managed）を直接作成しない**。
+ * 汎用の保存APIから Human Managed 領域を書き換えられないことをコードで保証するため、
+ * 受け取った内容は Inbox の Candidate として保存する。
+ * 正式Knowledge化は /weekly-review での人間承認（POST /api/knowledge/promote）のみ。
+ *
+ * レスポンスは後方互換のため { success, path, id } を維持する（path は Inbox のパス）。
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, slug, category, domain, importance, content } = body;
+    const { title, slug, category, domain, importance, content, tags } = body;
     const rawClass = domain ?? category;
 
     if (!title || !slug || !rawClass || !content) {
@@ -32,29 +28,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const isCanonical = isCanonicalDomain(rawClass);
-    const isLegacy = LEGACY_CATEGORIES.includes(rawClass);
-    if (!isCanonical && !isLegacy && !resolveDomain(rawClass).domain) {
-      return NextResponse.json(
-        { error: "無効な category/domain です。canonical domain もしくは legacy category を指定してください。" },
-        { status: 400 }
-      );
-    }
+    // domain は解決できなくてもエラーにしない（Candidateとして保持し、昇格時に人間が確定する）
+    const resolved = resolveDomain(rawClass).domain;
+    const domainCandidates: CanonicalDomain[] = resolved ? [resolved] : [];
 
-    const cleanImportance = importance === 1 || importance === 2 || importance === 3 ? importance : 1;
-
-    const result = await saveKnowledge({
-      title,
-      slug,
-      category: category ?? rawClass,
-      domain: domain ?? undefined,
-      importance: cleanImportance as 1 | 2 | 3,
-      content,
-      status: "promoted",
-      approved: true, // 直接保存API = 明示的なHuman Approved Write
+    const captured = await captureToInbox({
+      content: String(content),
+      source: "manual",
+      title: String(title),
     });
 
-    return NextResponse.json(result);
+    const organize: AiOrganizeResult = {
+      summary: "",
+      title: String(title),
+      domainCandidates,
+      tags: Array.isArray(tags) ? tags.map(String) : [],
+      duplicateCandidates: [],
+      conflictCandidates: [],
+      recommendedAction: resolved ? "promote" : "hold",
+      promotionTargets: [],
+    };
+    const candidate = await prepareCandidate(captured.path, organize);
+
+    return NextResponse.json({
+      success: true,
+      path: candidate.path,
+      id: candidate.frontmatter.id,
+      status: candidate.frontmatter.status,
+      importance: importance ?? 1,
+      slug,
+      note: "Candidateとして保存しました。正式Knowledge化は /weekly-review で承認してください。",
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "不明なエラー";
     console.error("Error in POST /api/knowledge/save:", msg);

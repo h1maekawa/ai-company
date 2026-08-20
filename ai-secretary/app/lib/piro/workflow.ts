@@ -61,6 +61,28 @@ async function generateAndSave(
   return { kind, path, markdown };
 }
 
+/**
+ * Phase4 修正4: Workflow完了時の学び候補Capture。
+ * 生成物そのもの（記事下書き等）はVaultに保存済みなので、ここでは
+ * 「どのテーマでどんな成果物が出たか」のダイジェストのみをInboxへ送る。
+ */
+async function capturePiroLearning(topic: string, artifacts: PiroArtifact[]): Promise<void> {
+  if (artifacts.length === 0) return;
+  try {
+    const { captureKnowledgeCandidate } = await import("../knowledge/captureService");
+    const digest = artifacts.map((a) => `- ${a.kind}: ${a.path}`).join("\n");
+    await captureKnowledgeCandidate({
+      content: `Piro Workflow 実行結果\n\nテーマ: ${topic}\n\n生成物:\n${digest}\n\n${
+        artifacts[0].markdown.slice(0, 800)
+      }`,
+      source: "workflow",
+      title: `piro-${topic}`,
+    });
+  } catch (e) {
+    console.error("[piro] Knowledge Capture failed (non-fatal):", e);
+  }
+}
+
 export async function runPiroWorkflow(input: PiroRunInput): Promise<PiroRunResult> {
   const topic = input.topic.trim();
   const audience = input.audience?.trim() || "AIを活用して成長・副業・市場価値向上を目指す20〜35歳";
@@ -100,6 +122,8 @@ export async function runPiroWorkflow(input: PiroRunInput): Promise<PiroRunResul
     );
     artifacts.push(artifact);
   }
+
+  await capturePiroLearning(topic, artifacts);
 
   return { workflow: input.workflow, topic, artifacts };
 }

@@ -102,3 +102,36 @@ export function parseSaveSuggestion(message: string, reply: string): SaveSuggest
     replyWithoutMetadata,
   };
 }
+
+/**
+ * Phase4 修正4: Chat から Knowledge Capture するためのプロンプト指示。
+ * KAIZEN と同じ「隠しメタデータブロック」方式。
+ *
+ * 全会話を保存しないために、**AIが明示的にこのブロックを出したときだけ** Capture する
+ * （キーワード一致だけでは Capture しない。hasExplicitSaveSuggestion() を使うこと）。
+ */
+export const SAVE_SUGGESTION_PROMPT_INSTRUCTION = `
+
+## Knowledge保存の提案ルール
+この会話で「後から再利用できる知見（営業・KPI・投資・副業・マーケ・AI・技術・マネジメント・戦略などの型/学び/判断基準）」が
+新たに得られた場合に**限り**、回答の最後に次の隠しコメントを1つだけ付けてください。
+雑談・単純な確認・既知情報の繰り返しでは絶対に付けないでください。
+
+<!-- SAVE_SUGGESTION: {"suggestSave": true, "category": "sales|marketing|content|strategy|investing|systems|misc", "slug": "english-slug", "importance": 1} -->
+
+このコメントはユーザーには表示されません。付ける場合も通常の回答は普通に書いてください。`;
+
+/**
+ * AIが明示的に SAVE_SUGGESTION ブロックを出し、かつ suggestSave:true だったかを判定する。
+ * キーワードルールによる推測は含めない（Capture の暴発を防ぐため）。
+ */
+export function hasExplicitSaveSuggestion(reply: string): boolean {
+  const m = reply.match(/<!--\s*SAVE_SUGGESTION:\s*({[\s\S]*?})\s*-->/i);
+  if (!m) return false;
+  try {
+    const data = JSON.parse(m[1]);
+    return Boolean(data.suggestSave);
+  } catch {
+    return false;
+  }
+}

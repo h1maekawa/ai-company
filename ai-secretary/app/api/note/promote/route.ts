@@ -4,6 +4,7 @@ import { generateUniqueId } from "@/app/lib/utils/id";
 import { toSlug } from "@/app/lib/utils/slug";
 import { callAI } from "@/app/lib/ai/client";
 import { saveKnowledge } from "@/app/lib/memory/knowledge";
+import { issueApprovalGrant } from "@/app/lib/knowledge/approval";
 import { KnowledgeCategory } from "@/app/lib/parser/saveSuggestion";
 
 const KNOWLEDGE_CATEGORIES = [
@@ -122,6 +123,9 @@ export async function POST(req: NextRequest) {
       related,
       id: knowledgeId,
       sha: source.sha,
+      // ユーザーの明示操作（Note昇格）に基づくサーバー内部発行の承認トークン。
+      // クライアントからフラグを受け取っているわけではない（Phase4 修正1）。
+      grant: issueApprovalGrant("human_edit", `note promote: ${knowledgeId}`),
     });
 
     const now = new Date();

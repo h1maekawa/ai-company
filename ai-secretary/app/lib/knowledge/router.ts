@@ -70,9 +70,13 @@ export async function buildKnowledgeContext(
 
   const detected = options.allDomains ? [] : detectDomains(question).map((d) => d.domain);
 
+  // Phase4 修正3: 通常のKnowledge Routerは **Human Approved済み（promoted）のみ** を参照する。
+  // Inbox/Candidate（captured/candidate）は未確定情報なので、AIの通常回答の根拠にしない。
+  // Weekly Review や重複確認など Candidate を扱う処理は、search を直接呼んで status を指定する。
   const hits = await repo.search({
     text: question,
     domains: detected.length > 0 ? detected : undefined,
+    status: ["promoted"],
     limit,
   });
 

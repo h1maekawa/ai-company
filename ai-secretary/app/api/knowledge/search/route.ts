@@ -3,6 +3,9 @@ import { vaultKnowledgeSearch, type KnowledgeQuery } from "@/app/lib/knowledge/s
 import { buildKnowledgeContext } from "@/app/lib/knowledge/router";
 import { isKnowledgeStatus, type KnowledgeStatus } from "@/app/lib/knowledge/types";
 
+// クエリパラメータとVaultの内容に依存するため常に動的実行する
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/knowledge/search
  *   ?q=検索語
