@@ -19,6 +19,21 @@ test("X投稿は本文と時刻でX Post IDへ紐付く", () => {
   assert.equal(matched.id, "right");
 });
 
+test("同一本文の候補が時刻上も曖昧ならX Post IDを保存しない", () => {
+  const matched = metrics.matchPublishedPost(draft, [
+    { id: "before", text: draft.text, created_at: "2026-08-20T22:28:00.000Z" },
+    { id: "after", text: draft.text, created_at: "2026-08-20T22:33:00.000Z" },
+  ]);
+  assert.equal(matched, undefined);
+});
+
+test("予約時刻から大きく外れた同一本文はX Post IDへ紐付けない", () => {
+  const matched = metrics.matchPublishedPost(draft, [
+    { id: "stale", text: draft.text, created_at: "2026-08-20T10:30:00.000Z" },
+  ]);
+  assert.equal(matched, undefined);
+});
+
 test("Metrics取得成功は実値だけ保存し取得不能値をunavailableにする", async () => {
   process.env.X_API_BEARER_TOKEN = "test-token";
   process.env.X_API_USER_ID = "u1";

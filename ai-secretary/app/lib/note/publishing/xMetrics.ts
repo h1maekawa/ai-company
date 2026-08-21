@@ -1,6 +1,8 @@
 import type { ContentPerformance, SocialDraft } from "../research/types";
 
 const X_API_BASE = "https://api.x.com/2";
+const POST_MATCH_WINDOW_MS = 6 * 60 * 60 * 1000;
+const POST_MATCH_AMBIGUITY_MS = 5 * 60 * 1000;
 
 type XPost = {
   id: string;
@@ -37,13 +39,25 @@ function normalized(text: string): string {
 export function matchPublishedPost(draft: SocialDraft, posts: XPost[]): XPost | undefined {
   const expected = normalized(draft.text);
   const scheduled = draft.scheduledAt ? new Date(draft.scheduledAt).getTime() : undefined;
-  return posts
-    .filter((post) => normalized(post.text) === expected)
-    .sort((a, b) => {
-      if (!scheduled) return 0;
-      return Math.abs(new Date(a.created_at ?? 0).getTime() - scheduled) -
-        Math.abs(new Date(b.created_at ?? 0).getTime() - scheduled);
-    })[0];
+  const matches = posts.filter((post) => normalized(post.text) === expected);
+
+  // 投稿時刻がない場合、同一本文を一意に特定できるときだけ採用する。
+  if (!Number.isFinite(scheduled)) return matches.length === 1 ? matches[0] : undefined;
+
+  const ranked = matches
+    .map((post) => ({
+      post,
+      distance: Math.abs(new Date(post.created_at ?? "").getTime() - scheduled!),
+    }))
+    .filter(({ distance }) => Number.isFinite(distance) && distance <= POST_MATCH_WINDOW_MS)
+    .sort((a, b) => a.distance - b.distance);
+
+  if (ranked.length === 0) return undefined;
+  // 同一本文の候補がほぼ同距離なら、誤ったIDを保存するより次回再試行する。
+  if (ranked[1] && ranked[1].distance - ranked[0].distance <= POST_MATCH_AMBIGUITY_MS) {
+    return undefined;
+  }
+  return ranked[0].post;
 }
 
 async function xFetch(path: string, token: string): Promise<{ ok: true; body: any } | { ok: false; retryable: boolean; error: string }> {
