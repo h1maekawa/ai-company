@@ -13,7 +13,10 @@
     "test:maemichi": "bash scripts/test-maemichi.sh",
     "test:architecture": "bash scripts/test-architecture.sh",
     "test:content": "bash scripts/test-content.sh",
-    "test": "npm run test:architecture && npm run test:maemichi && npm run test:fund && npm run test:content"
+    "test:knowledge": "bash scripts/test-knowledge.sh",
+    "test:grill": "bash scripts/test-grill.sh",
+    "bench:grill": "bash scripts/bench-grill.sh",
+    "test": "npm run test:architecture && npm run test:maemichi && npm run test:fund && npm run test:content && npm run test:knowledge && npm run test:grill"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",

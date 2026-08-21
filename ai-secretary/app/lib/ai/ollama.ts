@@ -1,4 +1,5 @@
 import { ChatMessage } from "./types";
+import type { AIResponseFormat } from "./client";
 
 const OLLAMA_URL = process.env.OLLAMA_URL ?? process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3:8b";
@@ -7,7 +8,8 @@ const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS ?? 60000);
 export async function callOllama(
   message: string,
   systemPrompt: string,
-  history: ChatMessage[] = []
+  history: ChatMessage[] = [],
+  responseFormat: AIResponseFormat = "text"
 ): Promise<string> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
@@ -27,6 +29,7 @@ export async function callOllama(
         model: OLLAMA_MODEL,
         messages,
         stream: false,
+        ...(responseFormat === "json" ? { format: "json" } : {}),
       }),
     });
 

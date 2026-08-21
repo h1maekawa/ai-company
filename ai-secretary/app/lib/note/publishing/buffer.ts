@@ -146,13 +146,29 @@ export async function getChannels(): Promise<BufferResult<BufferChannel[]>> {
     { organizationId: cfg.org }
   );
 
-  if (!result.ok) return result;
+  if (result.ok === false) return result;
   return { ok: true, data: result.data.channels ?? [] };
 }
 
 /* ─── 予約中の件数 ───────────────────────── */
 
-type BufferPostNode = { id: string; status?: string; dueAt?: string; text?: string };
+export type BufferPostMetric = {
+  type?: string;
+  name?: string;
+  value?: number;
+  unit?: "count" | "percentage" | string;
+};
+
+export type BufferPostNode = {
+  id: string;
+  status?: string;
+  text?: string;
+  dueAt?: string;
+  sentAt?: string;
+  externalLink?: string;
+  metrics?: BufferPostMetric[] | null;
+  metricsUpdatedAt?: string | null;
+};
 
 /** 現在予約中（未投稿）の件数を数える。無料プランの枠を超えないため */
 export async function countScheduled(): Promise<BufferResult<number>> {
@@ -174,7 +190,7 @@ export async function countScheduled(): Promise<BufferResult<number>> {
     { organizationId: cfg.org, channelIds: [cfg.channel] }
   );
 
-  if (!result.ok) return result;
+  if (result.ok === false) return result;
   return { ok: true, data: result.data.posts?.edges?.length ?? 0 };
 }
 
@@ -243,7 +259,7 @@ export async function createPost(
     }
   );
 
-  if (!result.ok) return result;
+  if (result.ok === false) return result;
   if (result.data.createPost?.message) {
     return {
       ok: false,
@@ -264,17 +280,26 @@ export async function deletePost(postId: string): Promise<BufferResult<boolean>>
     }`,
     { input: { id: postId } }
   );
-  if (!result.ok) return result;
+  if (result.ok === false) return result;
   return { ok: true, data: true };
 }
 
 export async function getPost(postId: string): Promise<BufferResult<BufferPostNode | null>> {
   const result = await graphql<{ post?: BufferPostNode }>(
     `query Post($id: String!) {
-      post(input: { id: $id }) { id status dueAt text }
+      post(input: { id: $id }) {
+        id
+        status
+        text
+        dueAt
+        sentAt
+        externalLink
+        metrics { type name value unit }
+        metricsUpdatedAt
+      }
     }`,
     { id: postId }
   );
-  if (!result.ok) return result;
+  if (result.ok === false) return result;
   return { ok: true, data: result.data.post ?? null };
 }

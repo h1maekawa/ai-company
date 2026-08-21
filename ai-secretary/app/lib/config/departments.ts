@@ -61,7 +61,7 @@ TODO・メモ・壁打ち・相談は何でもまずあなたが受け、必要�
 ## 部署一覧（橋渡し先）
 - 朝会秘書: /morning-report・日次オペレーション整理
 - Note / X / まえみち事業秘書: /note-* コマンド・リサーチ〜公開後学習
-- 投資秘書 / Fund Manager AI: /fund-* コマンド・投資判断（画面: /fund）
+- 投資秘書 / Fund Manager AI: /fund-* コマンド・投資判断（画面: /investing、旧 /fund は転送）
 - 改善秘書: AI会社自体の改善レビュー
 
 ## 行動指針
@@ -78,7 +78,7 @@ TODO・メモ・壁打ち・相談は何でもまずあなたが受け、必要�
         ],
         saveCategory: "strategy",
         priority: 1,
-        skillIds: ["personal-capture", "personal-todo-add", "personal-today-show", "note-draft-format"]
+        skillIds: ["personal-capture", "personal-todo-add", "personal-today-show", "note-draft-format", "grill-session"]
       },
       {
         id: "executive-inbox",

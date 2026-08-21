@@ -393,6 +393,14 @@ export type SocialDraft = {
   status: SocialDraftStatus;
   scheduledAt?: string;
   bufferPostId?: string;
+  /** Buffer公開後にX APIの本文・時刻照合で解決する */
+  xPostId?: string;
+  /** Buffer Metrics Providerの更新判定用metadata */
+  bufferMetricsUpdatedAt?: string;
+  bufferExternalLink?: string;
+  metricsLastSyncedAt?: string;
+  metricsSnapshotHours?: number;
+  metricsSyncError?: string;
   failureReason?: string;
 
   /* ─── Content Business OS 拡張（任意） ─── */
@@ -462,6 +470,12 @@ export type NoteArticleDraft = {
   paidSection?: string;
   paywallAfterHeading?: string;
   price?: number;
+  /** AI/ルールによる参考帯。実価格ではなく公開時に人が決める */
+  priceSuggestion?: string;
+  sourceTrendClusterId?: string;
+  /** 自動昇格の週次重複防止キー（week:topic:type）。手動記事には付かない */
+  autoCandidateKey?: string;
+  autoCandidateWeek?: string;
 
   tags: string[];
 
@@ -530,6 +544,7 @@ export function defaultAffiliatePolicy(affiliateId: string): AffiliatePolicy {
 /** 取得できない数値は 0 ではなく undefined のままにする */
 export type ContentPerformance = {
   contentId: string;
+  trendClusterId?: string;
   /** Content Business OS: PublishedContent（monetization/types.ts）への参照。任意 */
   publishedContentId?: string;
   platform: "x" | "note";
@@ -541,6 +556,7 @@ export type ContentPerformance = {
   likes?: number;
   replies?: number;
   reposts?: number;
+  engagements?: number;
   quotes?: number;
   bookmarks?: number;
   profileClicks?: number;
@@ -556,18 +572,39 @@ export type ContentPerformance = {
   hasQuestion?: boolean;
   hasExternalLink?: boolean;
   linkClicks?: number;
+  profileVisits?: number;
+  followersGained?: number;
+  noteClicks?: number;
 
   noteViews?: number;
   noteLikes?: number;
   noteSales?: number;
   noteRevenue?: number;
+  freeNoteViews?: number;
+  paidPurchases?: number;
+  repeatPurchases?: number;
 
   affiliateClicks?: number;
   affiliateConversions?: number;
   affiliateRevenue?: number;
 
   measuredAt: string;
+  snapshotHours?: number;
   measurementWindow?: "30m" | "1h" | "3h" | "24h" | "72h" | "7d";
+  metricAvailability?: Partial<
+    Record<
+      | "impressions"
+      | "likes"
+      | "replies"
+      | "reposts"
+      | "engagements"
+      | "linkClicks"
+      | "profileVisits"
+      | "followersGained"
+      | "noteClicks",
+      "available" | "unavailable"
+    >
+  >;
 };
 
 export type RevenueSharingProgress = {
@@ -590,6 +627,46 @@ export type MonetizationRule = {
   verifiedAt: string;
   active: boolean;
 };
+
+export type PerformanceWeights = {
+  impressions: number;
+  likes: number;
+  replies: number;
+  reposts: number;
+  engagementRate: number;
+  profileVisits: number;
+  followersGained: number;
+  noteClicks: number;
+};
+
+export function defaultPerformanceWeights(): PerformanceWeights {
+  return {
+    impressions: 0.1,
+    likes: 1,
+    replies: 3,
+    reposts: 4,
+    engagementRate: 20,
+    profileVisits: 2,
+    followersGained: 5,
+    noteClicks: 4,
+  };
+}
+
+export type WinningTopicPolicy = {
+  minimumPosts: number;
+  minimumAverageScore: number;
+  minimumStrongPosts: number;
+  strongPostScore: number;
+};
+
+export function defaultWinningTopicPolicy(): WinningTopicPolicy {
+  return {
+    minimumPosts: 2,
+    minimumAverageScore: 55,
+    minimumStrongPosts: 2,
+    strongPostScore: 50,
+  };
+}
 
 /* ─── 投稿ジョブ（Playwrightローカルランナー用） ─────── */
 

@@ -56,7 +56,7 @@ export default function SettingsPage() {
             </div>
           </dl>
           <Link
-            href="/fund"
+            href="/investing/import"
             className="mt-4 block rounded-xl bg-brand py-2.5 text-center text-xs font-semibold text-white hover:bg-brand/85"
           >
             投資部門でCSVを取り込む・方針を設定する

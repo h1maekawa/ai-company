@@ -1,86 +1,105 @@
 import { generateUniqueId } from "../utils/id";
-import { saveVaultFile, listVaultDirectory, getVaultFile } from "../vault";
+import { vaultDocumentStore } from "../persistence/vaultStore";
 import { KnowledgeCategory } from "../parser/saveSuggestion";
 import { applyWikiLinks } from "../parser/wikilink";
+import { CANONICAL_DOMAINS, requireCanonicalDomain, type CanonicalDomain } from "../knowledge/domain";
+import { canWrite } from "../knowledge/writePolicy";
+import type { ApprovalGrant } from "../knowledge/approval";
+import { isKnowledgeStatus, managedByForStatus, type KnowledgeStatus } from "../knowledge/types";
 
 export interface KnowledgeSaveInput {
   title: string;
   slug: string;
-  category: KnowledgeCategory;
+  /** Legacy category（8種）または canonical domain（11種）。未指定なら domain を使う。 */
+  category?: KnowledgeCategory | string;
+  /** canonical domain（優先）。未解決なら requireCanonicalDomain が throw する。 */
+  domain?: string;
   importance: 1 | 2 | 3;
   content: string;
-  status?: "raw" | "reviewed" | "promoted" | "archived";
+  /** 既定は promoted（正式Knowledge）。promoted/merged は managed_by:human になる。 */
+  status?: KnowledgeStatus | "raw" | "reviewed";
   tags?: string[];
   source_ref?: string[];
   related?: string[];
-  id?: string; // Reused when updating/overwriting status
-  sha?: string; // Required for GitHub API overwrite
+  /** レガシー: 既存Knowledgeの status を更新する明示操作（note/promote 等）。指定時は Approved Write 扱い。 */
+  id?: string;
+  sha?: string;
+  /**
+   * Human Approval 済みであることを示す承認トークン（Phase4 修正1）。
+   * サーバー内部の Promotion / Merge ハンドラだけが issueApprovalGrant() で発行できる。
+   * HTTPリクエストのJSONからは偽造できないため、外部入力で Human Managed 領域を
+   * 書き換えることはできない。未指定なら writePolicy により拒否される。
+   */
+  grant?: ApprovalGrant;
 }
 
-const KNOWLEDGE_CATEGORIES = [
-  "sales",
-  "marketing",
-  "recruiting",
-  "investing",
-  "systems",
-  "content",
-  "strategy",
-  "misc",
-];
+function normalizeStatus(status: KnowledgeSaveInput["status"]): KnowledgeStatus {
+  if (!status) return "promoted";
+  if (isKnowledgeStatus(status)) return status;
+  if (status === "raw") return "captured";
+  if (status === "reviewed") return "candidate";
+  return "promoted";
+}
 
 /**
- * Saves a new or existing knowledge markdown file to the Vault with Frontmatter metadata.
- * Resolves naming conflicts by adding numerical suffixes, applies WikiLinks, and links related files.
+ * 正式Knowledge（promoted/merged）を Vault へ書き込む low-level writer。
+ *
+ * Phase4 修正:
+ *  - 修正1: managed_by は status から決定（promoted/merged → human）。
+ *  - 修正2: domain は requireCanonicalDomain で必須化（personal への自動fallback廃止）。未解決は throw。
+ *  - 修正3: Human Managed のため canWrite(grant) 経路でのみ書ける（grantはサーバー内部発行）。
+ *  - 修正4（案B）: 新規昇格は常に新規ファイルを作成する。
+ *    ただし id 指定のレガシー明示 promote（note/promote 等）は従来どおり同一idで更新する。
  */
-export async function saveKnowledge(input: KnowledgeSaveInput): Promise<{ success: boolean; path: string; id: string }> {
+export async function saveKnowledge(
+  input: KnowledgeSaveInput
+): Promise<{ success: boolean; path: string; id: string }> {
   const {
     title,
     slug,
     category,
+    domain: domainInput,
     importance,
     content,
-    status = "raw",
+    status,
     tags = [],
     source_ref = [],
     related = [],
     id: existingId,
     sha,
+    grant,
   } = input;
+
+  const domain: CanonicalDomain = requireCanonicalDomain(domainInput ?? category);
+  const normalizedStatus = normalizeStatus(status);
+  const managedBy = managedByForStatus(normalizedStatus);
 
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
+  const dateHyphen = `${year}-${month}-${day}`;
 
-  const dateHyphen = `${year}-${month}-${day}`; // YYYY-MM-DD
-
-  // Generate unique sequential ID or reuse existing
   const id = existingId || (await generateUniqueId("kn"));
-
-  // Apply WikiLinks to the content before saving
   const linkedContent = applyWikiLinks(content);
 
-  // Estimate related files dynamically if not provided
   const finalRelated = [...related];
   if (finalRelated.length === 0 && tags.length > 0) {
     try {
-      for (const cat of KNOWLEDGE_CATEGORIES) {
-        const dir = `memory/knowledge/${cat}`;
-        const fileNames = await listVaultDirectory(dir);
+      for (const dom of CANONICAL_DOMAINS) {
+        const dir = `memory/knowledge/${dom}`;
+        const fileNames = await vaultDocumentStore.listFiles(dir);
         for (const name of fileNames) {
           const filePath = `${dir}/${name}`;
-          const { content: fileContent } = await getVaultFile(filePath);
-          
-          // Parse tag list in existing file Frontmatter
+          const { content: fileContent } = await vaultDocumentStore.getFile(filePath);
           const tagsMatch = fileContent.match(/tags:\s*\[([\s\S]*?)\]/);
           if (tagsMatch && tagsMatch[1]) {
-            const existingTags = tagsMatch[1].split(",").map(t => t.replace(/"/g, "").trim());
-            const hasCommonTag = tags.some(t => existingTags.includes(t));
-            if (hasCommonTag) {
+            const existingTags = tagsMatch[1].split(",").map((t) => t.replace(/"/g, "").trim());
+            if (tags.some((t) => existingTags.includes(t))) {
               const idMatch = fileContent.match(/id:\s*(kn-\d+-\d+)/);
               if (idMatch && idMatch[1] && idMatch[1] !== id && !finalRelated.includes(idMatch[1])) {
                 finalRelated.push(idMatch[1]);
-                if (finalRelated.length >= 5) break; // Cap at 5 related links
+                if (finalRelated.length >= 5) break;
               }
             }
           }
@@ -92,19 +111,20 @@ export async function saveKnowledge(input: KnowledgeSaveInput): Promise<{ succes
     }
   }
 
-  // Construct Frontmatter
   const frontmatter = `---
 id: ${id}
 type: knowledge
-status: ${status}
-category: ${category}
+domain: ${domain}
+category: ${category ?? domain}
+status: ${normalizedStatus}
+managed_by: ${managedBy}
 created: ${dateHyphen}
 updated: ${dateHyphen}
 reviewed_at: null
 importance: ${importance}
-tags: [${tags.map(t => `"${t}"`).join(", ")}]
-source_ref: [${source_ref.map(s => `"${s}"`).join(", ")}]
-related: [${finalRelated.map(r => `"${r}"`).join(", ")}]
+tags: [${tags.map((t) => `"${t}"`).join(", ")}]
+source_ref: [${source_ref.map((s) => `"${s}"`).join(", ")}]
+related: [${finalRelated.map((r) => `"${r}"`).join(", ")}]
 ---
 
 # ${title}
@@ -112,14 +132,13 @@ related: [${finalRelated.map(r => `"${r}"`).join(", ")}]
 ${linkedContent}
 `;
 
-  const targetDir = `memory/knowledge/${category}`;
-  
-  // Conflict resolver - Skip file search if we are overwriting an existing ID/file
+  const targetDir = `memory/knowledge/${domain}`;
+
   let finalFileName = `${dateHyphen}-${slug}.md`;
-  
   if (!existingId) {
+    // 修正4（案B）: 新規昇格は常に新規ファイル。同名衝突のみ連番回避。
     try {
-      const existingFiles = await listVaultDirectory(targetDir);
+      const existingFiles = await vaultDocumentStore.listFiles(targetDir);
       let counter = 1;
       while (existingFiles.includes(finalFileName)) {
         counter++;
@@ -131,11 +150,13 @@ ${linkedContent}
   }
 
   const targetFilePath = `${targetDir}/${finalFileName}`;
-  await saveVaultFile(targetFilePath, frontmatter, sha);
 
-  return {
-    success: true,
-    path: targetFilePath,
-    id,
-  };
+  const decision = canWrite(targetFilePath, "", grant);
+  if (!decision.allowed) {
+    throw new Error(`[knowledge] ${decision.reason} (${targetFilePath})`);
+  }
+
+  await vaultDocumentStore.saveFile(targetFilePath, frontmatter, existingId ? sha : undefined);
+
+  return { success: true, path: targetFilePath, id };
 }

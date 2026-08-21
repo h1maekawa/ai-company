@@ -4,6 +4,7 @@ import { generateUniqueId } from "@/app/lib/utils/id";
 import { toSlug } from "@/app/lib/utils/slug";
 import { callAI } from "@/app/lib/ai/client";
 import { saveKnowledge } from "@/app/lib/memory/knowledge";
+import { issueApprovalGrant } from "@/app/lib/knowledge/approval";
 import { KnowledgeCategory } from "@/app/lib/parser/saveSuggestion";
 
 const KNOWLEDGE_CATEGORIES = [
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest) {
     const { title, contentBody, frontmatter } = parseMarkdownContent(source.content);
     
     // Parse existing frontmatter values to carry over
-    const category = (frontmatter.category || "misc") as KnowledgeCategory;
+    const category = (frontmatter.category || "content") as KnowledgeCategory;
     const importance = parseInt(frontmatter.importance || "1", 10) as (1 | 2 | 3);
     const tags = parseArray(frontmatter.tags);
     const source_ref = parseArray(frontmatter.source_ref);
@@ -122,6 +123,9 @@ export async function POST(req: NextRequest) {
       related,
       id: knowledgeId,
       sha: source.sha,
+      // ユーザーの明示操作（Note昇格）に基づくサーバー内部発行の承認トークン。
+      // クライアントからフラグを受け取っているわけではない（Phase4 修正1）。
+      grant: issueApprovalGrant("human_edit", `note promote: ${knowledgeId}`),
     });
 
     const now = new Date();

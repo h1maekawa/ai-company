@@ -35,6 +35,28 @@ export const REDIS_KEYS = {
   personalPipeline:"bus:personal:pipeline",
 } as const;
 
+/** Grilling Session（docs/15 D3）。本番ではRedisがSession Stateの唯一の永続実体。 */
+export const GRILL_KEYS = {
+  session: (id: string) => `grill:session:${id}`,
+  activeIndex: "grill:index:active",
+} as const;
+
+/**
+ * Redis SET の成否を返す版（fail-openだが結果は握りつぶさない）。
+ * Grilling は「保存できたか」をUIへ伝える必要があるため、成否が必要（sessionDurability）。
+ */
+export async function redisTrySet(key: string, value: unknown): Promise<boolean> {
+  const client = getRedisClient();
+  if (!client) return false;
+  try {
+    await client.set(key, value);
+    return true;
+  } catch (err) {
+    console.warn(`[redis] SET failed for ${key}`, err);
+    return false;
+  }
+}
+
 /**
  * Safe Redis GET — returns null on any failure (fail-open)
  */

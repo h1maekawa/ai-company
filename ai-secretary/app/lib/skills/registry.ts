@@ -12,6 +12,21 @@ import { SkillDefinition } from "./types";
  * 既存のDepartment/Secretary定義（config/departments.ts）は一切変更不要。
  */
 export const SKILL_REGISTRY: SkillDefinition[] = [
+  // ─── Grilling（Phase5・docs/15）: 入口のみ登録 ──────────────────
+  // 実体は lib/grill/（Interactive Session）。ステートレスな executeSkill() では実行できないため
+  // status は "planned" のままにし、UIは /grill へ誘導する（D1）。
+  {
+    id: "grill-session",
+    name: "Grilling（壁打ち）",
+    description:
+      "曖昧なアイデア・計画・設計を論点分解し、Frontier方式で質問を積み上げ、Shared Understanding→承認まで進める複数ターンの対話型セッション。実体は /grill（lib/grill）。",
+    category: "research",
+    allowedSecretaries: ["executive-assistant"],
+    inputSchemaDescription: "topic（壁打ちしたいテーマ）",
+    outputSchemaDescription:
+      "Design Tree・Frontier質問・Shared Understanding（承認後はKnowledge候補としてInboxへ）",
+    status: "planned",
+  },
   // ─── Personal OS: 本Phaseで実処理を追加した5件 ─────────────────────
   {
     id: "personal-capture",

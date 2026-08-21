@@ -7,6 +7,7 @@ import {
   saveNoteQueue,
 } from "@/app/lib/note/research/store";
 import { PublishJob } from "@/app/lib/note/research/types";
+import { canQueueNotePublication } from "@/app/lib/note/operations";
 
 export const dynamic = "force-dynamic";
 
@@ -51,9 +52,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           { status: 423 }
         );
       }
-      if (article.articleType === "paid" && flags.paidNoteRequireConfirm && article.status !== "approved") {
+      const approval = canQueueNotePublication(article);
+      if (!approval.allowed) {
         return NextResponse.json(
-          { error: "有料記事は承認済みでないと公開ジョブを積めません" },
+          { error: approval.reason },
           { status: 422 }
         );
       }

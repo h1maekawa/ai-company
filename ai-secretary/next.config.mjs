@@ -19,7 +19,16 @@ const nextConfig = {
         { key: "Content-Security-Policy", value: csp },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       ],
-    }];
+     }];
+  },
+  async redirects() {
+    return [
+      {
+        source: "/fund",
+        destination: "/investing",
+        permanent: true,
+      },
+    ];
   },
 };
 

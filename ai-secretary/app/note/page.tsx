@@ -30,6 +30,7 @@ import { XAccounts } from "@/components/note/XAccounts";
 import { ReferenceAccounts } from "@/components/note/ReferenceAccounts";
 import { ExperienceLibrary } from "@/components/note/ExperienceLibrary";
 import { PublishQueue } from "@/components/note/PublishQueue";
+import { GrowthInsights as OperationsGrowthInsights } from "@/components/note/GrowthInsights";
 import { AutomationSettings } from "@/components/note/AutomationSettings";
 import { XWorkspace } from "@/components/note/x/XWorkspace";
 import type { Idea } from "@/app/lib/note/types";
@@ -240,7 +241,12 @@ export default function NoteDepartmentPage() {
                 />
               </>
             )}
-            {settingsView === "growth" && <GrowthInsights />}
+            {settingsView === "growth" && (
+              <div className="space-y-4">
+                <GrowthInsights />
+                <OperationsGrowthInsights />
+              </div>
+            )}
             {settingsView === "safety" && (
               <>
                 <ChannelFlow

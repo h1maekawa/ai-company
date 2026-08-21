@@ -1,24 +1,20 @@
 import { listVaultDirectory, getVaultFile } from "../vault";
+import { CANONICAL_DOMAINS } from "../knowledge/domain";
 
-export type IdPrefix = "kn" | "nt" | "lg";
+export type IdPrefix = "kn" | "nt" | "lg" | "cap";
 
-const KNOWLEDGE_CATEGORIES = [
-  "sales",
-  "marketing",
-  "recruiting",
-  "investing",
-  "systems",
-  "content",
-  "strategy",
-  "misc",
-];
+// Knowledge は canonical domain 配下（memory/knowledge/<domain>）を走査する（ADR-G, docs/14）。
+const KNOWLEDGE_DOMAINS = CANONICAL_DOMAINS;
 
 const NOTE_SUBFOLDERS = ["ideas", "drafts", "published", "research", "templates"];
 
 const LOG_MODES = ["personal", "company", "finance", "note"];
 
+// Capture/Candidate は Inbox（AI Managed）配下。
+const CAPTURE_DIRS = ["memory/personal/inbox"];
+
 /**
- * Generates a unique serial ID for Knowledge (kn-), Note (nt-), or Log (lg-)
+ * Generates a unique serial ID for Knowledge (kn-), Note (nt-), Log (lg-), or Capture (cap-)
  * based on the current date and the number of existing files for today.
  */
 export async function generateUniqueId(prefix: IdPrefix): Promise<string> {
@@ -33,11 +29,13 @@ export async function generateUniqueId(prefix: IdPrefix): Promise<string> {
   let directoriesToScan: string[] = [];
 
   if (prefix === "kn") {
-    directoriesToScan = KNOWLEDGE_CATEGORIES.map(cat => `memory/knowledge/${cat}`);
+    directoriesToScan = KNOWLEDGE_DOMAINS.map((dom) => `memory/knowledge/${dom}`);
   } else if (prefix === "nt") {
-    directoriesToScan = NOTE_SUBFOLDERS.map(sub => `memory/personal/note/${sub}`);
+    directoriesToScan = NOTE_SUBFOLDERS.map((sub) => `memory/personal/note/${sub}`);
   } else if (prefix === "lg") {
-    directoriesToScan = LOG_MODES.map(mode => `memory/chat-log/${mode}`);
+    directoriesToScan = LOG_MODES.map((mode) => `memory/chat-log/${mode}`);
+  } else if (prefix === "cap") {
+    directoriesToScan = CAPTURE_DIRS;
   }
 
   let maxNum = 0;
@@ -46,8 +44,7 @@ export async function generateUniqueId(prefix: IdPrefix): Promise<string> {
   for (const dir of directoriesToScan) {
     try {
       const fileNames = await listVaultDirectory(dir);
-      // Filter files that start with today's hyphenated date prefix
-      const todaysFiles = fileNames.filter(name => name.startsWith(dateHyphen));
+      const todaysFiles = fileNames.filter((name) => name.startsWith(dateHyphen));
 
       for (const fileName of todaysFiles) {
         const filePath = `${dir}/${fileName}`;
@@ -55,9 +52,7 @@ export async function generateUniqueId(prefix: IdPrefix): Promise<string> {
         const match = content.match(idRegex);
         if (match && match[1]) {
           const num = parseInt(match[1], 10);
-          if (num > maxNum) {
-            maxNum = num;
-          }
+          if (num > maxNum) maxNum = num;
         }
       }
     } catch (e) {

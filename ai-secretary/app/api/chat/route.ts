@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadBus, saveBus } from "@/app/lib/context/bus-server";
 import { switchSecretary } from "@/app/lib/context/bus";
-import { routeRequest } from "@/app/lib/router/executive";
+import { routeRequest, isGrillingRequest, GRILL_GUIDANCE_INSTRUCTION } from "@/app/lib/router/executive";
 import { findSecretary } from "@/app/lib/config/registry";
 import { loadScopedMemory } from "@/app/lib/memory/loader";
 import { saveChatLog } from "@/app/lib/memory/logs";
@@ -12,6 +12,12 @@ import { AIProvider } from "@/app/lib/ai/client";
 import { SecretaryMode } from "@/app/lib/prompts";
 import { ChatMessage } from "@/app/lib/ai/types";
 import { KAIZEN_PROMPT_INSTRUCTION, extractKaizen, saveKaizenLog } from "@/app/lib/memory/kaizen";
+import {
+  SAVE_SUGGESTION_PROMPT_INSTRUCTION,
+  hasExplicitSaveSuggestion,
+  parseSaveSuggestion,
+} from "@/app/lib/parser/saveSuggestion";
+import { captureKnowledgeCandidate } from "@/app/lib/knowledge/captureService";
 
 const ROLE_DEFAULT_TEMPLATE = `# 現在の役割
 
@@ -144,6 +150,15 @@ export async function POST(req: NextRequest) {
       systemPrompt += KAIZEN_PROMPT_INSTRUCTION;
     }
 
+    // 6.6 Knowledge保存提案ルールを注入（Phase4: 再利用可能な知見が出たときだけAIが申告する）
+    systemPrompt += SAVE_SUGGESTION_PROMPT_INSTRUCTION;
+
+    // 6.7 Grilling意図なら /grill への誘導だけを促す（docs/15 D6）。
+    // Chat側でGrillSessionを作らない／Design Treeを持たない（Grilling Stateは持ち込まない）。
+    if (isGrillingRequest(message)) {
+      systemPrompt += GRILL_GUIDANCE_INSTRUCTION;
+    }
+
     // 7. Call LLM
     const rawReply = await callAI(message, systemPrompt, {
       history: chatHistory,
@@ -159,6 +174,24 @@ export async function POST(req: NextRequest) {
         console.error("Failed to save kaizen log (non-fatal):", kaizenErr);
       }
     }
+    // 7.6 Knowledge Capture（Phase4 修正4）
+    // AIが明示的に SAVE_SUGGESTION を出したときだけ Inbox へ Capture する。
+    // 全会話は保存しない。失敗しても応答は返す（非致命）。
+    let replyForUser = reply;
+    try {
+      if (hasExplicitSaveSuggestion(reply)) {
+        const suggestion = parseSaveSuggestion(message, reply);
+        replyForUser = suggestion.replyWithoutMetadata || reply;
+        await captureKnowledgeCandidate({
+          content: `## 質問\n\n${message}\n\n## 回答\n\n${replyForUser}`,
+          source: "conversation",
+          title: suggestion.slug || undefined,
+        });
+      }
+    } catch (captureErr) {
+      console.error("Failed to capture knowledge candidate (non-fatal):", captureErr);
+    }
+
     const usedProvider =
       requestedProvider !== "auto"
         ? requestedProvider
@@ -178,13 +211,13 @@ export async function POST(req: NextRequest) {
 
     // 9. Save chat summary log (failsafe)
     try {
-      await saveChatLog(targetSecretaryId, message, reply);
+      await saveChatLog(targetSecretaryId, message, replyForUser);
     } catch (logErr) {
       console.error("Failed to save chat summary log (non-fatal):", logErr);
     }
 
     return NextResponse.json({
-      reply,
+      reply: replyForUser,
       provider: usedProvider,
       mode: mode ?? "note",
       secretary: targetSecretaryId,
