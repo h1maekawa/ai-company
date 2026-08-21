@@ -237,6 +237,18 @@ const node = (id, deps, extra = {}) => ({
   try { BM.selectBenchmarkScenarios("G,Z"); } catch (e) { unknownRejected = /Unknown BENCH_SCENARIOS/.test(String(e.message)); }
   ok(unknownRejected, "未知scenarioを実行前に拒否");
 
+  // 部分実行が docs/16 本体を上書きしないこと（検証済み他シナリオの結果を消さないため）。
+  const benchSrc = require("fs").readFileSync(
+    require("path").join(__dirname, "grill-llm-benchmark.js"),
+    "utf-8"
+  );
+  ok(/IS_PARTIAL_RUN\s*=\s*SELECTED_SCENARIOS\.length\s*<\s*BM\.BENCHMARK_SCENARIOS\.length/.test(benchSrc),
+    "部分実行を検出する");
+  ok(/16_GRILLING_LLM_QUALITY_REPORT\.partial-\$\{PARTIAL_SUFFIX\}\.md/.test(benchSrc),
+    "部分実行は partial レポートへ書き出す");
+  ok(/IS_PARTIAL_RUN[\s\S]{0,120}\?[\s\S]{0,400}:\s*FULL_REPORT\)/.test(benchSrc),
+    "全件実行のときだけ docs/16 本体へ書き出す");
+
   console.log("\n[Q15] Scope Fidelity（Scope外への拡張を検出）");
   const mkn = (id, title, q) => ({ id, title, question: q, dependsOn: [], status: "blocked", recommendation: "A案", recommendationReason: "十分な長さの理由をここに記載します", children: [] });
   const gScenario = BM.getScenario("G");

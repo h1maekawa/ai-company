@@ -23,7 +23,7 @@ const VAL = require(path.join(DIST, "grill/validate.js"));
 const BM = require(path.join(DIST, "grill/benchmarks.js"));
 const QS = require(path.join(DIST, "grill/questions.js"));
 
-const OUT = process.env.BENCH_OUT || path.join(__dirname, "..", "..", "docs", "16_GRILLING_LLM_QUALITY_REPORT.md");
+const FULL_REPORT = path.join(__dirname, "..", "..", "docs", "16_GRILLING_LLM_QUALITY_REPORT.md");
 
 let SELECTED_SCENARIOS;
 try {
@@ -33,6 +33,26 @@ try {
   process.exit(1);
 }
 const SCENARIOS = SELECTED_SCENARIOS.map((sc) => [sc.name, sc.topic, sc]);
+
+/**
+ * 部分実行（BENCH_SCENARIOS 指定）は docs/16 を上書きしない。
+ * 上書きすると、既に実LLMで検証済みの他シナリオ結果が消えるため。
+ * 部分実行は必ず別ファイル（partial レポート）へ書き出す。
+ * BENCH_OUT を明示した場合のみ、その指定を優先する。
+ */
+const IS_PARTIAL_RUN = SELECTED_SCENARIOS.length < BM.BENCHMARK_SCENARIOS.length;
+const PARTIAL_SUFFIX = SELECTED_SCENARIOS.map((sc) => sc.id).join("-");
+const OUT =
+  process.env.BENCH_OUT ||
+  (IS_PARTIAL_RUN
+    ? path.join(
+        __dirname,
+        "..",
+        "..",
+        "docs",
+        `16_GRILLING_LLM_QUALITY_REPORT.partial-${PARTIAL_SUFFIX}.md`
+      )
+    : FULL_REPORT);
 
 const lines = [];
 const out = (s = "") => { lines.push(s); console.log(s); };
@@ -145,9 +165,21 @@ async function preflight() {
   }
 
   const startedAt = new Date().toISOString();
-  out(`# 16. Grilling 実LLM品質レポート（Phase 5.2）`);
+  out(
+    IS_PARTIAL_RUN
+      ? `# 16(部分). Grilling 実LLM品質レポート — ${PARTIAL_SUFFIX} のみ`
+      : `# 16. Grilling 実LLM品質レポート（Phase 5.2）`
+  );
   out();
+  if (IS_PARTIAL_RUN) {
+    out(
+      `> ⚠️ 部分実行（BENCH_SCENARIOS=${PARTIAL_SUFFIX}）。全体レポート docs/16_GRILLING_LLM_QUALITY_REPORT.md は上書きしていません。`
+    );
+    out(`> 全体を更新するには BENCH_SCENARIOS を外して実行してください。`);
+    out();
+  }
   out(`- 実行日時: ${startedAt}`);
+  out(`- 対象シナリオ: ${SELECTED_SCENARIOS.map((sc) => sc.id).join(", ")}（${SELECTED_SCENARIOS.length}/${BM.BENCHMARK_SCENARIOS.length}）`);
   out(`- Provider: ${process.env.DEFAULT_PROVIDER || "gemini"} / model: ${selectedModel()}`);
   out(`- Structured output: ${process.env.GRILL_BENCH_STRUCTURED_OUTPUT === "1" ? "enabled" : "disabled"}`);
   out(`- Vault: ${process.env.GRILL_BENCH_REAL_VAULT === "1" ? "実Vault（読み取り）" : "一時Vault（実データに触れない）"}`);
@@ -353,4 +385,7 @@ async function preflight() {
 
   fs.writeFileSync(OUT, lines.join("\n"), "utf-8");
   console.log(`\n✅ レポートを書き出しました: ${OUT}`);
+  if (IS_PARTIAL_RUN && !process.env.BENCH_OUT) {
+    console.log(`ℹ️ 部分実行のため docs/16 本体は変更していません（対象: ${PARTIAL_SUFFIX}）。`);
+  }
 })().catch((e) => { console.error("FATAL", e.message); process.exit(1); });
