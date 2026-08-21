@@ -13,7 +13,13 @@ import {
   saveNoteQueue,
   saveSocialDrafts,
 } from "@/app/lib/note/research/store";
-import { defaultAffiliatePolicy, ContentPurpose } from "@/app/lib/note/research/types";
+import {
+  defaultAffiliatePolicy,
+  ContentPurpose,
+  GrowthGoal,
+  OutputType,
+  XPostLength,
+} from "@/app/lib/note/research/types";
 import { accountForGenre, DEFAULT_GENRES } from "@/app/lib/note/types";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +33,18 @@ type Body = {
   affiliateId?: string;
   /** 未確認の体験でも使う（Slackで「一般的な考察として書く」を選んだ場合など） */
   allowUnverified?: boolean;
+  personalAngle?: string;
+  growthGoal?: GrowthGoal;
+  outputType?: OutputType;
+  xLength?: XPostLength;
 };
+
+function purposeForGoal(goal?: GrowthGoal): ContentPurpose {
+  if (goal === "note-bridge") return "note-bridge";
+  if (goal === "trust" || goal === "save") return "trust";
+  if (goal === "monetization") return "x-monetization";
+  return "reach";
+}
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
@@ -99,10 +116,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         brand: brandFile.brand,
         genre,
         account,
-        purpose: body.purpose ?? "reach",
+        purpose: body.purpose ?? purposeForGoal(body.growthGoal),
         affiliate,
         policy,
         pastPosts,
+        authorViewpoint: body.personalAngle?.trim() || undefined,
+        outputType: body.outputType,
+        length: body.xLength,
       });
 
       if (result.drafts.length > 0) {
@@ -123,6 +143,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         affiliate,
         policy,
         pastPosts,
+        authorViewpoint: body.personalAngle?.trim() || undefined,
       });
 
       if (result.error) {

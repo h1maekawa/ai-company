@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { resolveRawPath } from "./paths";
+import { resolveRawPath, VAULT_ROOT } from "./paths";
 
 let cachedBusFilePath: string | null = null;
 
@@ -20,7 +20,7 @@ export function getBusFilePath(): string {
     return cachedBusFilePath;
   }
 
-  if (process.env.VERCEL === "1") {
+  if (process.env.VERCEL === "1" || !VAULT_ROOT) {
     cachedBusFilePath = "/tmp/current-bus.json";
     return cachedBusFilePath;
   }

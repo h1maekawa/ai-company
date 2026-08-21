@@ -11,6 +11,8 @@ import {
   AffiliatePolicy,
   ContentBrief,
   ContentPerformance,
+  MonetizationRule,
+  RevenueSharingProgress,
   ExperienceEntry,
   FeatureFlags,
   PerformanceWeights,
@@ -26,6 +28,7 @@ import {
   WinningTopicPolicy,
   defaultPerformanceWeights,
   defaultWinningTopicPolicy,
+  ViewpointLibraryEntry,
   defaultFeatureFlags,
   defaultPurposeMix,
   defaultXResearchSettings,
@@ -44,6 +47,7 @@ export const RESEARCH_PATHS = {
   publishingHistory: `${ROOT}/publishing-history.md`,
   performance: `${ROOT}/content-performance.md`,
   noteQueue: `${ROOT}/note-publish-queue.md`,
+  viewpoints: `${ROOT}/viewpoint-library.md`,
 } as const;
 
 function extractJson<T>(markdown: string): T | null {
@@ -180,10 +184,13 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
     x.currentEstimatedSpendUsd = 0;
   }
 
+  const flags = { ...defaultFeatureFlags(), ...(data?.flags ?? {}) };
+  flags.xBrowserAutomationEnabled = false;
+  if (process.env.X_API_ENABLED !== "true") flags.xPaidApiEnabled = false;
   return {
     x,
     purposeMix: { ...defaultPurposeMix(), ...(data?.purposeMix ?? {}) },
-    flags: { ...defaultFeatureFlags(), ...(data?.flags ?? {}) },
+    flags,
     performanceWeights: {
       ...defaultPerformanceWeights(),
       ...(data?.performanceWeights ?? {}),
@@ -202,7 +209,13 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
 export async function saveResearchSettings(
   file: ResearchSettingsFile
 ): Promise<ResearchSettingsFile> {
-  const { x, flags, purposeMix, performanceWeights, winningTopicPolicy } = file;
+  const flags = {
+    ...file.flags,
+    xBrowserAutomationEnabled: false as const,
+    xPaidApiEnabled: process.env.X_API_ENABLED === "true" && file.flags.xPaidApiEnabled,
+  };
+  const safeFile = { ...file, flags };
+  const { x, purposeMix, performanceWeights, winningTopicPolicy } = safeFile;
   const human = [
     "## Xリサーチ",
     `- モード: **${x.mode}**${x.mode === "free" ? "（X APIを使わないため精度は限定的）" : ""}`,
@@ -213,7 +226,7 @@ export async function saveResearchSettings(
     `- キーワード: ${x.keywords.join("、") || "（未設定）"}`,
     "",
     "## noteリサーチ対象タグ",
-    file.noteTags.map((t) => `- ${t}`).join("\n"),
+    safeFile.noteTags.map((t) => `- ${t}`).join("\n"),
     "",
     "## 投稿目的の比率",
     `- 認知（reach）: ${purposeMix.reach}%`,
@@ -239,10 +252,10 @@ export async function saveResearchSettings(
       "note_research_settings",
       "リサーチと投稿の設定です。フラグがOFFの間はどのチャネルにも投稿しません。",
       human,
-      file
+      safeFile
     )
   );
-  return file;
+  return safeFile;
 }
 
 /* ─── リサーチ結果（inbox） ───────────────────── */
@@ -360,6 +373,33 @@ export async function saveExperiences(
   return experiences;
 }
 
+/* ─── 本人の考え方ライブラリ ───────────────────── */
+
+type ViewpointFile = { viewpoints: ViewpointLibraryEntry[] };
+
+export async function loadViewpoints(): Promise<ViewpointLibraryEntry[]> {
+  const data = await readJson<ViewpointFile>(RESEARCH_PATHS.viewpoints);
+  return Array.isArray(data?.viewpoints) ? data.viewpoints : [];
+}
+
+export async function saveViewpoints(
+  viewpoints: ViewpointLibraryEntry[]
+): Promise<ViewpointLibraryEntry[]> {
+  const human = viewpoints.length
+    ? viewpoints.slice(0, 50).map((item) => `- ✅ **${item.title}**（${item.topic}）\n  ${item.opinion}`).join("\n")
+    : "（まだありません）";
+  await write(
+    RESEARCH_PATHS.viewpoints,
+    buildDoc(
+      "maemichi_viewpoint_library",
+      "前川さんが明示的に「今後も使える」と確認した考えだけを保存します。",
+      human,
+      { viewpoints }
+    )
+  );
+  return viewpoints;
+}
+
 /* ─── コンテンツブリーフ ───────────────────── */
 
 export type BriefFile = { briefs: ContentBrief[] };
@@ -460,13 +500,27 @@ export type HistoryEntry = {
   id: string;
   platform: "x" | "note";
   contentId: string;
+  /** 公開物の元となったAI下書き。公開履歴自身は本人の正式な公開物を表す。 */
+  draftId?: string;
+  sourceResearchIds?: string[];
+  sourceViewpointIds?: string[];
+  sourceExperienceIds?: string[];
   action: string;
   at: string;
   detail?: string;
   url?: string;
+  /** Content Business OS: この操作に対応するPublishedContentのid */
+  publishedContentId?: string;
 };
 
-export type HistoryFile = { entries: HistoryEntry[] };
+export type HistoryFile = {
+  entries: HistoryEntry[];
+  /**
+   * Content Business OS: 正式な公開物の正（PublishedContent）。
+   * 型定義は app/lib/content/monetization/types.ts。draftは含まない。
+   */
+  published?: import("../../content/monetization/types").PublishedContent[];
+};
 
 const MAX_HISTORY = 300;
 
@@ -475,18 +529,57 @@ export async function loadHistory(): Promise<HistoryEntry[]> {
   return Array.isArray(data?.entries) ? data.entries : [];
 }
 
-export async function appendHistory(entry: HistoryEntry): Promise<void> {
-  const entries = [entry, ...(await loadHistory())].slice(0, MAX_HISTORY);
-  const human = entries
-    .slice(0, 40)
-    .map((e) => `- ${e.at} [${e.platform}] ${e.action}${e.detail ? ` — ${e.detail}` : ""}`)
-    .join("\n");
+export async function loadHistoryFile(): Promise<HistoryFile> {
+  const data = await readJson<HistoryFile>(RESEARCH_PATHS.publishingHistory);
+  return {
+    entries: Array.isArray(data?.entries) ? data.entries : [],
+    published: Array.isArray(data?.published) ? data.published : [],
+  };
+}
+
+async function writeHistoryFile(file: HistoryFile): Promise<void> {
+  const entries = file.entries.slice(0, MAX_HISTORY);
+  const published = file.published ?? [];
+  const human = [
+    entries
+      .slice(0, 40)
+      .map((e) => `- ${e.at} [${e.platform}] ${e.action}${e.detail ? ` — ${e.detail}` : ""}`)
+      .join("\n") || "（まだありません）",
+    "",
+    "## 公開済み記録（PublishedContent）",
+    published
+      .slice(0, 40)
+      .map((p) => `- ${p.publishedAt} [${p.channel}] ${p.title}${p.url ? `\n  ${p.url}` : ""}`)
+      .join("\n") || "（まだありません）",
+  ].join("\n");
   await write(
     RESEARCH_PATHS.publishingHistory,
-    buildDoc("note_publishing_history", "実際に投稿・予約した記録です。", human || "（まだありません）", {
-      entries,
-    })
+    buildDoc(
+      "note_publishing_history",
+      "実際に投稿・予約した記録です。下書きとは区別し、元Research・本人Viewpoint・公開結果をIDで追跡します。本人操作か正式なPublish連携成功時のみPublishedContentとして扱います。",
+      human,
+      { entries, published }
+    )
   );
+}
+
+export async function appendHistory(entry: HistoryEntry): Promise<void> {
+  const file = await loadHistoryFile();
+  await writeHistoryFile({ ...file, entries: [entry, ...file.entries] });
+}
+
+export async function loadPublishedContent(): Promise<
+  import("../../content/monetization/types").PublishedContent[]
+> {
+  const file = await loadHistoryFile();
+  return file.published ?? [];
+}
+
+export async function savePublishedContent(
+  published: import("../../content/monetization/types").PublishedContent[]
+): Promise<void> {
+  const file = await loadHistoryFile();
+  await writeHistoryFile({ ...file, published });
 }
 
 /* ─── 投稿実績 ───────────────────────────── */
@@ -494,13 +587,48 @@ export async function appendHistory(entry: HistoryEntry): Promise<void> {
 export type PerformanceFile = {
   records: ContentPerformance[];
   policies: AffiliatePolicy[];
+  revenueProgress: RevenueSharingProgress;
+  monetizationRules: MonetizationRule[];
+  /**
+   * Content Business OS: 手入力中心の時系列スナップショット。
+   * `records` (旧: 投稿ごとの単発実績) とは別に、PublishedContentへ複数回の計測を積み上げる。
+   * 型定義は app/lib/content/monetization/types.ts の PerformanceSnapshot。
+   */
+  snapshots?: import("../../content/monetization/types").PerformanceSnapshot[];
 };
+
+const defaultRevenueProgress = (): RevenueSharingProgress => ({
+  requiredOrganicImpressions: 5_000_000,
+  requiredVerifiedFollowers: 500,
+  lastCheckedAt: new Date().toISOString(),
+});
+const defaultMonetizationRules = (): MonetizationRule[] => [
+  {
+    program: "revenue-sharing",
+    requirements: { note: "公式条件は変更されるため手動確認" },
+    sourceLabel: "X公式の最新条件を確認",
+    verifiedAt: new Date().toISOString(),
+    active: true,
+  },
+  {
+    program: "subscriptions",
+    requirements: { note: "収益配分とは別条件。公式条件を手動確認" },
+    sourceLabel: "X公式の最新条件を確認",
+    verifiedAt: new Date().toISOString(),
+    active: true,
+  },
+];
 
 export async function loadPerformance(): Promise<PerformanceFile> {
   const data = await readJson<PerformanceFile>(RESEARCH_PATHS.performance);
   return {
     records: Array.isArray(data?.records) ? data.records : [],
     policies: Array.isArray(data?.policies) ? data.policies : [],
+    revenueProgress: data?.revenueProgress ?? defaultRevenueProgress(),
+    monetizationRules: Array.isArray(data?.monetizationRules) && data.monetizationRules.length > 0
+      ? data.monetizationRules
+      : defaultMonetizationRules(),
+    snapshots: Array.isArray(data?.snapshots) ? data.snapshots : [],
   };
 }
 
@@ -525,7 +653,7 @@ export async function savePerformance(file: PerformanceFile): Promise<Performanc
       "note_content_performance",
       "投稿の反応です。取得できない数値は0ではなく未取得として扱います。",
       human,
-      file
+      { ...file, snapshots: file.snapshots ?? [] }
     )
   );
   return file;

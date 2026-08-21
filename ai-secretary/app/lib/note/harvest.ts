@@ -6,8 +6,7 @@
  */
 
 import { callAI } from "../ai/client";
-import { loadPlan, findPreviousPlanDate } from "../planning/store";
-import { todayJst } from "../planning/types";
+import { getCompletedTasksForDate } from "../content/core/providers/timebox";
 import { Brand, Genre, Idea } from "./types";
 
 const HARVEST_PROMPT = `あなたは副業メディアの編集者です。
@@ -60,21 +59,14 @@ export async function harvestIdeas(
   existing: Idea[],
   date?: string
 ): Promise<HarvestResult> {
-  // 指定が無ければ、今日→無ければ直近のプランを見る
-  let target = date ?? todayJst();
-  let plan = await loadPlan(target);
+  // Timeboxの内部実装（planning/store）へは直接依存せず、狭いProviderインターフェースだけを使う。
+  // 指定が無ければ、今日→無ければ直近のプランを見る（フォールバックはProvider側が行う）。
+  // Timeboxが未接続・取得失敗でも例外を投げず {tasks: []} が返るため、Note側は壊れない。
+  const { date: resolvedDate, tasks: done } = await getCompletedTasksForDate(date);
+  const target = resolvedDate ?? date ?? "";
 
-  if (plan.tasks.filter((t) => t.done).length === 0 && !date) {
-    const previous = await findPreviousPlanDate(target);
-    if (previous) {
-      target = previous;
-      plan = await loadPlan(previous);
-    }
-  }
-
-  const done = plan.tasks.filter((t) => t.done);
   if (done.length === 0) {
-    return { ideas: [], sourceDate: target, doneCount: 0 };
+    return { ideas: [], sourceDate: target || null, doneCount: 0 };
   }
 
   // 既に拾ったタスクは除外する

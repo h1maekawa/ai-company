@@ -6,10 +6,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import fs from "node:fs";
 
 const DIST = process.env.MAEMICHI_DIST;
 const cluster = await import(path.join(DIST, "note/research/cluster.js"));
 const types = await import(path.join(DIST, "note/research/types.js"));
+const genres = await import(path.join(DIST, "note/research/genres.js"));
+const xQuery = await import(path.join(DIST, "note/research/x-query.js"));
+const xFormat = await import(path.join(DIST, "note/research/x-format.js"));
+const performance = await import(path.join(DIST, "note/research/performance.js"));
+const noteTypes = await import(path.join(DIST, "note/types.js"));
 
 /* ─── テスト用のダミーデータ ───────────────── */
 
@@ -190,6 +196,35 @@ test("政治・医療・法律・投資助言・ギャンブルは自動公開�
   }
 });
 
+test("AI競艇はAI・資産形成として扱わず、総合点も0になる", () => {
+  const detected = genres.detectGenres("AI競艇予想に投資してコロガシを狙う");
+  assert.deepEqual(detected, []);
+
+  const [c] = cluster.buildClusters(
+    [item({ title: "AI競艇予想", textExcerpt: "舟券のコロガシ", detectedGenreIds: detected })],
+    baseCtx
+  );
+  assert.equal(c.blocked, true);
+  assert.equal(c.totalScore, 0);
+});
+
+test("具体的なAI・読書の話題は判定し、一般的な「本当に」は読書にしない", () => {
+  assert.deepEqual(genres.detectGenres("ChatGPTを仕事で活用する方法"), ["ai"]);
+  assert.deepEqual(genres.detectGenres("この方法は本当に便利でした"), []);
+  assert.deepEqual(genres.detectGenres("読書で学んだこと"), ["reading"]);
+});
+
+test("半導体と主要企業の話題は資産形成として判定する", () => {
+  assert.deepEqual(genres.detectGenres("ラピダスの2ナノ半導体量産計画"), ["asset-building"]);
+  assert.deepEqual(genres.detectGenres("キオクシアとマイクロンのメモリー市況"), ["asset-building"]);
+  assert.deepEqual(genres.detectGenres("TSMCとNVIDIAのデータセンター需要"), ["asset-building"]);
+});
+
+test("仕事・キャリアと個人開発を新しい切り口として判定する", () => {
+  assert.deepEqual(genres.detectGenres("役員という肩書きと働き方を考える"), ["career"]);
+  assert.ok(genres.detectGenres("個人開発でWebサービスを作った記録").includes("personal-development"));
+});
+
 test("通常のテーマはブロックされない", () => {
   const [c] = cluster.buildClusters([item()], baseCtx);
   assert.equal(c.blocked, false);
@@ -208,4 +243,154 @@ test("使用済み・却下の状態は再リサーチで戻らない", () => {
   const used = first.map((c) => ({ ...c, status: "used" }));
   const second = cluster.buildClusters(items, baseCtx, used);
   assert.equal(second[0].status, "used", "usedのまま維持されること");
+});
+
+test("テーマ指定時は無関係な過去候補を混ぜず、新着の関連候補を優先する", () => {
+  const semiconductor = item({
+    id: "semi",
+    sourceUrl: "semi-url",
+    title: "半導体市場とメモリ需要",
+    textExcerpt: "半導体の設備投資を調べた",
+    detectedGenreIds: ["asset-building"],
+  });
+  const unrelated = item({
+    id: "book",
+    sourceUrl: "book-url",
+    title: "読書習慣を続ける方法",
+    textExcerpt: "毎日読書する",
+    detectedGenreIds: ["reading"],
+  });
+  const clusters = cluster.buildClusters([unrelated, semiconductor], baseCtx);
+  const selected = cluster.selectTopCandidates(
+    clusters,
+    [unrelated, semiconductor],
+    "半導体",
+    ["semi"]
+  );
+  assert.equal(selected.length, 1);
+  assert.ok(selected[0].title.includes("半導体"));
+});
+
+test("指定したブランド軸の候補だけを返す", () => {
+  const aiItem = item({
+    id: "ai-topic",
+    sourceUrl: "ai-url",
+    title: "生成AIの仕事活用",
+    detectedGenreIds: ["ai"],
+  });
+  const investingItem = item({
+    id: "invest-topic",
+    sourceUrl: "invest-url",
+    title: "半導体市場",
+    detectedGenreIds: ["asset-building"],
+  });
+  const clusters = cluster.buildClusters([aiItem, investingItem], baseCtx);
+  const selected = cluster.selectTopCandidates(
+    clusters,
+    [aiItem, investingItem],
+    undefined,
+    [],
+    undefined,
+    "asset-building"
+  );
+  assert.equal(selected.length, 1);
+  assert.ok(selected[0].genreIds.includes("asset-building"));
+});
+
+test("X検索条件へ日本語とリポスト除外を自動補完する", () => {
+  assert.equal(
+    xQuery.normalizeXQuery('("NVIDIA" OR TSMC) 半導体'),
+    '("NVIDIA" OR TSMC) 半導体 lang:ja -is:retweet'
+  );
+  assert.equal(
+    xQuery.normalizeXQuery("NISA lang:ja -is:retweet"),
+    "NISA lang:ja -is:retweet"
+  );
+});
+
+test("半導体テーマはAPI量を抑えて複数クエリへ分割する", () => {
+  const queries = xQuery.buildXQueries({ focusTopic: "半導体", maxQueries: 4 });
+  assert.equal(queries.length, 4);
+  assert.ok(queries.every((query) => query.includes("lang:ja -is:retweet")));
+  assert.ok(queries.some((query) => query.includes("NVIDIA")));
+  assert.ok(queries.some((query) => query.includes("マイクロン")));
+});
+
+test("手動X検索条件は自動展開より優先する", () => {
+  const queries = xQuery.buildXQueries({
+    focusTopic: "半導体",
+    xQuery: '"嫌われる勇気" 仕事 -広告',
+  });
+  assert.deepEqual(queries, ['"嫌われる勇気" 仕事 -広告 lang:ja -is:retweet']);
+});
+
+test("X生成形式ごとの必要な下書き数を固定する", () => {
+  assert.deepEqual(xFormat.expectedDraftCount("x-post"), { min: 3, max: 3 });
+  assert.deepEqual(xFormat.expectedDraftCount("x-thread"), { min: 2, max: 7 });
+  assert.deepEqual(xFormat.expectedDraftCount("x-and-note"), { min: 5, max: 5 });
+});
+
+test("未認識のメディア案と投稿型は安全な初期値へ戻す", () => {
+  assert.equal(xFormat.normalizeMediaSuggestion("unknown"), "text");
+  assert.equal(xFormat.normalizeXPattern("unknown", "x-post"), "opinion");
+  assert.equal(xFormat.normalizeXPattern("publish", "x-and-note"), "note-link");
+});
+
+test("ブランドv1初期値だけをv2へ移行し、利用者編集は残す", () => {
+  const v1 = noteTypes.defaultBrand();
+  v1.identity.version = "maemichi-v1";
+  v1.identity.xProfile = noteTypes.MAEMICHI_V1_DEFAULTS.identity.xProfile;
+  v1.identity.xProfileShort = noteTypes.MAEMICHI_V1_DEFAULTS.identity.xProfileShort;
+  v1.identity.fixedPost = noteTypes.MAEMICHI_V1_DEFAULTS.identity.fixedPost;
+  v1.concept = noteTypes.MAEMICHI_V1_DEFAULTS.concept;
+  v1.credibility = ["本人が登録した事実"];
+  const migrated = noteTypes.migrateBrandV1ToV2(v1);
+  assert.equal(migrated.identity.version, "maemichi-v2");
+  assert.match(migrated.identity.xProfile, /人生の寄り道/);
+  assert.equal(migrated.credibility[0], "本人が登録した事実");
+  assert.equal(migrated.contentPillars.reduce((sum, pillar) => sum + pillar.targetRatio, 0), 100);
+
+  v1.identity.xProfile = "利用者が編集したプロフィール";
+  assert.equal(noteTypes.migrateBrandV1ToV2(v1).identity.xProfile, "利用者が編集したプロフィール");
+});
+
+test("投稿指標は0除算せず、未取得をundefinedで維持する", () => {
+  const rates = performance.performanceRates({
+    contentId: "x1", platform: "x", purpose: "reach", genreId: "daily-thoughts",
+    publishedAt: "2026-08-04T09:00:00.000Z", measuredAt: "2026-08-04T10:00:00.000Z",
+    impressions: 0, replies: 0,
+  });
+  assert.equal(rates.replyRate, undefined);
+  assert.equal(rates.bookmarkRate, undefined);
+});
+
+test("収益化進捗は500万までの残りを計算し、収益額を予測しない", () => {
+  const projection = performance.monetizationProjection({
+    organicImpressions90Days: 1_000_000,
+    requiredOrganicImpressions: 5_000_000,
+    verifiedFollowers: 120,
+    requiredVerifiedFollowers: 500,
+    lastCheckedAt: "2026-08-04T00:00:00.000Z",
+  });
+  assert.equal(projection.remainingImpressions, 4_000_000);
+  assert.equal(projection.verifiedFollowersRemaining, 380);
+  assert.equal("estimatedRevenue" in projection, false);
+});
+
+test("投稿割合は直近30件だけを集計し、選択を強制しない", () => {
+  const records = Array.from({ length: 35 }, (_, index) => ({
+    contentId: `x${index}`, platform: "x", purpose: "reach",
+    genreId: index < 20 ? "ai" : "daily-thoughts",
+    publishedAt: new Date(Date.UTC(2026, 7, 4, 0, 0, index)).toISOString(),
+    measuredAt: "2026-08-04T01:00:00.000Z",
+  }));
+  const balance = performance.contentPillarBalance(records, noteTypes.DEFAULT_CONTENT_PILLARS);
+  assert.equal(balance.length, 7);
+  assert.ok(balance.find((item) => item.id === "ai").currentRatio >= 0);
+});
+
+test("日常投稿APIはX APIや外部リサーチを参照しない", () => {
+  const source = fs.readFileSync(path.join(process.cwd(), "app/api/note/content/generate-daily/route.ts"), "utf8");
+  assert.doesNotMatch(source, /researchX|X_API|api\\.x\\.com|x-trends|x-search/);
+  assert.match(source, /generateXPosts/);
 });

@@ -15,7 +15,7 @@
 
 import { callAI } from "../../ai/client";
 import { suggestedPriceBand } from "../operations";
-import { AffiliateLink, Brand, Genre, XAccount } from "../types";
+import { AffiliateLink, Brand, DailyPostSeed, Genre, XAccount } from "../types";
 import { hashId } from "./fetcher";
 import { checkSimilarity, SimilarityCandidate } from "./similarity";
 import {
@@ -26,15 +26,27 @@ import {
   ResearchItem,
   SocialDraft,
   TrendCluster,
+  OutputType,
+  XPostLength,
 } from "./types";
+import { normalizeMediaSuggestion, normalizeXPattern, X_LENGTH_GUIDE } from "./x-format";
 
 /* ─── 共通の前提ブロック ───────────────────── */
 
-function brandBlock(brand: Brand): string {
+function brandBlock(brand: Brand, channel: "x" | "note" = "x"): string {
   const { identity, personality } = brand;
   return `## ブランド
 ${identity.name} — ${identity.primaryTagline}
 コンセプト: ${brand.concept}
+
+## ブランド全体のゴール
+${brand.brandGoal}
+
+## 最重要ルール
+人生を主役にする。
+AI・投資・読書・副業は人生の一部として扱う。
+ノウハウだけで終わらせず、本人がなぜ気になったかを含める。
+投稿を読み終えたあと、人柄が伝わることを優先する。
 
 ## 人格
 ${personality.traits.join("、")}
@@ -51,6 +63,11 @@ ${personality.writingRules.map((s) => `- ${s}`).join("\n")}
 
 ## 読者
 ${brand.targetReader}
+
+## この媒体の発信ルール
+目的: ${brand.channelGuidelines[channel].purpose.join(" / ")}
+口調: ${brand.channelGuidelines[channel].tone.join(" / ")}
+ルール: ${brand.channelGuidelines[channel].rules.join(" / ")}
 
 ## 筆者が語れる根拠
 ${brand.credibility.length > 0 ? brand.credibility.map((c) => `- ${c}`).join("\n") : "（未登録。具体的な数字・成果を書いてはいけません）"}`;
@@ -113,6 +130,38 @@ ${experiences
   .join("\n\n")}`;
 }
 
+function viewpointBlock(authorViewpoint?: string): string {
+  if (!authorViewpoint?.trim()) {
+    return `## 筆者の今回の意見
+（未入力。トレンド投稿の生成を停止してください。筆者の意見を創作してはいけません）`;
+  }
+  return `## 筆者がSlackで入力した今回の意見
+${authorViewpoint.trim()}
+
+この文章は本人が確認済みの、今回の投稿に使う見解です。主張の中心として自然に反映してください。
+ただし、意見に含まれる数値・出来事・利用経験を、確認済みの客観的事実や実体験へ勝手に変換しないでください。`;
+}
+
+function dailyBlock(seed: DailyPostSeed): string {
+  return `## 今日あったこと
+${seed.whatHappened}
+
+## そのとき感じたこと
+${seed.feeling?.trim() || "（未入力。感情を創作しないでください）"}
+
+## そこから考えたこと
+${seed.thought?.trim() || "（未入力。教訓や結論を無理に作らないでください）"}
+
+## まだ迷っていること・分からないこと
+${seed.uncertainty?.trim() || "（未入力）"}
+
+入力された本人の出来事と感情だけを中心に書いてください。外部情報や他者投稿は参照していません。`;
+}
+
+export type ContentSourceContext =
+  | { type: "trend"; cluster: TrendCluster; items: ResearchItem[] }
+  | { type: "daily"; seed: DailyPostSeed };
+
 /* ─── X投稿の生成 ───────────────────────── */
 
 const PURPOSE_GUIDE: Record<ContentPurpose, string> = {
@@ -136,6 +185,11 @@ export type GenerateXInput = {
   policy?: AffiliatePolicy;
   /** 類似チェック用の自分の過去投稿 */
   pastPosts: SimilarityCandidate[];
+  /** Slackで本人が入力した、今回の投稿だけに使う見解 */
+  authorViewpoint?: string;
+  outputType?: OutputType;
+  length?: XPostLength;
+  sourceContext?: ContentSourceContext;
 };
 
 export type GenerateXResult = {
@@ -164,13 +218,34 @@ ${policy!.claimRestrictions.length > 0 ? `禁止訴求: ${policy!.claimRestricti
     : `## リンク
 このアカウント／案件ではX本文にURLを入れられません。**URLを一切書かないでください。**`;
 
-  const prompt = `あなたは「${brand.identity.name}」のX投稿を書くライターです。
+  const outputType = input.outputType ?? "x-post";
+  const isDaily = input.sourceContext?.type === "daily";
+  const length = input.length ?? "standard";
+  const formatGuide =
+    outputType === "x-thread"
+      ? `2〜7投稿のスレッドを1案作る。各投稿は単独でも意味が通り、threadPartsへ順番に入れる。`
+      : outputType === "x-and-note"
+        ? `note連携用に5案作る。patternは順に pre-release / publish / key-point / spinoff / reminder とする。URLは作らず、記事タイトルと価値を案内する。`
+        : isDaily
+          ? `日常投稿として次の3案を必ず1つずつ作る。
+- daily: 今日あったこと→そのままの感情→短い余韻
+- reflection: 出来事→考えたこと→まだ決めきれていないこと、または小さな気づき
+- conversation: 出来事や考え→自分の現在地→必要な場合だけ自然で具体的な問い
+質問や結論を毎回強制しない。試したことが中心ならdailyの代わりにtriedを使ってよい。`
+          : `次の3案を必ず1つずつ作る。
+- opinion: 意見型（意外性のある結論→理由→本人の考え→余韻）
+- save: 保存型（悩み・結論→3〜7要点→初心者向け補足→まとめ）
+- conversation: 会話型（考え→本人の立場→答えやすい具体的な質問）`;
 
-${brandBlock(brand)}
+const prompt = `あなたは「${brand.identity.name}」の投稿者ではなく編集者です。
 
-${trendBlock(cluster, items)}
+${brandBlock(brand, "x")}
 
-${experienceBlock(experiences)}
+${isDaily ? dailyBlock((input.sourceContext as { type: "daily"; seed: DailyPostSeed }).seed) : trendBlock(cluster, items)}
+
+${isDaily ? "## 本人入力の扱い\n上の日常入力は今回本人が入力した内容です。書かれている範囲だけ本人の出来事・感情として使えます。" : experienceBlock(experiences)}
+
+${viewpointBlock(input.authorViewpoint)}
 
 ## この投稿の目的
 ${PURPOSE_GUIDE[purpose]}
@@ -188,22 +263,58 @@ ${affiliateBlock}
 2. 登録された体験に無いことを「やった」と書かない
 3. 「筆者が語れる根拠」に無い数字・成果を書かない
 4. 強い命令形・感嘆符の多用・煽りをしない
-5. 1投稿140文字以内。改行を使う。ハッシュタグは0〜2個
+5. 文字数は${X_LENGTH_GUIDE[length]}を目安にする。改行を使う。ハッシュタグは0〜2個
 6. 「私は」という主語を自然に使う
+7. 「どう思う？」だけの形式的な返信誘導をしない
+8. 冒頭候補を3案、メディア案を1つ付ける。画像・動画は必須にしない
+9. 友達に話すように自然に書き、先生・成功者として教えない
+10. 人生を主役にし、AI・投資・読書は人生の一部として扱う
+11. 毎回オチ、質問、ブランドコピー、フォロー依頼を付けない
+12. 本人が入力していない感情や結論を創作しない
+13. 主張は本人が回答し確認した今回の意見だけを中心にする
+14. ニュース要約は本文の50%を超えない
+15. 本人の意見が弱くても強い主張へ変換しない
+16. 「まだ分からない」「もう少し調べたい」を消さず、途中経過として扱う
+17. 「〜について解説します」「ポイントは3つ」「今後注目すべき」のような解説者口調を避ける
+18. 読者へ共感を確認する「〜と感じているのではないでしょうか」「皆さんも〜ではありませんか」「〜と思いませんか」は使わない
+19. Xでは丁寧に話をまとめすぎず、自分の本音を短くそのまま置く。「マジ明日だるいな」「会社行きたくないな」のような、友達に漏らす自然な独り言の温度感にする
+20. 読者を「皆さん」「あなた」と呼びかけて話を進めない。質問は本人が本当に聞きたい場合だけにし、共感や反応を取るための質問は付けない
+21. 「〜と感じています」「〜のではないでしょうか」「もし参考になれば嬉しいです」のような整いすぎた締めを避ける。本人の迷い、感情、言い切れなさを残してよい
+
+## Xの文体例
+- 良い: 「マジ明日だるいな。休み明けの会社、行きたくない。とりあえず行くのも強さだけど、辞める方に動くのも別の強さなのかもしれない。まだ答えは出てない。」
+- 避ける: 「長期休み明け特有のこの気持ち、多くの人が感じているのではないでしょうか。」
+- 上の例文を定型文としてコピーせず、その投稿で本人が入力した言葉と感情を優先する
+
+## 作る形式
+${formatGuide}
 
 # 出力（JSONのみ）
 {
   "posts": [
-    { "angle": "気づき", "text": "投稿本文" },
-    { "angle": "実践", "text": "投稿本文" },
-    { "angle": "考え方", "text": "投稿本文" }
+    {
+      "pattern": "opinion",
+      "angle": "投稿の切り口",
+      "text": "投稿本文",
+      "hookCandidates": ["冒頭案1", "冒頭案2", "冒頭案3"],
+      "mediaSuggestion": "text",
+      "threadParts": []
+    }
   ]
-}`;
+}
+mediaSuggestionは text / diagram / screenshot / comparison / chart / video / note-thumbnail のいずれか。`;
 
   const message = `【テーマ】${cluster.title}
 【読者の悩み】${cluster.summary}`;
 
-  let posts: { angle?: string; text?: string }[] = [];
+  let posts: {
+    angle?: string;
+    pattern?: string;
+    text?: string;
+    hookCandidates?: string[];
+    mediaSuggestion?: string;
+    threadParts?: string[];
+  }[] = [];
   try {
     const response = await callAI(message, prompt, { provider: "auto" });
     const match = response.match(/\{[\s\S]*\}/);
@@ -222,9 +333,15 @@ ${affiliateBlock}
   const now = new Date().toISOString();
   const drafts: SocialDraft[] = [];
 
-  for (const post of posts.slice(0, 3)) {
-    if (!post.text) continue;
-    let text = String(post.text);
+  const selectedPosts = posts.slice(0, outputType === "x-and-note" ? 5 : 3);
+  for (const [postIndex, post] of selectedPosts.entries()) {
+    const texts =
+      outputType === "x-thread" && Array.isArray(post.threadParts) && post.threadParts.length >= 2
+        ? post.threadParts.slice(0, 7)
+        : post.text ? [post.text] : [];
+    const threadId = outputType === "x-thread" ? hashId("th", `${cluster.id}${now}`) : undefined;
+    for (const [threadIndex, rawText] of texts.entries()) {
+    let text = String(rawText);
 
     // 未許可URLを除去（AIにURLを作らせない）
     const urls = text.match(/https?:\/\/[^\s)\]"'）]+/g) ?? [];
@@ -246,12 +363,24 @@ ${affiliateBlock}
     const similarity = checkSimilarity(text, sourceCandidates, input.pastPosts);
 
     drafts.push({
-      id: hashId("s", `${cluster.id}${post.angle ?? ""}${now}${text.slice(0, 20)}`),
+      id: hashId("s", `${cluster.id}${post.angle ?? ""}${threadIndex}${now}${text.slice(0, 20)}`),
       trendClusterId: cluster.id,
       xAccountId: account.id,
       purpose,
       genreId: genre.id,
       text,
+      pattern: normalizeXPattern(
+        post.pattern ?? ((isDaily ? ["daily", "reflection", "conversation"] : ["opinion", "save", "conversation"])[postIndex] as string | undefined),
+        outputType
+      ),
+      length,
+      hookCandidates: Array.isArray(post.hookCandidates)
+        ? post.hookCandidates.map(String).slice(0, 3)
+        : [],
+      mediaSuggestion: normalizeMediaSuggestion(post.mediaSuggestion),
+      threadId,
+      threadIndex: threadId ? threadIndex + 1 : undefined,
+      threadTotal: threadId ? texts.length : undefined,
       urls: kept,
       affiliateId: needsDisclosure ? affiliate?.id : undefined,
       needsDisclosure,
@@ -263,10 +392,11 @@ ${affiliateBlock}
       createdAt: now,
       updatedAt: now,
     });
+    }
   }
 
   const warning =
-    experiences.length === 0
+    experiences.length === 0 && !isDaily
       ? "登録済みの体験が無いため、一般的な考察として生成しました（体験談としては書いていません）"
       : undefined;
 
@@ -285,6 +415,8 @@ export type GenerateNoteInput = {
   affiliate?: AffiliateLink;
   policy?: AffiliatePolicy;
   pastPosts: SimilarityCandidate[];
+  /** Slackで本人が入力した、今回の投稿だけに使う見解 */
+  authorViewpoint?: string;
 };
 
 export type GenerateNoteResult = {
@@ -330,19 +462,26 @@ export async function generateNoteArticle(
 有料パート: 実際の設定・テンプレート・プロンプト・失敗と対処・チェックリスト
 有料パートは「読者が再利用できる成果物」を必ず含めること。`
       : `## 構成（無料）
-1. 感じた疑問や出来事
-2. 実際に試したこと
-3. 分かったこと
-4. 読者が試せる具体的な方法
-5. 断定しないまとめ`;
+1. 読者の悩み・疑問
+2. なぜ今この話題なのか
+3. 初心者向けの背景説明
+4. まえみちとしての考え
+5. 登録済みの体験・事実（無ければ体験を創作しない）
+6. 失敗・迷い・注意点
+7. 今日からできること
+8. まとめ
+9. 関連記事（登録URLが無ければURLを作らない）
+X投稿を単純に長文化せず、noteとして独立した価値を持たせること。`;
 
-  const prompt = `あなたは「${brand.identity.name}」のnote記事を書くライターです。
+  const prompt = `あなたは「${brand.identity.name}」の投稿者ではなく、note編集者です。
 
-${brandBlock(brand)}
+${brandBlock(brand, "note")}
 
 ${trendBlock(cluster, items)}
 
 ${experienceBlock(experiences)}
+
+${viewpointBlock(input.authorViewpoint)}
 
 ${structure}
 
@@ -365,6 +504,11 @@ ${policy!.claimRestrictions.length > 0 ? `禁止訴求: ${policy!.claimRestricti
 3. 「筆者が語れる根拠」に無い数字・成果を書かない
 4. 読者が今日試せる具体的な行動を必ず1つ入れる
 5. 煽らない。断定しない。上から教えない
+6. 本人が回答し確認した今回の意見を記事の中心にする
+7. ニュースの一般論を本人の意見として書かない
+8. 本人が「まだ分からない」と述べた内容を消さない
+9. 本人の意見が弱くても、強い結論や感情を補わない
+10. ニュース要約だけの記事にせず、本人が何に注目し、なぜ考えたかを中心にする
 
 # 出力（JSONのみ）
 {

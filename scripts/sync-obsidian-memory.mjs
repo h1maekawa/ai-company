@@ -9,6 +9,8 @@ const vaultRoot =
   process.env.VAULT_ROOT ||
   "/Users/maekawahiroyuki/Library/CloudStorage/Dropbox/maehiro/個人用/AI会社";
 const overwrite = process.argv.includes("--overwrite");
+const onlyFileArg = process.argv.find((arg) => arg.startsWith("--file="));
+const onlyFile = onlyFileArg?.slice("--file=".length).replace(/^\/+/, "");
 
 const copyPlan = [
   ["memory/personal", "memory/personal"],
@@ -54,6 +56,31 @@ if (!fs.existsSync(vaultRoot)) {
 
 let totalCopied = 0;
 let totalSkipped = 0;
+
+if (onlyFile) {
+  if (!onlyFile.startsWith("memory/personal/") && !onlyFile.startsWith("memory/shared/")) {
+    console.error("--file must be inside memory/personal or memory/shared");
+    process.exit(1);
+  }
+  const sourcePath = path.resolve(repoRoot, onlyFile);
+  const targetPath = path.resolve(vaultRoot, onlyFile);
+  if (!sourcePath.startsWith(`${repoRoot}${path.sep}`) || !targetPath.startsWith(`${vaultRoot}${path.sep}`)) {
+    console.error("Invalid --file path");
+    process.exit(1);
+  }
+  if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isFile()) {
+    console.error(`Source file does not exist: ${onlyFile}`);
+    process.exit(1);
+  }
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  if (!overwrite && fs.existsSync(targetPath)) {
+    console.log(`Skipped existing file: ${onlyFile}`);
+    process.exit(0);
+  }
+  fs.copyFileSync(sourcePath, targetPath);
+  console.log(`Copied file: ${onlyFile}`);
+  process.exit(0);
+}
 
 for (const [sourceRel, targetRel] of copyPlan) {
   const sourceDir = path.join(repoRoot, sourceRel);

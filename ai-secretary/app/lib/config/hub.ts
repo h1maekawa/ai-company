@@ -81,6 +81,22 @@ export const HUB_NODES: HubNode[] = [
     ],
   },
   {
+    id: "content",
+    group: "personal",
+    secretaryId: "personal-note",
+    icon: "🧭",
+    name: "Content Business OS",
+    tagline: "投稿→集客→販売→売上→学習→次の投稿までのLoop",
+    mode: "note",
+    color: "#22C55E",
+    href: "/content",
+    examples: [
+      "今週のRevenueは？",
+      "次の記事候補を見せて",
+      "Weekly Reviewを見たい",
+    ],
+  },
+  {
     id: "fund",
     group: "personal",
     secretaryId: "personal-fund",

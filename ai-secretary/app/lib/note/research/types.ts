@@ -69,7 +69,7 @@ export function defaultXResearchSettings(): XResearchSettings {
     enabled: false,
     maxReferenceAccountsPerRun: 10,
     maxPostsPerAccount: 3,
-    monthlyBudgetUsd: 5,
+    monthlyBudgetUsd: 0,
     currentEstimatedSpendUsd: 0,
     spendPeriod: new Date().toISOString().slice(0, 7),
     lookbackHours: 72,
@@ -81,11 +81,61 @@ export function defaultXResearchSettings(): XResearchSettings {
 
 export type ResearchPlatform = "x" | "note" | "web";
 
+export type GrowthGoal =
+  | "reach"
+  | "conversation"
+  | "save"
+  | "profile-follow"
+  | "note-bridge"
+  | "trust"
+  | "monetization";
+
+export type OutputType =
+  | "x-post"
+  | "x-thread"
+  | "note-free"
+  | "note-paid-outline"
+  | "x-and-note";
+
+export type XPostLength = "short" | "standard" | "long";
+export type XPostPattern = "daily" | "reflection" | "tried" | "opinion" | "save" | "conversation" | "note-link";
+
+/**
+ * X Studio: 投稿の型（Content Business OS拡張）。既存 XPostPattern（生成パターン）とは別軸で、
+ * 「note記事をXへ要約しただけ」を禁止するために、記事全体をどう再構成したかを明示する。
+ */
+export type XDraftType =
+  | "opinion"
+  | "experience"
+  | "learning"
+  | "how-to"
+  | "hook"
+  | "note-traffic"
+  | "product-traffic";
+export type MediaSuggestion =
+  | "text"
+  | "diagram"
+  | "screenshot"
+  | "comparison"
+  | "chart"
+  | "video"
+  | "note-thumbnail";
+
+export type ResearchRequest = {
+  focusTopic?: string;
+  platform?: "x" | "note" | "both";
+  xQuery?: string;
+  genreId?: string;
+  growthGoal?: GrowthGoal;
+  personalAngle?: string;
+};
+
 export type ResearchSourceType =
   | "reference-account"
   | "keyword"
   | "trend"
   | "featured"
+  | "notebooklm"
   | "manual";
 
 export type PublicMetrics = {
@@ -207,6 +257,52 @@ export type ExperienceEntry = {
   verifiedByUser: boolean;
   sensitive: boolean;
 
+  /** Content Business OS: 本人承認前は必ず candidate（verifiedByUserから導出可） */
+  status?: ApprovalStatus;
+  approvedAt?: string;
+  sourceMessageIds?: string[];
+  sourceMaterialIds?: string[];
+  /** 本人が確認した裏付け（数字を含む場合は特に、本人未確認のままAIが生成しない） */
+  evidence?: string[];
+
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** 未設定データの status を verifiedByUser から安全に導出する */
+export function viewpointStatus(v: Pick<ViewpointLibraryEntry, "status" | "verifiedByUser">): ApprovalStatus {
+  if (v.status) return v.status;
+  return v.verifiedByUser ? "approved" : "candidate";
+}
+
+export function experienceStatus(e: Pick<ExperienceEntry, "status" | "verifiedByUser">): ApprovalStatus {
+  if (e.status) return e.status;
+  return e.verifiedByUser ? "approved" : "candidate";
+}
+
+/**
+ * candidate: AIが会話から推測しただけ。approved: 本人が明示的に確認した。
+ * 未設定（旧データ）は verifiedByUser から導出する（true→approved扱い、false→candidate扱い）。
+ */
+export type ApprovalStatus = "candidate" | "approved" | "rejected";
+
+export type ViewpointLibraryEntry = {
+  id: string;
+  title: string;
+  topic: string;
+  opinion: string;
+  reasons: string[];
+  uncertainties: string[];
+  sourceBriefId?: string;
+  sourceDraftIds: string[];
+  reusable: boolean;
+  verifiedByUser: boolean;
+  /** Content Business OS: 本人承認前は必ず candidate */
+  status?: ApprovalStatus;
+  approvedAt?: string;
+  /** ArticleSession内でこの視点の元になった会話メッセージ */
+  sourceMessageIds?: string[];
+  sourceMaterialIds?: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -268,12 +364,23 @@ export type SocialDraft = {
   id: string;
   briefId?: string;
   trendClusterId?: string;
+  /** Research / 本人視点 / 本人体験からこのAI下書きまでのLineage */
+  sourceResearchIds?: string[];
+  sourceViewpointIds?: string[];
+  sourceExperienceIds?: string[];
 
   xAccountId: string;
   purpose: ContentPurpose;
   genreId: string;
 
   text: string;
+  pattern?: XPostPattern;
+  length?: XPostLength;
+  hookCandidates?: string[];
+  mediaSuggestion?: MediaSuggestion;
+  threadId?: string;
+  threadIndex?: number;
+  threadTotal?: number;
   /** 本文に残った登録済みURL（未登録は生成後に除去済み） */
   urls: string[];
   affiliateId?: string;
@@ -296,6 +403,16 @@ export type SocialDraft = {
   metricsSyncError?: string;
   failureReason?: string;
 
+  /* ─── Content Business OS 拡張（任意） ─── */
+  draftType?: XDraftType;
+  materialIds?: string[];
+  /** Note記事からXを作った場合の元記事Draft id（逆はsourceNoteArticleIdではなくmaterialとして扱う） */
+  sourceNoteArticleId?: string;
+  contentGoal?: ContentGoal;
+  funnelStage?: FunnelStage;
+  offerIds?: string[];
+  ctaIds?: string[];
+
   createdAt: string;
   updatedAt: string;
 };
@@ -310,6 +427,38 @@ export type NoteArticleStatus =
   | "queued"
   | "published"
   | "failed";
+
+/**
+ * 投稿・記事の「何のために出すか」。すべての投稿へ販売CTAを付けない前提のため、
+ * awareness/engagement/trustなど非収益目的も対等な選択肢として扱う。
+ */
+export type ContentGoal =
+  | "awareness"
+  | "followers"
+  | "engagement"
+  | "trust"
+  | "traffic"
+  | "paid-note"
+  | "affiliate"
+  | "membership"
+  | "product"
+  | "service"
+  | "timebox"
+  | "other";
+
+export type FunnelStage = "awareness" | "interest" | "trust" | "conversion" | "retention";
+
+/** 有料部分を買った読者が「何ができるようになるか」の型 */
+export type PaidValueType =
+  | "template"
+  | "checklist"
+  | "prompt"
+  | "framework"
+  | "case-study"
+  | "deep-dive"
+  | "step-by-step"
+  | "resource"
+  | "other";
 
 export type NoteArticleDraft = {
   id: string;
@@ -336,10 +485,27 @@ export type NoteArticleDraft = {
   headerImagePath?: string;
 
   sourceResearchItemIds: string[];
+  sourceViewpointIds?: string[];
   sourceExperienceIds: string[];
 
   status: NoteArticleStatus;
   noteUrl?: string;
+
+  /* ─── Content Business OS 拡張（すべて任意。旧データは未設定のまま動作） ─── */
+  /** 由来のArticleSession（Note Chat Studioから生成された場合） */
+  articleSessionId?: string;
+  materialIds?: string[];
+  /** この記事・投稿の目的（未設定＝特に決めない） */
+  contentGoal?: ContentGoal;
+  funnelStage?: FunnelStage;
+  offerIds?: string[];
+  ctaIds?: string[];
+  /** 有料部分の価値提案（無料部分だけでも記事として成立する説明） */
+  valueProposition?: string;
+  /** 有料部分を買うと何ができるようになるか */
+  paidValue?: PaidValueType;
+  /** AI: 無料/有料どちらが向いているかの提案（理由付き）。自動有料化はしない */
+  monetizationRecommendation?: { suggestion: "free" | "paid"; reason: string };
 
   createdAt: string;
   updatedAt: string;
@@ -379,6 +545,8 @@ export function defaultAffiliatePolicy(affiliateId: string): AffiliatePolicy {
 export type ContentPerformance = {
   contentId: string;
   trendClusterId?: string;
+  /** Content Business OS: PublishedContent（monetization/types.ts）への参照。任意 */
+  publishedContentId?: string;
   platform: "x" | "note";
   purpose: ContentPurpose;
   genreId: string;
@@ -389,6 +557,20 @@ export type ContentPerformance = {
   replies?: number;
   reposts?: number;
   engagements?: number;
+  quotes?: number;
+  bookmarks?: number;
+  profileClicks?: number;
+  followsFromPost?: number;
+  urlClicks?: number;
+  videoViews?: number;
+  mediaViews?: number;
+  followerCountAtPost?: number;
+  currentFollowerCount?: number;
+  pattern?: XPostPattern;
+  length?: XPostLength;
+  mediaSuggestion?: MediaSuggestion;
+  hasQuestion?: boolean;
+  hasExternalLink?: boolean;
   linkClicks?: number;
   profileVisits?: number;
   followersGained?: number;
@@ -408,6 +590,7 @@ export type ContentPerformance = {
 
   measuredAt: string;
   snapshotHours?: number;
+  measurementWindow?: "30m" | "1h" | "3h" | "24h" | "72h" | "7d";
   metricAvailability?: Partial<
     Record<
       | "impressions"
@@ -422,6 +605,27 @@ export type ContentPerformance = {
       "available" | "unavailable"
     >
   >;
+};
+
+export type RevenueSharingProgress = {
+  premiumActive?: boolean;
+  organicImpressions90Days?: number;
+  requiredOrganicImpressions: number;
+  verifiedFollowers?: number;
+  requiredVerifiedFollowers: number;
+  stripeConnected?: boolean;
+  identityVerified?: boolean;
+  accountInGoodStanding?: boolean;
+  eligibleCountry?: boolean;
+  lastCheckedAt: string;
+};
+
+export type MonetizationRule = {
+  program: "revenue-sharing" | "subscriptions";
+  requirements: Record<string, number | boolean | string>;
+  sourceLabel: string;
+  verifiedAt: string;
+  active: boolean;
 };
 
 export type PerformanceWeights = {
@@ -487,6 +691,16 @@ export type PublishJob = {
 /* ─── フィーチャーフラグ / 停止スイッチ ─────────────── */
 
 export type FeatureFlags = {
+  xFreeWorkspaceEnabled: boolean;
+  xOfficialEmbedEnabled: boolean;
+  xWebIntentsEnabled: boolean;
+  xManualPostImportEnabled: boolean;
+  xArchiveImportEnabled: boolean;
+  xPaidApiEnabled: boolean;
+  /** 常にfalse。ブラウザ自動操作は禁止 */
+  xBrowserAutomationEnabled: false;
+  /** 本人原稿をMac上のローカルAIで添削する。初期OFF */
+  localAiEditorEnabled: boolean;
   /** 全体の停止スイッチ。false ならどのチャネルにも投稿しない */
   publishingEnabled: boolean;
   /** X自動投稿（Buffer予約）。初期OFF */
@@ -507,6 +721,14 @@ export type FeatureFlags = {
 
 export function defaultFeatureFlags(): FeatureFlags {
   return {
+    xFreeWorkspaceEnabled: false,
+    xOfficialEmbedEnabled: true,
+    xWebIntentsEnabled: true,
+    xManualPostImportEnabled: true,
+    xArchiveImportEnabled: false,
+    xPaidApiEnabled: false,
+    xBrowserAutomationEnabled: false,
+    localAiEditorEnabled: false,
     publishingEnabled: false,
     xAutoPublish: false,
     noteAutoPublish: false,

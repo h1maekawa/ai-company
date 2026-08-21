@@ -10,7 +10,10 @@
 
 import { DEFAULT_GENRES } from "../../types";
 import { fetchPage, hashId, stripTags } from "../fetcher";
+import { detectGenres } from "../genres";
 import { ReferenceNoteCreator, ResearchItem, ResearchSourceType } from "../types";
+
+export { detectGenres } from "../genres";
 
 /**
  * noteの公開APIから、必要な公開項目だけ拾う。
@@ -52,22 +55,6 @@ const MAX_PER_SOURCE = 10;
 function excerpt(text: string, max = 220): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
-}
-
-/** タイトル・タグ・抜粋から、まえみちの5ジャンルに当てはまるものを推定する */
-export function detectGenres(text: string): string[] {
-  const hits: string[] = [];
-  const table: Record<string, string[]> = {
-    ai: ["AI", "ChatGPT", "Claude", "Gemini", "生成AI", "プロンプト", "自動化", "LLM"],
-    "side-business": ["副業", "複業", "個人開発", "マネタイズ", "フリーランス", "受注"],
-    reading: ["読書", "本", "書評", "要約", "積読"],
-    "asset-building": ["資産", "投資", "NISA", "積立", "家計", "貯金", "株"],
-    habits: ["習慣", "継続", "ルーティン", "朝活", "時間術", "生産性"],
-  };
-  for (const [genreId, words] of Object.entries(table)) {
-    if (words.some((w) => text.includes(w))) hits.push(genreId);
-  }
-  return hits;
 }
 
 function toResearchItem(
@@ -151,16 +138,32 @@ async function fetchCreator(creator: ReferenceNoteCreator): Promise<NoteResearch
 
 /** タグの人気・新着記事（ハッシュタグは v3 のみ提供されている） */
 async function fetchTag(tag: string): Promise<NoteResearchResult> {
-  const url = `https://note.com/api/v3/hashtags/${encodeURIComponent(tag)}/notes?order=popular&page=1`;
-  const res = await fetchPage(url);
-  if (!res.ok) return { items: [], failures: [{ source: `タグ:${tag}`, error: res.error }] };
-
   const items: ResearchItem[] = [];
-  for (const note of parseNotes(res.body).slice(0, MAX_PER_SOURCE)) {
-    const item = toResearchItem(note, "trend");
-    if (item) items.push(item);
+  const failures: { source: string; error: string }[] = [];
+  // 人気順だけだと毎回同じ記事になるため、新着順も取得する。
+  const results = await Promise.all(
+    ([["人気", "popular"], ["新着", "new"]] as const).map(async ([label, order]) => {
+      const url = `https://note.com/api/v3/hashtags/${encodeURIComponent(tag)}/notes?order=${order}&page=1`;
+      const res = await fetchPage(url);
+      if (!res.ok) {
+        return {
+          items: [] as ResearchItem[],
+          failure: { source: `タグ:${tag}(${label})`, error: res.error },
+        };
+      }
+      const fetchedItems: ResearchItem[] = [];
+      for (const note of parseNotes(res.body).slice(0, MAX_PER_SOURCE)) {
+        const item = toResearchItem(note, "trend");
+        if (item) fetchedItems.push(item);
+      }
+      return { items: fetchedItems };
+    })
+  );
+  for (const result of results) {
+    items.push(...result.items);
+    if (result.failure) failures.push(result.failure);
   }
-  return { items, failures: [] };
+  return { items, failures };
 }
 
 /**
@@ -169,23 +172,31 @@ async function fetchTag(tag: string): Promise<NoteResearchResult> {
  */
 export async function researchNote(
   creators: ReferenceNoteCreator[],
-  tags: string[]
+  tags: string[],
+  options?: { focusTopic?: string }
 ): Promise<NoteResearchResult> {
   const items: ResearchItem[] = [];
   const failures: { source: string; error: string }[] = [];
+  const focusTopic = options?.focusTopic?.trim();
 
   const activeCreators = creators
     .filter((c) => c.active)
     .sort((a, b) => a.priority - b.priority)
     .slice(0, 10);
 
-  for (const creator of activeCreators) {
-    const result = await fetchCreator(creator);
-    items.push(...result.items);
-    failures.push(...result.failures);
+  // Slackでテーマを指定された場合は、そのタグだけを調べる。
+  // 参考アカウントと全登録タグを毎回巡回するとVercelの実行時間を超え、
+  // 「受付しました」のまま完了通知が返らなくなるため。
+  if (!focusTopic) {
+    for (const creator of activeCreators) {
+      const result = await fetchCreator(creator);
+      items.push(...result.items);
+      failures.push(...result.failures);
+    }
   }
 
-  for (const tag of tags.slice(0, 12)) {
+  const targetTags = focusTopic ? [focusTopic] : tags.slice(0, 12);
+  for (const tag of targetTags) {
     const result = await fetchTag(tag);
     items.push(...result.items);
     failures.push(...result.failures);

@@ -207,6 +207,13 @@ export function BrandEditor({
             onChange={(concept) => set({ concept })}
             rows={2}
           />
+          <TextAreaField
+            label="ブランド全体のゴール"
+            hint="何の専門家になるかではなく、読者からどのように見られたいか"
+            value={draft.brandGoal}
+            onChange={(brandGoal) => set({ brandGoal })}
+            rows={3}
+          />
         </div>
       </Card>
 
@@ -301,8 +308,8 @@ export function BrandEditor({
             onChange={(painPoints) => set({ painPoints })}
           />
           <ListField
-            label="教えること"
-            hint="1行に1つ。公式LINEのカリキュラムもここに沿います"
+            label="発信・共有すること"
+            hint="1行に1つ。知識だけでなく、体験・感情・迷い・途中経過も含めます"
             value={draft.teaches}
             onChange={(teaches) => set({ teaches })}
           />
@@ -317,6 +324,52 @@ export function BrandEditor({
                 : undefined
             }
           />
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="投稿割合" hint="直近の偏りを確認するための目安です。投稿内容を強制しません。" />
+        <div className="grid gap-2 sm:grid-cols-2">
+          {draft.contentPillars.map((pillar, index) => (
+            <label key={pillar.id} className="rounded-xl border border-hairline bg-white/[0.02] p-3">
+              <span className="text-xs font-semibold">{pillar.label}</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={pillar.targetRatio}
+                onChange={(event) => {
+                  const contentPillars = draft.contentPillars.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, targetRatio: Number(event.target.value) || 0 } : item
+                  );
+                  set({ contentPillars });
+                }}
+                className="mt-2 w-full rounded-lg border border-hairline bg-white/[0.03] px-3 py-2 text-sm"
+              />
+            </label>
+          ))}
+        </div>
+        <p className={`mt-3 text-xs ${draft.contentPillars.reduce((sum, item) => sum + item.targetRatio, 0) === 100 ? "text-gain" : "text-amber-300"}`}>
+          合計 {draft.contentPillars.reduce((sum, item) => sum + item.targetRatio, 0)}%
+          {draft.contentPillars.reduce((sum, item) => sum + item.targetRatio, 0) !== 100 && "（目安として使うには100%にしてください）"}
+        </p>
+      </Card>
+
+      <Card>
+        <CardHeader title="Xの発信ルール" hint="毎日の記録・途中経過・会話のための媒体" />
+        <div className="space-y-4">
+          <ListField label="Xの目的" value={draft.channelGuidelines.x.purpose} onChange={(purpose) => set({ channelGuidelines: { ...draft.channelGuidelines, x: { ...draft.channelGuidelines.x, purpose } } })} />
+          <ListField label="Xの口調" value={draft.channelGuidelines.x.tone} onChange={(tone) => set({ channelGuidelines: { ...draft.channelGuidelines, x: { ...draft.channelGuidelines.x, tone } } })} />
+          <ListField label="Xで守るルール" value={draft.channelGuidelines.x.rules} onChange={(rules) => set({ channelGuidelines: { ...draft.channelGuidelines, x: { ...draft.channelGuidelines.x, rules } } })} />
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="noteの発信ルール" hint="背景・感情・考えの変化を深く残す媒体" />
+        <div className="space-y-4">
+          <ListField label="noteの目的" value={draft.channelGuidelines.note.purpose} onChange={(purpose) => set({ channelGuidelines: { ...draft.channelGuidelines, note: { ...draft.channelGuidelines.note, purpose } } })} />
+          <ListField label="noteの口調" value={draft.channelGuidelines.note.tone} onChange={(tone) => set({ channelGuidelines: { ...draft.channelGuidelines, note: { ...draft.channelGuidelines.note, tone } } })} />
+          <ListField label="noteで守るルール" value={draft.channelGuidelines.note.rules} onChange={(rules) => set({ channelGuidelines: { ...draft.channelGuidelines, note: { ...draft.channelGuidelines.note, rules } } })} />
         </div>
       </Card>
 

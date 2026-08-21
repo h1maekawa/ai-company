@@ -276,11 +276,12 @@ export function buildClusters(
 
     const raw =
       trendScore + brandFitScore + experienceFitScore + monetizationFitScore + originalityScore;
-    const totalScore = Math.max(0, raw - deduction);
-
     const riskLabel = detectHighRisk(
       group.map((g) => `${g.title ?? ""} ${g.textExcerpt}`).join(" ")
     );
+    // 対象外の記事に高い点数が残ると、おすすめ候補に見えてしまう。
+    // 内訳は監査用に残しつつ、総合点は0として通常候補より下へ送る。
+    const totalScore = riskLabel ? 0 : Math.max(0, raw - deduction);
 
     const prior = existingById.get(id);
 
@@ -313,4 +314,66 @@ export function buildClusters(
   });
 
   return clusters.sort((a, b) => b.totalScore - a.totalScore);
+}
+
+/**
+ * Slackなどでテーマを指定した場合、そのテーマに関係する候補だけを返す。
+ * 通常実行では従来どおり総合点順。テーマ指定時は今回新しく取得した記事を優先する。
+ */
+export function selectTopCandidates(
+  clusters: TrendCluster[],
+  items: ResearchItem[],
+  focusTopic?: string,
+  freshItemIds: string[] = [],
+  platform?: "x" | "note",
+  genreId?: string,
+  preferredGenreIds: string[] = []
+): TrendCluster[] {
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const candidates = clusters.filter(
+    (cluster) =>
+      cluster.status === "candidate" &&
+      !cluster.blocked &&
+      cluster.totalScore > 0 &&
+      (!genreId || cluster.genreIds.includes(genreId)) &&
+      (!platform ||
+        cluster.researchItemIds.some((id) => itemById.get(id)?.platform === platform))
+  );
+  const preference = (cluster: TrendCluster) =>
+    cluster.genreIds.some((id) => preferredGenreIds.includes(id)) ? 1 : 0;
+  if (!focusTopic?.trim()) {
+    return [...candidates]
+      .sort((a, b) => b.totalScore - a.totalScore || preference(b) - preference(a))
+      .slice(0, 5);
+  }
+
+  const topicTokens = tokenize(focusTopic);
+  const freshIds = new Set(freshItemIds);
+
+  return candidates
+    .map((cluster) => {
+      const clusterItems = cluster.researchItemIds
+        .map((id) => itemById.get(id))
+        .filter((item): item is ResearchItem => Boolean(item));
+      const text = [
+        cluster.title,
+        cluster.summary,
+        ...clusterItems.map((item) => `${item.title ?? ""} ${item.textExcerpt}`),
+      ].join(" ");
+      return {
+        cluster,
+        relevance: overlapCoefficient(topicTokens, tokenize(text)),
+        hasFreshItem: cluster.researchItemIds.some((id) => freshIds.has(id)),
+      };
+    })
+    .filter((entry) => entry.relevance >= 0.5)
+    .sort(
+      (a, b) =>
+        Number(b.hasFreshItem) - Number(a.hasFreshItem) ||
+        b.relevance - a.relevance ||
+        b.cluster.totalScore - a.cluster.totalScore ||
+        preference(b.cluster) - preference(a.cluster)
+    )
+    .slice(0, 5)
+    .map((entry) => entry.cluster);
 }

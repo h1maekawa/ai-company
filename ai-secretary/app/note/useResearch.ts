@@ -9,9 +9,13 @@ import type {
   ReferenceNoteCreator,
   ReferenceXAccount,
   ResearchItem,
+  ResearchRequest,
   SocialDraft,
   TrendCluster,
   XResearchSettings,
+  GrowthGoal,
+  OutputType,
+  XPostLength,
 } from "@/app/lib/note/research/types";
 
 type ClusterWithSources = TrendCluster & {
@@ -78,6 +82,7 @@ export function useCandidates() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [latestCandidateIds, setLatestCandidateIds] = useState<string[]>([]);
 
   const reload = useCallback(() => {
     return fetch("/api/note/research/candidates")
@@ -91,14 +96,23 @@ export function useCandidates() {
     void reload();
   }, [reload]);
 
-  async function runResearch() {
+  async function runResearch(options: ResearchRequest = {}) {
     setRunning(true);
     setError("");
     setNotice("");
     try {
-      const res = await fetch("/api/note/research/run", { method: "POST" });
+      const res = await fetch("/api/note/research/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(options),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      setLatestCandidateIds(
+        Array.isArray(data.topCandidates)
+          ? data.topCandidates.map((candidate: TrendCluster) => candidate.id)
+          : []
+      );
 
       const parts = [
         `新しく${data.newItems}件を取り込みました（取得 ${data.fetched}件）`,
@@ -116,6 +130,28 @@ export function useCandidates() {
     }
   }
 
+  async function importNotebookLM(result: string) {
+    setRunning(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetch("/api/note/research/notebooklm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ result }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setLatestCandidateIds((data.topCandidates ?? []).map((candidate: TrendCluster) => candidate.id));
+      setNotice(`NotebookLMから${data.imported}件の出典を取り込みました`);
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "NotebookLMの取り込みに失敗しました");
+    } finally {
+      setRunning(false);
+    }
+  }
+
   async function setStatus(id: string, status: TrendCluster["status"]) {
     setClusters((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
     await fetch("/api/note/research/candidates", {
@@ -128,7 +164,13 @@ export function useCandidates() {
   async function generate(
     clusterId: string,
     kind: "x" | "note" | "both",
-    articleType: "free" | "paid" = "free"
+    articleType: "free" | "paid" = "free",
+    options: {
+      personalAngle?: string;
+      growthGoal?: GrowthGoal;
+      outputType?: OutputType;
+      xLength?: XPostLength;
+    } = {}
   ) {
     setRunning(true);
     setError("");
@@ -137,7 +179,7 @@ export function useCandidates() {
       const res = await fetch("/api/note/content/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clusterId, kind, articleType }),
+        body: JSON.stringify({ clusterId, kind, articleType, ...options }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -164,7 +206,9 @@ export function useCandidates() {
     running,
     error,
     notice,
+    latestCandidateIds,
     runResearch,
+    importNotebookLM,
     setStatus,
     generate,
     reload,

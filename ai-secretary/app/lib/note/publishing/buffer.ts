@@ -27,6 +27,7 @@ function config(): { key: string; org: string; channel: string } | null {
 }
 
 export function isBufferConfigured(): boolean {
+  if (process.env.BUFFER_ENABLED !== "true") return false;
   return config() !== null;
 }
 

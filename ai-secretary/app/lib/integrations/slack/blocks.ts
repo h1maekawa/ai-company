@@ -7,18 +7,28 @@
 
 import { genreLabel } from "../../note/research/sources/note";
 import { ResearchItem, SocialDraft, TrendCluster, NoteArticleDraft } from "../../note/research/types";
+import type { LocalAiReviewJob } from "../../note/editor/types";
+import type { AuthorViewpoint, EditorialBrief } from "./editorial-context";
 
 export type SlackBlock = Record<string, unknown>;
 
 /** actionIdは "維持したい情報:値" を : で連結して持つ */
 export const ACTIONS = {
-  makeX: "maemichi_make_x",
-  makeFreeNote: "maemichi_make_free_note",
-  makePaidNote: "maemichi_make_paid_note",
-  makeBoth: "maemichi_make_both",
+  startThinking: "maemichi_start_thinking",
+  selectNewsItem: "maemichi_select_news_item",
+  saveForLater: "maemichi_save_for_later",
   addExperience: "maemichi_add_experience",
   regenerate: "maemichi_regenerate",
   skip: "maemichi_skip",
+  confirmViewpoint: "maemichi_confirm_viewpoint",
+  editViewpoint: "maemichi_edit_viewpoint",
+  rethinkViewpoint: "maemichi_rethink_viewpoint",
+  useOnce: "maemichi_viewpoint_use_once",
+  saveViewpoint: "maemichi_viewpoint_save",
+  saveViewpointExperience: "maemichi_viewpoint_save_experience",
+  generateX: "maemichi_generate_x",
+  generateNote: "maemichi_generate_note",
+  generateBoth: "maemichi_generate_both",
 
   bufferQueue: "maemichi_buffer_queue",
   bufferNow: "maemichi_buffer_now",
@@ -29,6 +39,13 @@ export const ACTIONS = {
   removeLink: "maemichi_remove_link",
   noteFinalize: "maemichi_note_finalize",
   discard: "maemichi_discard",
+  localEditAdopt: "maemichi_local_edit_adopt",
+  localEditLight: "maemichi_local_edit_light",
+  localEditRewrite: "maemichi_local_edit_rewrite",
+  localEditX: "maemichi_local_edit_x",
+  localEditNote: "maemichi_local_edit_note",
+  localEditExperience: "maemichi_local_edit_experience",
+  localEditReject: "maemichi_local_edit_reject",
 } as const;
 
 function button(text: string, actionId: string, value: string, style?: "primary" | "danger") {
@@ -117,18 +134,116 @@ export function candidateBlocks(
           button("見送る", ACTIONS.skip, cluster.id, "danger"),
         ]
       : [
-          button("X投稿を作る", ACTIONS.makeX, cluster.id, "primary"),
-          button("無料note", ACTIONS.makeFreeNote, cluster.id),
-          button("有料note", ACTIONS.makePaidNote, cluster.id),
-          button("両方作る", ACTIONS.makeBoth, cluster.id),
-          button("体験を追加", ACTIONS.addExperience, cluster.id),
-          button("別案", ACTIONS.regenerate, cluster.id),
+          button("このニュースについて考える", ACTIONS.startThinking, cluster.id, "primary"),
+          button("別のニュースを見る", ACTIONS.regenerate, cluster.id),
+          button("あとで読む", ACTIONS.saveForLater, cluster.id),
           button("見送る", ACTIONS.skip, cluster.id, "danger"),
         ],
   });
 
   blocks.push({ type: "divider" });
   return blocks;
+}
+
+export function editorialBriefBlocks(
+  brief: EditorialBrief,
+  items: ResearchItem[]
+): SlackBlock[] {
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const blocks: SlackBlock[] = [
+    {
+      type: "header",
+      text: { type: "plain_text", text: `📰 ${brief.headline}`, emoji: true },
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: `*今回のテーマ*\n${brief.topic}\n\n${brief.overview}` },
+    },
+  ];
+  brief.newsItems.forEach((news, index) => {
+    const sources = news.sourceResearchItemIds
+      .map((id) => itemById.get(id))
+      .filter((item): item is ResearchItem => Boolean(item))
+      .slice(0, 3)
+      .map((item) => `• <${item.sourceUrl}|${(item.title || item.sourceUrl).slice(0, 55)}>`)
+      .join("\n");
+    blocks.push(
+      { type: "divider" },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*${index + 1}. ${news.companyOrTopic}*\n\n*何があったか*\n${news.whatHappened}\n\n*なぜ気になるか*\n${news.whyItMatters}\n\n*まだ分からないこと*\n${news.unknowns.map((value) => `• ${value}`).join("\n")}\n\n*考えるきっかけ*\n${news.discussionQuestion}\n\n*参照元*\n${sources || "参照元を確認できませんでした"}`,
+        },
+      },
+      {
+        type: "actions",
+        block_id: `editorial-news:${news.id}`,
+        elements: [
+          button("このニュースについて考える", ACTIONS.startThinking, news.id, "primary"),
+          button("あとで読む", ACTIONS.saveForLater, news.id),
+          button("見送る", ACTIONS.skip, news.id, "danger"),
+        ],
+      }
+    );
+  });
+  if (brief.marketStructure?.length) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*🔭 市場全体で見えてきた流れ*\n${brief.marketStructure.join("\n↓\n")}`,
+      },
+    });
+  }
+  blocks.push({
+    type: "section",
+    text: { type: "mrkdwn", text: "*まだ投稿案は作りません。*\nまず、どの話題が一番気になりましたか？" },
+  });
+  return blocks;
+}
+
+export function viewpointConfirmationBlocks(
+  viewpoint: AuthorViewpoint,
+  contextId: string
+): SlackBlock[] {
+  return [{
+    type: "actions",
+    block_id: "editorial-viewpoint-confirmation",
+    elements: [
+      button("この内容で合っている", ACTIONS.confirmViewpoint, contextId, "primary"),
+      button("少し修正する", ACTIONS.editViewpoint, contextId),
+      button("考え直す", ACTIONS.rethinkViewpoint, contextId, "danger"),
+    ],
+  }];
+}
+
+export function generationChoiceBlocks(clusterId: string): SlackBlock[] {
+  return [
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: "この考えを、どの形にしますか？\n今回は、まず *X標準* が合いそうです。" },
+    },
+    {
+      type: "actions",
+      block_id: `editorial-generate:${clusterId}`,
+      elements: [
+        button("X標準", ACTIONS.generateX, clusterId, "primary"),
+        button("無料note", ACTIONS.generateNote, clusterId),
+        button("Xとnote両方", ACTIONS.generateBoth, clusterId),
+        button("今回は投稿しない", ACTIONS.skip, clusterId, "danger"),
+      ],
+    },
+    {
+      type: "actions",
+      block_id: `editorial-viewpoint-storage:${clusterId}`,
+      elements: [
+        button("今回だけ使う", ACTIONS.useOnce, clusterId, "primary"),
+        button("考え方として保存", ACTIONS.saveViewpoint, clusterId),
+        button("実体験として保存", ACTIONS.saveViewpointExperience, clusterId),
+      ],
+    },
+  ];
 }
 
 /** 生成されたnote記事の確認カード */
@@ -198,19 +313,100 @@ export function draftBlocks(draft: SocialDraft): SlackBlock[] {
   ];
 }
 
+const slackTextLimit = (text: string, max = 2600) =>
+  text.length > max ? `${text.slice(0, max)}\n…（続きはNote事業部で確認）` : text;
+
+export function localAiReviewBlocks(job: LocalAiReviewJob): SlackBlock[] {
+  if (!job.result) return [];
+  const result = job.result;
+  return [
+    {
+      type: "header",
+      text: { type: "plain_text", text: `Local AI添削 ${result.score.total}/25点`, emoji: true },
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: `*添削前*\n${slackTextLimit(job.input.originalText)}` },
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: `*添削後*\n${slackTextLimit(result.revisedText)}` },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*主な修正点*\n${result.changes.map((item) => `• ${item}`).join("\n") || "—"}`,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*確認が必要な点*\n${result.questions.map((item) => `• ${item}`).join("\n") || "なし"}`,
+      },
+    },
+    {
+      type: "context",
+      elements: [{
+        type: "mrkdwn",
+        text: `ブランド ${result.score.brandFit}/5｜有用性 ${result.score.usefulness}/5｜独自性 ${result.score.originality}/5｜読みやすさ ${result.score.readability}/5｜信頼性 ${result.score.reliability}/5`,
+      }],
+    },
+    {
+      type: "actions",
+      block_id: `local-edit:${job.id}:primary`,
+      elements: [
+        button("採用（下書き保存）", ACTIONS.localEditAdopt, job.id, "primary"),
+        button("軽く再修正", ACTIONS.localEditLight, job.id),
+        button("大幅に再修正", ACTIONS.localEditRewrite, job.id),
+        button("却下", ACTIONS.localEditReject, job.id, "danger"),
+      ],
+    },
+    {
+      type: "actions",
+      block_id: `local-edit:${job.id}:convert`,
+      elements: [
+        button("X用に短縮", ACTIONS.localEditX, job.id),
+        button("note記事に展開", ACTIONS.localEditNote, job.id),
+        button("実体験として保存", ACTIONS.localEditExperience, job.id),
+      ],
+    },
+  ];
+}
+
+export async function openSlackView(
+  triggerId: string,
+  view: Record<string, unknown>
+): Promise<{ ok: boolean; error?: string }> {
+  const botToken = process.env.SLACK_BOT_TOKEN;
+  if (!botToken) return { ok: false, error: "SLACK_BOT_TOKEN が未設定です" };
+  const response = await fetch("https://slack.com/api/views.open", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${botToken}`,
+    },
+    body: JSON.stringify({ trigger_id: triggerId, view }),
+  });
+  const body = (await response.json()) as { ok?: boolean; error?: string };
+  return body.ok ? { ok: true } : { ok: false, error: body.error ?? "Slack APIエラー" };
+}
+
 /* ─── 送信 ───────────────────────────── */
 
 /** Incoming Webhook があればそこへ、無ければ chat.postMessage を使う */
 export async function postToSlack(
   text: string,
-  blocks?: SlackBlock[]
+  blocks?: SlackBlock[],
+  options?: { channel?: string; threadTs?: string }
 ): Promise<{ ok: boolean; error?: string }> {
   const webhook = process.env.SLACK_WEBHOOK_URL;
   const botToken = process.env.SLACK_BOT_TOKEN;
   const channel = process.env.SLACK_CHANNEL_ID;
 
   try {
-    if (webhook) {
+    if (webhook && !options?.channel && !options?.threadTs) {
       const res = await fetch(webhook, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -219,14 +415,20 @@ export async function postToSlack(
       return res.ok ? { ok: true } : { ok: false, error: `Slack Webhook: HTTP ${res.status}` };
     }
 
-    if (botToken && channel) {
+    const destination = options?.channel || channel;
+    if (botToken && destination) {
       const res = await fetch("https://slack.com/api/chat.postMessage", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${botToken}`,
         },
-        body: JSON.stringify({ channel, text, blocks }),
+        body: JSON.stringify({
+          channel: destination,
+          text,
+          blocks,
+          ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
+        }),
       });
       const body = (await res.json()) as { ok?: boolean; error?: string };
       return body.ok ? { ok: true } : { ok: false, error: body.error ?? "Slack APIエラー" };

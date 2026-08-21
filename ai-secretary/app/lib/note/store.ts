@@ -23,6 +23,7 @@ import {
   defaultBrand,
   defaultProgram,
   defaultXAccounts,
+  migrateBrandV1ToV2,
 } from "./types";
 
 const NOTE_ROOT = "memory/personal/note";
@@ -227,6 +228,38 @@ ${identity.primaryTagline}
 ${list(identity.alternateTaglines)}
 - **コンセプト**: ${file.brand.concept}
 
+## ブランド全体のゴール
+
+${file.brand.brandGoal}
+
+## 投稿割合
+
+| ジャンル | 目標割合 |
+| --- | ---: |
+${file.brand.contentPillars.map((pillar) => `| ${pillar.label} | ${pillar.targetRatio}% |`).join("\n")}
+
+## Xの発信ルール
+
+**目的**
+${list(file.brand.channelGuidelines.x.purpose)}
+
+**口調**
+${list(file.brand.channelGuidelines.x.tone)}
+
+**ルール**
+${list(file.brand.channelGuidelines.x.rules)}
+
+## noteの発信ルール
+
+**目的**
+${list(file.brand.channelGuidelines.note.purpose)}
+
+**口調**
+${list(file.brand.channelGuidelines.note.tone)}
+
+**ルール**
+${list(file.brand.channelGuidelines.note.rules)}
+
 ## プロフィール
 
 ### Xプロフィール
@@ -264,7 +297,7 @@ ${file.brand.targetReader}
 ### 読者の悩み
 ${list(file.brand.painPoints)}
 
-## 教えること
+## 発信・共有すること
 ${list(file.brand.teaches)}
 
 ## 語れる根拠（実体験・実績）
@@ -417,12 +450,42 @@ export async function loadBrand(): Promise<BrandFile> {
   }
 
   if (data.brand.identity?.version === BRAND_VERSION) {
+    const defaults = defaultBrand();
+    const saved = data.brand;
     return {
-      brand: { ...defaultBrand(), ...data.brand },
+      brand: {
+        ...defaults,
+        ...saved,
+        identity: { ...defaults.identity, ...saved.identity },
+        personality: { ...defaults.personality, ...saved.personality },
+        visualIdentity: { ...defaults.visualIdentity, ...saved.visualIdentity },
+        channelGuidelines: {
+          x: { ...defaults.channelGuidelines.x, ...saved.channelGuidelines?.x },
+          note: { ...defaults.channelGuidelines.note, ...saved.channelGuidelines?.note },
+        },
+      },
       channels: channels.length > 0 ? channels : DEFAULT_CHANNELS,
       program,
       xAccounts: savedXAccounts.length > 0 ? savedXAccounts : defaultXAccounts(),
     };
+  }
+
+  if (data.brand.identity?.version === "maemichi-v1") {
+    const brand = migrateBrandV1ToV2(data.brand);
+    const defaults = defaultXAccounts()[0];
+    const xAccounts = (savedXAccounts.length > 0 ? savedXAccounts : defaultXAccounts()).map((account) =>
+      account.id === "maemichi" && account.role.includes("AI・副業・読書・資産形成・習慣について")
+        ? { ...account, role: defaults.role, nextStep: defaults.nextStep, genreIds: [...ALL_GENRE_IDS] }
+        : account
+    );
+    const migrated: BrandFile = {
+      brand,
+      channels: channels.length > 0 ? channels : DEFAULT_CHANNELS,
+      program,
+      xAccounts,
+    };
+    await saveBrand(migrated);
+    return migrated;
   }
 
   // 「まえみち」ブランドへの一回限りの移行。移行後は保存して以後は再実行しない
