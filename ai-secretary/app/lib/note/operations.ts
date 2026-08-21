@@ -42,6 +42,9 @@ export function scheduledAtInTokyo(
 export type SafetyGateResult = { safe: boolean; reasons: string[] };
 
 export const X_MAX_WEIGHTED_LENGTH = 280;
+/** 通常生成で狙う安全マージン込みの上限。採否の絶対上限は280のまま。 */
+export const TARGET_X_WEIGHTED_LENGTH = 250;
+export const X_LENGTH_REGENERATION_ATTEMPTS = 2;
 export const X_URL_WEIGHT = 23;
 
 /**
@@ -60,6 +63,36 @@ export function xWeightedLength(text: string): number {
     cursor = index + match[0].length;
   }
   return total + weightedCodePoints(text.slice(cursor));
+}
+
+export type XLengthValidationResult = {
+  text: string;
+  weightedLength: number;
+  retryCount: number;
+  withinLimit: boolean;
+};
+
+/**
+ * AI生成文を既存のweighted length SSOTで検査し、超過時だけ意味を保った再生成を依頼する。
+ * slice/truncateはせず、有限回で止める。既存Draftの一括更新には使用しない。
+ */
+export async function validateGeneratedXText(
+  initialText: string,
+  regenerate: (text: string, attempt: number) => Promise<string>,
+  options: { maxRetries?: number; normalize?: (text: string) => string } = {}
+): Promise<XLengthValidationResult> {
+  const maxRetries = options.maxRetries ?? X_LENGTH_REGENERATION_ATTEMPTS;
+  const normalize = options.normalize ?? ((text: string) => text.trim());
+  let text = normalize(initialText);
+  let retryCount = 0;
+
+  while (xWeightedLength(text) > X_MAX_WEIGHTED_LENGTH && retryCount < maxRetries) {
+    retryCount += 1;
+    text = normalize(await regenerate(text, retryCount));
+  }
+
+  const weightedLength = xWeightedLength(text);
+  return { text, weightedLength, retryCount, withinLimit: weightedLength <= X_MAX_WEIGHTED_LENGTH };
 }
 
 function weightedCodePoints(text: string): number {

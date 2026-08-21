@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { X_MAX_WEIGHTED_LENGTH, xWeightedLength } from "@/app/lib/note/operations";
 import {
   loadNoteQueue,
   loadSocialDrafts,
@@ -32,8 +33,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (title.length > 120 || articleText.length > 100_000) {
       return NextResponse.json({ error: "タイトルまたは本文が長すぎます" }, { status: 422 });
     }
-    if (xPosts.some((text) => Array.from(text).length > 280)) {
-      return NextResponse.json({ error: "X投稿案は1件280文字以内にしてください" }, { status: 422 });
+    if (xPosts.some((text) => xWeightedLength(text) > X_MAX_WEIGHTED_LENGTH)) {
+      return NextResponse.json({ error: `X投稿案は1件weighted length ${X_MAX_WEIGHTED_LENGTH}以内にしてください` }, { status: 422 });
     }
     if (articleText.includes("[note記事URL]")) {
       return NextResponse.json(

@@ -14,7 +14,12 @@
  */
 
 import { callAI } from "../../ai/client";
-import { suggestedPriceBand } from "../operations";
+import {
+  suggestedPriceBand,
+  TARGET_X_WEIGHTED_LENGTH,
+  validateGeneratedXText,
+  X_MAX_WEIGHTED_LENGTH,
+} from "../operations";
 import { AffiliateLink, Brand, DailyPostSeed, Genre, XAccount } from "../types";
 import { hashId } from "./fetcher";
 import { checkSimilarity, SimilarityCandidate } from "./similarity";
@@ -263,7 +268,7 @@ ${affiliateBlock}
 2. 登録された体験に無いことを「やった」と書かない
 3. 「筆者が語れる根拠」に無い数字・成果を書かない
 4. 強い命令形・感嘆符の多用・煽りをしない
-5. 文字数は${X_LENGTH_GUIDE[length]}を目安にする。改行を使う。ハッシュタグは0〜2個
+5. X本文は必ずweighted length ${X_MAX_WEIGHTED_LENGTH}以内、できれば${TARGET_X_WEIGHTED_LENGTH}以内にする。日本語中心なら120〜130文字程度を目安にする。改行を使い、ハッシュタグは必要最低限（0〜2個）にする
 6. 「私は」という主語を自然に使う
 7. 「どう思う？」だけの形式的な返信誘導をしない
 8. 冒頭候補を3案、メディア案を1つ付ける。画像・動画は必須にしない
@@ -280,6 +285,9 @@ ${affiliateBlock}
 19. Xでは丁寧に話をまとめすぎず、自分の本音を短くそのまま置く。「マジ明日だるいな」「会社行きたくないな」のような、友達に漏らす自然な独り言の温度感にする
 20. 読者を「皆さん」「あなた」と呼びかけて話を進めない。質問は本人が本当に聞きたい場合だけにし、共感や反応を取るための質問は付けない
 21. 「〜と感じています」「〜のではないでしょうか」「もし参考になれば嬉しいです」のような整いすぎた締めを避ける。本人の迷い、感情、言い切れなさを残してよい
+22. 1投稿につき1メッセージに絞る。長い説明はnote側へ回し、不要な前置きを削る。文章を途中で切らない
+23. ${X_LENGTH_GUIDE[length]}や「長文」の指定があっても、単一X投稿と各threadPartsは必ずweighted length ${X_MAX_WEIGHTED_LENGTH}以内にする。今回は280を超える内容を単一投稿へ詰め込まない
+24. note誘導は「Hook→要点→必要ならnote導線」までに圧縮し、note本文をXへ転載しない
 
 ## Xの文体例
 - 良い: 「マジ明日だるいな。休み明けの会社、行きたくない。とりあえず行くのも強さだけど、辞める方に動くのも別の強さなのかもしれない。まだ答えは出てない。」
@@ -333,6 +341,36 @@ mediaSuggestionは text / diagram / screenshot / comparison / chart / video / no
   const now = new Date().toISOString();
   const drafts: SocialDraft[] = [];
 
+  function normalizeGeneratedText(rawText: string): string {
+    let normalized = String(rawText).trim();
+    const urls = normalized.match(/https?:\/\/[^\s)\]"'）]+/g) ?? [];
+    for (const url of urls) {
+      if (!allowedUrls.has(url)) {
+        console.warn(`[note/generate] X投稿から未許可URLを除去: ${url}`);
+        normalized = normalized.split(url).join("").replace(/\s{2,}/g, " ").trim();
+      }
+    }
+    const hasAllowedUrl = (normalized.match(/https?:\/\/[^\s)\]"'）]+/g) ?? []).some((url) => allowedUrls.has(url));
+    const disclosure = policy?.disclosureTextX ?? "[PR]";
+    if (hasAllowedUrl && !normalized.includes(disclosure) && !normalized.includes("PR")) {
+      normalized = `${disclosure} ${normalized}`;
+    }
+    return normalized;
+  }
+
+  async function regenerateShorterText(text: string): Promise<string> {
+    const shorteningPrompt = `あなたは「${brand.identity.name}」のX投稿を短くする編集者です。
+元の意味・主張・本人らしさ・迷い・ブランドトーンを維持し、X weighted length ${X_MAX_WEIGHTED_LENGTH}以内、できれば${TARGET_X_WEIGHTED_LENGTH}以内へ圧縮してください。日本語中心なら120〜130文字程度が目安です。
+新しい経験・数値・実績・断定・機密情報・URL・ハッシュタグ・主張を追加せず、他人の文章をコピーしないでください。不要な前置きと長い説明を削り、1投稿1メッセージに絞り、文章を途中で切らないでください。
+本文だけを返してください。`;
+    try {
+      return await callAI(text, shorteningPrompt, { provider: "auto" });
+    } catch (error) {
+      console.warn("[note/generate] X投稿の短縮再生成に失敗:", error);
+      return text;
+    }
+  }
+
   const selectedPosts = posts.slice(0, outputType === "x-and-note" ? 5 : 3);
   for (const [postIndex, post] of selectedPosts.entries()) {
     const texts =
@@ -341,24 +379,12 @@ mediaSuggestionは text / diagram / screenshot / comparison / chart / video / no
         : post.text ? [post.text] : [];
     const threadId = outputType === "x-thread" ? hashId("th", `${cluster.id}${now}`) : undefined;
     for (const [threadIndex, rawText] of texts.entries()) {
-    let text = String(rawText);
-
-    // 未許可URLを除去（AIにURLを作らせない）
-    const urls = text.match(/https?:\/\/[^\s)\]"'）]+/g) ?? [];
-    const kept: string[] = [];
-    for (const url of urls) {
-      if (allowedUrls.has(url)) kept.push(url);
-      else {
-        console.warn(`[note/generate] X投稿から未許可URLを除去: ${url}`);
-        text = text.split(url).join("").replace(/\s{2,}/g, " ").trim();
-      }
-    }
-
+    const lengthResult = await validateGeneratedXText(String(rawText), regenerateShorterText, {
+      normalize: normalizeGeneratedText,
+    });
+    const text = lengthResult.text;
+    const kept = (text.match(/https?:\/\/[^\s)\]"'）]+/g) ?? []).filter((url) => allowedUrls.has(url));
     const needsDisclosure = kept.length > 0;
-    const disclosure = policy?.disclosureTextX ?? "[PR]";
-    if (needsDisclosure && !text.includes(disclosure) && !text.includes("PR")) {
-      text = `${disclosure} ${text}`;
-    }
 
     const similarity = checkSimilarity(text, sourceCandidates, input.pastPosts);
 
@@ -388,7 +414,9 @@ mediaSuggestionは text / diagram / screenshot / comparison / chart / video / no
       similarTo: similarity.blocked ? similarity.similarTo : undefined,
       // 類似しすぎている案は下書きに残すが、承認できないよう理由を持たせる
       status: "draft",
-      failureReason: similarity.blocked ? similarity.reason : undefined,
+      failureReason: !lengthResult.withinLimit
+        ? `Xの文字数上限を超えています（${lengthResult.weightedLength} / ${X_MAX_WEIGHTED_LENGTH}）。短縮再生成に${lengthResult.retryCount}回失敗したためBuffer対象外です。`
+        : similarity.blocked ? similarity.reason : undefined,
       createdAt: now,
       updatedAt: now,
     });

@@ -9,6 +9,11 @@
 
 import { callAI } from "../ai/client";
 import {
+  TARGET_X_WEIGHTED_LENGTH,
+  validateGeneratedXText,
+  X_MAX_WEIGHTED_LENGTH,
+} from "./operations";
+import {
   AffiliateLink,
   Brand,
   Channel,
@@ -46,6 +51,7 @@ export type ComposeResult = {
   usedAffiliateIds: string[];
   /** PR表記が必要かどうか */
   needsDisclosure: boolean;
+  generationWarning?: string;
 };
 
 function buildSystemPrompt(input: ComposeInput, account: XAccount | undefined): string {
@@ -165,6 +171,9 @@ ${affiliateBlock}
 3. 考え方 — 読書・仕事・副業・資産形成・習慣から得た考え方
 
 共通ルール:
+- 各投稿はX weighted length ${X_MAX_WEIGHTED_LENGTH}以内、できれば${TARGET_X_WEIGHTED_LENGTH}以内にする。日本語中心なら120〜130文字程度を目安にする
+- 1投稿1メッセージに絞り、長い説明はnote側へ回す。不要な前置きを削り、文章を途中で切らない
+- 「長文」を求められても単一投稿は280以内にし、ハッシュタグは必要最低限にする
 - 強い煽りを使わない。結論だけを断定しない
 - 体験や理由を1つ入れる。改行を使う
 - ハッシュタグを大量に付けない。絵文字を大量に使わない
@@ -189,7 +198,7 @@ ${affiliateBlock}
 
 {
   "article": "note記事の本文（Markdown。上の推奨構成に沿う。2000〜3500文字）",
-  "xPosts": ["①意見型の投稿（280文字以内）", "②保存型の投稿（280文字以内）", "③会話型の投稿（280文字以内）"],
+  "xPosts": ["①意見型の投稿（weighted length 280以内）", "②保存型の投稿（weighted length 280以内）", "③会話型の投稿（weighted length 280以内）"],
   "lineMessage": "公式LINEの配信文（300文字以内。記事へ誘導し、次の行動を1つ示す）",
   "usedAffiliateIds": ["実際に本文へ入れた案件のid"],
   "needsDisclosure": true または false
@@ -240,7 +249,7 @@ ${input.context?.trim() || "（未入力。実体験が無いため、一般論�
     // X投稿は、directAffiliateがtrueの時だけ登録済みURLを許可する。それ以外は一切URLを残さない
     const allowedInXPosts = account?.directAffiliate ? allowedUrls : new Set<string>();
     const rawXPosts = Array.isArray(parsed.xPosts) ? parsed.xPosts.map(String).slice(0, 5) : [];
-    const xPosts = rawXPosts.map((post) => {
+    const normalizeXPost = (post: string) => {
       let text = post;
       const urls = text.match(/https?:\/\/[^\s)\]"'）]+/g) ?? [];
       let hasAllowedUrl = false;
@@ -255,8 +264,21 @@ ${input.context?.trim() || "（未入力。実体験が無いため、一般論�
       if (hasAllowedUrl && !text.includes("[PR]") && !text.includes("プロモーション")) {
         text = `[PR] ${text}`;
       }
-      return text;
-    });
+      return text.trim();
+    };
+    const checkedXPosts = await Promise.all(rawXPosts.map((post) =>
+      validateGeneratedXText(post, async (text) => {
+        const shorteningPrompt = `元の意味・主張・本人らしさ・ブランドトーンを維持し、X weighted length ${X_MAX_WEIGHTED_LENGTH}以内、できれば${TARGET_X_WEIGHTED_LENGTH}以内へ圧縮してください。日本語中心なら120〜130文字程度が目安です。新しい経験・数値・実績・断定・URL・主張を追加せず、不要な前置きを削り、文章を途中で切らず、本文だけを返してください。`;
+        try {
+          return await callAI(text, shorteningPrompt, { provider: "auto" });
+        } catch (error) {
+          console.warn("[note/compose] X投稿の短縮再生成に失敗:", error);
+          return text;
+        }
+      }, { normalize: normalizeXPost })
+    ));
+    const xPosts = checkedXPosts.filter((result) => result.withinLimit).map((result) => result.text);
+    const failedCount = checkedXPosts.length - xPosts.length;
 
     return {
       article: cleaned,
@@ -265,6 +287,9 @@ ${input.context?.trim() || "（未入力。実体験が無いため、一般論�
       lineMessage: String(parsed.lineMessage ?? ""),
       usedAffiliateIds,
       needsDisclosure,
+      generationWarning: failedCount > 0
+        ? `${failedCount}件のX投稿は短縮再生成後もweighted length ${X_MAX_WEIGHTED_LENGTH}を超えたため保存対象から除外しました。`
+        : undefined,
     };
   } catch (error) {
     console.error("[note/compose] 生成に失敗:", error);

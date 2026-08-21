@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Send, ShieldAlert, TriangleAlert } from "lucide-react";
 import { Card, CardHeader, EmptyState, Skeleton } from "@/components/ui/primitives";
 import { usePublishQueue, useResearchSettings } from "@/app/note/useResearch";
+import { X_MAX_WEIGHTED_LENGTH, xWeightedLength } from "@/app/lib/note/operations";
 
 /** X下書き・note記事・投稿ジョブと、安全装置のスイッチ */
 export function PublishQueue() {
@@ -80,8 +81,11 @@ export function PublishQueue() {
           />
         ) : (
           <div className="space-y-3">
-            {pending.map((d) => (
-              <div key={d.id} className="rounded-xl border border-hairline bg-white/[0.02] p-3">
+            {pending.map((d) => {
+              const weightedLength = xWeightedLength(d.text);
+              const isOverLength = weightedLength > X_MAX_WEIGHTED_LENGTH;
+              return (
+              <div key={d.id} className={`rounded-xl border bg-white/[0.02] p-3 ${isOverLength ? "border-loss/60" : "border-hairline"}`}>
                 <pre className="whitespace-pre-wrap text-xs leading-6 text-slate-300">{d.text}</pre>
 
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-sub">
@@ -95,6 +99,10 @@ export function PublishQueue() {
                     <span>類似度 {d.similarityScore}</span>
                   )}
                   {d.scheduledAt && <span>予定 {d.scheduledAt}</span>}
+                  <span className={isOverLength ? "font-semibold text-loss" : ""}>
+                    {weightedLength} / {X_MAX_WEIGHTED_LENGTH}
+                    {isOverLength ? " 文字数超過" : ""}
+                  </span>
                 </div>
                 {d.hookCandidates && d.hookCandidates.length > 0 && (
                   <details className="mt-2 rounded-lg border border-hairline px-2 py-1.5 text-[11px] text-sub">
@@ -115,14 +123,14 @@ export function PublishQueue() {
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   <button
                     onClick={() => state.sendToBuffer(d.id, "saveToDraft")}
-                    disabled={state.busy || Boolean(d.failureReason)}
+                    disabled={state.busy || Boolean(d.failureReason) || isOverLength}
                     className="rounded-lg border border-hairline px-2.5 py-1 text-[11px] text-slate-200 hover:bg-white/5 disabled:opacity-40"
                   >
                     Bufferへ下書き
                   </button>
                   <button
                     onClick={() => state.sendToBuffer(d.id, "addToQueue")}
-                    disabled={state.busy || Boolean(d.failureReason)}
+                    disabled={state.busy || Boolean(d.failureReason) || isOverLength}
                     className="rounded-lg bg-brand px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-brand/85 disabled:opacity-40"
                   >
                     次の枠へ予約
@@ -143,14 +151,15 @@ export function PublishQueue() {
                         scheduleFor[d.id] ? new Date(scheduleFor[d.id]).toISOString() : undefined
                       )
                     }
-                    disabled={state.busy || !scheduleFor[d.id] || Boolean(d.failureReason)}
+                    disabled={state.busy || !scheduleFor[d.id] || Boolean(d.failureReason) || isOverLength}
                     className="rounded-lg border border-hairline px-2.5 py-1 text-[11px] text-slate-200 hover:bg-white/5 disabled:opacity-40"
                   >
                     この日時で予約
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
