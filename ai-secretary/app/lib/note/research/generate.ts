@@ -14,6 +14,7 @@
  */
 
 import { callAI } from "../../ai/client";
+import { suggestedPriceBand } from "../operations";
 import { AffiliateLink, Brand, Genre, XAccount } from "../types";
 import { hashId } from "./fetcher";
 import { checkSimilarity, SimilarityCandidate } from "./similarity";
@@ -441,6 +442,11 @@ ${policy!.claimRestrictions.length > 0 ? `禁止訴求: ${policy!.claimRestricti
     paywallAfterHeading: parsed.paywallAfterHeading,
     // 価格は人が決める。AIには決めさせない
     price: undefined,
+    priceSuggestion: suggestedPriceBand(
+      articleType === "paid" ? "paid" : "free",
+      experiences.some((experience) => experience.reusableFacts.length > 0),
+      articleType === "paid" ? 2 : 0
+    ),
     tags: Array.isArray(parsed.tags) ? parsed.tags.map(String).slice(0, 8) : [genre.label],
     affiliateIds: usedAffiliate && affiliate ? [affiliate.id] : [],
     needsDisclosure: usedAffiliate,

@@ -12,6 +12,7 @@ npx tsc \
   app/lib/note/research/cluster.ts \
   app/lib/note/research/similarity.ts \
   app/lib/note/research/types.ts \
+  app/lib/note/operations.ts \
   app/lib/note/publishing/queue.ts \
   app/lib/integrations/slack/verify.ts \
   app/lib/integrations/machine-auth.ts \

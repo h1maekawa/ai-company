@@ -13,6 +13,7 @@ import {
   ContentPerformance,
   ExperienceEntry,
   FeatureFlags,
+  PerformanceWeights,
   NoteArticleDraft,
   PublishJob,
   PurposeMix,
@@ -22,6 +23,9 @@ import {
   SocialDraft,
   TrendCluster,
   XResearchSettings,
+  WinningTopicPolicy,
+  defaultPerformanceWeights,
+  defaultWinningTopicPolicy,
   defaultFeatureFlags,
   defaultPurposeMix,
   defaultXResearchSettings,
@@ -147,6 +151,8 @@ export type ResearchSettingsFile = {
   x: XResearchSettings;
   purposeMix: PurposeMix;
   flags: FeatureFlags;
+  performanceWeights: PerformanceWeights;
+  winningTopicPolicy: WinningTopicPolicy;
   /** noteリサーチで巡回するタグ */
   noteTags: string[];
 };
@@ -178,6 +184,14 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
     x,
     purposeMix: { ...defaultPurposeMix(), ...(data?.purposeMix ?? {}) },
     flags: { ...defaultFeatureFlags(), ...(data?.flags ?? {}) },
+    performanceWeights: {
+      ...defaultPerformanceWeights(),
+      ...(data?.performanceWeights ?? {}),
+    },
+    winningTopicPolicy: {
+      ...defaultWinningTopicPolicy(),
+      ...(data?.winningTopicPolicy ?? {}),
+    },
     noteTags:
       Array.isArray(data?.noteTags) && data.noteTags.length > 0
         ? data.noteTags
@@ -188,7 +202,7 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
 export async function saveResearchSettings(
   file: ResearchSettingsFile
 ): Promise<ResearchSettingsFile> {
-  const { x, flags, purposeMix } = file;
+  const { x, flags, purposeMix, performanceWeights, winningTopicPolicy } = file;
   const human = [
     "## Xリサーチ",
     `- モード: **${x.mode}**${x.mode === "free" ? "（X APIを使わないため精度は限定的）" : ""}`,
@@ -213,6 +227,10 @@ export async function saveResearchSettings(
     `- note下書きのみ: ${flags.noteDraftOnly ? "はい" : "いいえ"}`,
     `- 有料note公開に人間確認: ${flags.paidNoteRequireConfirm ? "必須" : "不要"}`,
     `- 1日のX投稿上限: ${flags.maxXPostsPerDay}件 / Buffer自動予約上限: ${flags.maxBufferScheduled}件`,
+    "",
+    "## Performance / Winning Topic",
+    `- Performance重み: ${JSON.stringify(performanceWeights)}`,
+    `- Winning判定: ${winningTopicPolicy.minimumPosts}投稿以上 / 平均${winningTopicPolicy.minimumAverageScore}点以上 / ${winningTopicPolicy.strongPostScore}点以上が${winningTopicPolicy.minimumStrongPosts}投稿`,
   ].join("\n");
 
   await write(

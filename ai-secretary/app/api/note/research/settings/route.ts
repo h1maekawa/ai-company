@@ -23,6 +23,14 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
       x: { ...current.x, ...(body.x ?? {}) },
       purposeMix: { ...current.purposeMix, ...(body.purposeMix ?? {}) },
       flags: { ...current.flags, ...(body.flags ?? {}) },
+      performanceWeights: {
+        ...current.performanceWeights,
+        ...(body.performanceWeights ?? {}),
+      },
+      winningTopicPolicy: {
+        ...current.winningTopicPolicy,
+        ...(body.winningTopicPolicy ?? {}),
+      },
       noteTags: Array.isArray(body.noteTags) ? body.noteTags : current.noteTags,
     });
     return NextResponse.json(saved);

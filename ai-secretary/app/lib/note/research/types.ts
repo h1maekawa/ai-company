@@ -313,6 +313,8 @@ export type NoteArticleDraft = {
   paidSection?: string;
   paywallAfterHeading?: string;
   price?: number;
+  /** AI/ルールによる参考帯。実価格ではなく公開時に人が決める */
+  priceSuggestion?: string;
 
   tags: string[];
 
@@ -364,6 +366,7 @@ export function defaultAffiliatePolicy(affiliateId: string): AffiliatePolicy {
 /** 取得できない数値は 0 ではなく undefined のままにする */
 export type ContentPerformance = {
   contentId: string;
+  trendClusterId?: string;
   platform: "x" | "note";
   purpose: ContentPurpose;
   genreId: string;
@@ -374,11 +377,17 @@ export type ContentPerformance = {
   replies?: number;
   reposts?: number;
   linkClicks?: number;
+  profileVisits?: number;
+  followersGained?: number;
+  noteClicks?: number;
 
   noteViews?: number;
   noteLikes?: number;
   noteSales?: number;
   noteRevenue?: number;
+  freeNoteViews?: number;
+  paidPurchases?: number;
+  repeatPurchases?: number;
 
   affiliateClicks?: number;
   affiliateConversions?: number;
@@ -386,6 +395,46 @@ export type ContentPerformance = {
 
   measuredAt: string;
 };
+
+export type PerformanceWeights = {
+  impressions: number;
+  likes: number;
+  replies: number;
+  reposts: number;
+  engagementRate: number;
+  profileVisits: number;
+  followersGained: number;
+  noteClicks: number;
+};
+
+export function defaultPerformanceWeights(): PerformanceWeights {
+  return {
+    impressions: 0.1,
+    likes: 1,
+    replies: 3,
+    reposts: 4,
+    engagementRate: 20,
+    profileVisits: 2,
+    followersGained: 5,
+    noteClicks: 4,
+  };
+}
+
+export type WinningTopicPolicy = {
+  minimumPosts: number;
+  minimumAverageScore: number;
+  minimumStrongPosts: number;
+  strongPostScore: number;
+};
+
+export function defaultWinningTopicPolicy(): WinningTopicPolicy {
+  return {
+    minimumPosts: 2,
+    minimumAverageScore: 55,
+    minimumStrongPosts: 2,
+    strongPostScore: 50,
+  };
+}
 
 /* ─── 投稿ジョブ（Playwrightローカルランナー用） ─────── */
 

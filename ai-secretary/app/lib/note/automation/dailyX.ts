@@ -19,6 +19,12 @@ import {
   incrementToday,
 } from "@/app/lib/note/publishing/queue";
 import { draftBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
+import {
+  DEFAULT_X_SCHEDULE,
+  runXSafetyGate,
+  scheduledAtInTokyo,
+} from "@/app/lib/note/operations";
+import type { SocialDraft } from "@/app/lib/note/research/types";
 
 export type DailyXResult = {
   skipped?: boolean;
@@ -26,6 +32,8 @@ export type DailyXResult = {
   clusterId?: string;
   generated: number;
   scheduledDraftId?: string;
+  scheduledDraftIds?: string[];
+  safetyBlocked?: number;
   slackDelivered?: boolean;
   slackError?: string;
 };
@@ -73,24 +81,37 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
   const account = accountForGenre(brandFile.xAccounts, genre.id) ?? brandFile.xAccounts[0];
   if (!account) throw new Error("Xアカウント設定がありません");
 
-  const result = await generateXPosts({
-    cluster,
-    items: items.filter((item) => cluster.researchItemIds.includes(item.id)),
-    experiences: usableExperiences(experiences, cluster.matchedExperienceIds),
-    brand: brandFile.brand,
-    genre,
-    account,
-    purpose: "reach",
-    pastPosts: existingDrafts.map((draft) => ({
-      label: `過去投稿(${draft.id})`,
-      text: draft.text,
-    })),
-  });
-  if (result.drafts.length === 0) {
-    throw new Error(result.warning ?? "X投稿案を生成できませんでした");
+  const usable = usableExperiences(experiences, cluster.matchedExperienceIds);
+  const generated: SocialDraft[] = [];
+  const warnings: string[] = [];
+  for (const slot of DEFAULT_X_SCHEDULE) {
+    const result = await generateXPosts({
+      cluster,
+      items: items.filter((item) => cluster.researchItemIds.includes(item.id)),
+      experiences: usable,
+      brand: brandFile.brand,
+      genre,
+      account,
+      purpose: slot.purpose,
+      pastPosts: [...existingDrafts, ...generated].map((draft) => ({
+        label: `過去投稿(${draft.id})`,
+        text: draft.text,
+      })),
+    });
+    const candidate = result.drafts.find((draft) => !draft.failureReason);
+    if (candidate) generated.push(candidate);
+    if (result.warning) warnings.push(result.warning);
   }
+  if (generated.length === 0) throw new Error(warnings[0] ?? "X投稿案を生成できませんでした");
 
-  let drafts = [...result.drafts, ...existingDrafts];
+  const gated = generated.map((draft) => ({
+    draft,
+    gate: runXSafetyGate({ draft, brand: brandFile.brand, experiences: usable }),
+  }));
+  const prepared = gated.map(({ draft, gate }) =>
+    gate.safe ? draft : { ...draft, failureReason: gate.reasons.join(" / ") }
+  );
+  let drafts = [...prepared, ...existingDrafts];
   await saveSocialDrafts(drafts);
   await saveClusters(
     clusters.map((candidate) =>
@@ -98,28 +119,43 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     )
   );
 
-  let scheduledDraftId: string | undefined;
-  let scheduleMessage = "Slackで内容を確認し、「Bufferへ予約」を押してください。";
-  const safeDraft = result.drafts.find((draft) => !draft.failureReason);
+  const scheduledDraftIds: string[] = [];
+  const scheduleMessages: string[] = [];
+  const safeDrafts = prepared.filter((draft) => !draft.failureReason).slice(0, 3);
 
-  if (settings.flags.publishingEnabled && settings.flags.xAutoPublish && safeDraft) {
+  if (settings.flags.publishingEnabled && settings.flags.xAutoPublish && safeDrafts.length > 0) {
     if (!isBufferConfigured()) {
-      scheduleMessage = "自動予約は行いませんでした: Bufferの環境変数が未設定です。";
+      scheduleMessages.push("自動予約は行いませんでした: Bufferの環境変数が未設定です。");
     } else {
-      const limit = await canPublishToday("x", settings.flags.maxXPostsPerDay);
-      const idempotencyKey = `daily-x:${new Date().toISOString().slice(0, 10)}:${safeDraft.id}`;
-      if (!limit.allowed) {
-        scheduleMessage = `自動予約は行いませんでした: 本日の上限（${settings.flags.maxXPostsPerDay}件）です。`;
-      } else if (!(await claimOnce(idempotencyKey))) {
-        scheduleMessage = "本日の自動予約はすでに実行済みです。";
-      } else {
+      for (const safeDraft of safeDrafts) {
+        const slot =
+          DEFAULT_X_SCHEDULE.find((candidate) => candidate.purpose === safeDraft.purpose) ??
+          DEFAULT_X_SCHEDULE[0];
+        const limit = await canPublishToday("x", settings.flags.maxXPostsPerDay);
+        if (!limit.allowed) {
+          scheduleMessages.push(`上限到達: ${slot.time}（${settings.flags.maxXPostsPerDay}件/日）`);
+          break;
+        }
+        let scheduledAt = scheduledAtInTokyo(new Date(), slot.time);
+        if (new Date(scheduledAt).getTime() <= Date.now()) {
+          scheduledAt = scheduledAtInTokyo(new Date(Date.now() + 86_400_000), slot.time);
+        }
+        const tokyoDay = new Date(new Date(scheduledAt).getTime() + 9 * 3_600_000)
+          .toISOString()
+          .slice(0, 10);
+        const idempotencyKey = `daily-x:${tokyoDay}:${slot.time}`;
+        if (!(await claimOnce(idempotencyKey))) {
+          scheduleMessages.push(`予約済み: ${slot.time}`);
+          continue;
+        }
         const post = await createPost({
           text: safeDraft.text,
-          mode: "addToQueue",
+          mode: "customScheduled",
+          scheduledAt,
           maxScheduled: settings.flags.maxBufferScheduled,
         });
         if (post.ok) {
-          scheduledDraftId = safeDraft.id;
+          scheduledDraftIds.push(safeDraft.id);
           const now = new Date().toISOString();
           drafts = drafts.map((draft) =>
             draft.id === safeDraft.id
@@ -127,7 +163,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
                   ...draft,
                   status: "queued" as const,
                   bufferPostId: post.data.id,
-                  scheduledAt: post.data.dueAt,
+                  scheduledAt: post.data.dueAt ?? scheduledAt,
                   updatedAt: now,
                 }
               : draft
@@ -140,33 +176,36 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
             contentId: safeDraft.id,
             action: "毎日自動化でBufferへ予約",
             at: now,
-            detail: post.data.dueAt ? `予定 ${post.data.dueAt}` : undefined,
+            detail: `${slot.role} / 予定 ${post.data.dueAt ?? scheduledAt}`,
           });
-          scheduleMessage = "安全チェックを通過した1件をBufferの次の予約枠へ自動追加しました。";
+          scheduleMessages.push(`予約完了: ${slot.time} ${slot.role}`);
         } else {
-          scheduleMessage = `自動予約は行いませんでした: ${post.error.message}`;
+          scheduleMessages.push(`予約失敗 ${slot.time}: ${post.error.message}`);
         }
       }
     }
+  } else if (!settings.flags.publishingEnabled || !settings.flags.xAutoPublish) {
+    scheduleMessages.push("自動投稿フラグがOFFのため下書き保存で停止しました。");
   }
 
   const slack = await postToSlack(
     [
-      `本日のX投稿案を${result.drafts.length}件作成しました。`,
-      scheduleMessage,
-      result.warning ? `注意: ${result.warning}` : "",
+      `本日のX投稿案を${prepared.length}件作成しました。`,
+      scheduleMessages.join(" / "),
+      warnings.length > 0 ? `注意: ${[...new Set(warnings)].join(" / ")}` : "",
     ]
       .filter(Boolean)
       .join("\n"),
-    result.drafts.flatMap((draft) => draftBlocks(draft))
+    prepared.flatMap((draft) => draftBlocks(draft))
   );
 
   return {
     clusterId: cluster.id,
-    generated: result.drafts.length,
-    scheduledDraftId,
+    generated: prepared.length,
+    scheduledDraftId: scheduledDraftIds[0],
+    scheduledDraftIds,
+    safetyBlocked: prepared.filter((draft) => Boolean(draft.failureReason)).length,
     slackDelivered: slack.ok,
     slackError: slack.error,
   };
 }
-

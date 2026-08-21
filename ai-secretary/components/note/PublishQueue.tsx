@@ -165,6 +165,9 @@ export function PublishQueue() {
                   </span>
                   <p className="min-w-0 flex-1 truncate text-sm font-medium text-white">{a.title}</p>
                 </div>
+                {a.priceSuggestion && (
+                  <p className="mt-1 text-[10px] text-sub">価格帯候補: {a.priceSuggestion}（公開時に人が決定）</p>
+                )}
 
                 {a.articleType === "paid" && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
