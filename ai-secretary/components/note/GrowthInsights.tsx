@@ -10,6 +10,11 @@ type Insights = {
     freeNoteViews: number; paidPurchases: number; repeatPurchases: number; revenue: number;
   };
   diagnosis: string;
+  summary: {
+    postCount: number; metricsSyncedPostCount: number; winningTopicCount: number;
+    noteCandidateCount: number; noteDraftCount: number; freeNoteCandidateCount: number;
+    paidNoteCandidateCount: number; revenueProgressPct: number;
+  };
   topics: {
     topicId: string; title: string; postCount: number; averageScore: number;
     winning: boolean; nextStage: string;
@@ -42,6 +47,18 @@ export function GrowthInsights() {
     <div className="space-y-4">
       <Card>
         <CardHeader title="90日ファネル" hint={`月間売上KGI ¥${data.revenueGoal.toLocaleString()}`} />
+        <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            ["X投稿", data.summary.postCount], ["実績取得済み", data.summary.metricsSyncedPostCount],
+            ["Winning Topic", data.summary.winningTopicCount], ["note候補", data.summary.noteCandidateCount],
+            ["note下書き", data.summary.noteDraftCount], ["無料候補", data.summary.freeNoteCandidateCount],
+            ["有料候補", data.summary.paidNoteCandidateCount], ["10万円進捗", `${data.summary.revenueProgressPct}%`],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-hairline px-2 py-1.5">
+              <p className="text-[10px] text-sub">{label}</p><p className="text-sm font-semibold">{value}</p>
+            </div>
+          ))}
+        </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {stages.map(([label, value]) => (
             <div key={label} className="rounded-lg bg-white/[0.03] p-2">

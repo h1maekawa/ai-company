@@ -6,6 +6,7 @@ import type {
   PerformanceWeights,
   SocialDraft,
   WinningTopicPolicy,
+  NoteArticleDraft,
 } from "./research/types";
 
 export type XScheduleSlot = {
@@ -196,4 +197,60 @@ export function canQueueNotePublication(input: {
     return { allowed: false, reason: "有料noteは価格と有料境界の人間確認が必要です" };
   }
   return { allowed: true };
+}
+
+export type WeeklyNoteCandidate = {
+  topicId: string;
+  articleType: "free" | "paid";
+  candidateKey: string;
+  score: number;
+};
+
+export function weekKeyTokyo(date = new Date()): string {
+  const local = new Date(date.getTime() + 9 * 3_600_000);
+  const day = local.getUTCDay() || 7;
+  local.setUTCDate(local.getUTCDate() - day + 1);
+  return local.toISOString().slice(0, 10);
+}
+
+export function nextMetricsSnapshotHour(ageHours: number, completedHours?: number): 1 | 6 | 24 | null {
+  for (const target of [1, 6, 24] as const) {
+    if (ageHours >= target && (completedHours ?? 0) < target) return target;
+  }
+  return null;
+}
+
+export function planWeeklyNoteCandidates(input: {
+  topics: TopicPerformance[];
+  existingArticles: NoteArticleDraft[];
+  weekKey: string;
+  freeTarget?: number;
+  paidTarget?: number;
+}): WeeklyNoteCandidate[] {
+  const freeTarget = input.freeTarget ?? 2;
+  const paidTarget = input.paidTarget ?? 1;
+  const existingKeys = new Set(input.existingArticles.map((article) => article.autoCandidateKey).filter(Boolean));
+  const thisWeek = input.existingArticles.filter((article) => article.autoCandidateWeek === input.weekKey);
+  let freeRemaining = Math.max(0, freeTarget - thisWeek.filter((article) => article.articleType === "free").length);
+  let paidRemaining = Math.max(0, paidTarget - thisWeek.filter((article) => article.articleType === "paid").length);
+  const candidates: WeeklyNoteCandidate[] = [];
+  const eligible = input.topics.filter((topic) => topic.winning).sort((a, b) => b.averageScore - a.averageScore);
+
+  for (const topic of eligible) {
+    const key = `${input.weekKey}:${topic.topicId}:free`;
+    if (freeRemaining > 0 && !existingKeys.has(key) && (topic.nextStage === "free-note" || topic.nextStage === "paid-note")) {
+      candidates.push({ topicId: topic.topicId, articleType: "free", candidateKey: key, score: topic.averageScore });
+      existingKeys.add(key);
+      freeRemaining--;
+    }
+  }
+  for (const topic of eligible) {
+    const key = `${input.weekKey}:${topic.topicId}:paid`;
+    if (paidRemaining > 0 && !existingKeys.has(key) && topic.nextStage === "paid-note") {
+      candidates.push({ topicId: topic.topicId, articleType: "paid", candidateKey: key, score: topic.averageScore });
+      existingKeys.add(key);
+      paidRemaining--;
+    }
+  }
+  return candidates;
 }

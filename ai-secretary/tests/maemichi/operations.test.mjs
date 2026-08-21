@@ -64,3 +64,38 @@ test("note実公開は無料・有料を問わずHuman Approvalを必須にす�
   assert.equal(operations.canQueueNotePublication({ status: "approved", articleType: "paid", price: 100 }).allowed, false);
   assert.equal(operations.canQueueNotePublication({ status: "approved", articleType: "paid", price: 100, paywallAfterHeading: "実践" }).allowed, true);
 });
+
+test("Metrics欠損だけではWinning Topicへ誤判定しない", () => {
+  const records = [1, 2, 3].map((n) => ({ contentId: `m${n}`, trendClusterId: "missing", platform: "x", purpose: "reach", genreId: "ai", publishedAt: "", measuredAt: "", metricAvailability: { impressions: "unavailable" } }));
+  const [topic] = operations.evaluateWinningTopics(records, types.defaultPerformanceWeights(), types.defaultWinningTopicPolicy());
+  assert.equal(topic.averageScore, 0);
+  assert.equal(topic.winning, false);
+});
+
+test("週次候補はfree 2本 / paid 1本を上限に作る", () => {
+  const topics = [
+    { topicId: "a", genreId: "ai", postCount: 3, averageScore: 90, strongPostCount: 3, winning: true, nextStage: "paid-note" },
+    { topicId: "b", genreId: "ai", postCount: 3, averageScore: 70, strongPostCount: 3, winning: true, nextStage: "free-note" },
+    { topicId: "c", genreId: "ai", postCount: 3, averageScore: 60, strongPostCount: 3, winning: true, nextStage: "free-note" },
+  ];
+  const plan = operations.planWeeklyNoteCandidates({ topics, existingArticles: [], weekKey: "2026-08-17" });
+  assert.equal(plan.filter((item) => item.articleType === "free").length, 2);
+  assert.equal(plan.filter((item) => item.articleType === "paid").length, 1);
+});
+
+test("同一Topicの重複昇格とScheduler再実行を防ぐ", () => {
+  const topic = { topicId: "a", genreId: "ai", postCount: 3, averageScore: 90, strongPostCount: 3, winning: true, nextStage: "paid-note" };
+  const existing = [
+    { autoCandidateKey: "2026-08-17:a:free", autoCandidateWeek: "2026-08-17", articleType: "free", status: "draft" },
+    { autoCandidateKey: "2026-08-17:a:paid", autoCandidateWeek: "2026-08-17", articleType: "paid", status: "draft" },
+  ];
+  assert.deepEqual(operations.planWeeklyNoteCandidates({ topics: [topic], existingArticles: existing, weekKey: "2026-08-17" }), []);
+});
+
+test("Metrics Syncは1h/6h/24hだけ取得して24h後に停止する", () => {
+  assert.equal(operations.nextMetricsSnapshotHour(0.9), null);
+  assert.equal(operations.nextMetricsSnapshotHour(1.1), 1);
+  assert.equal(operations.nextMetricsSnapshotHour(6.2, 1), 6);
+  assert.equal(operations.nextMetricsSnapshotHour(25, 6), 24);
+  assert.equal(operations.nextMetricsSnapshotHour(100, 24), null);
+});

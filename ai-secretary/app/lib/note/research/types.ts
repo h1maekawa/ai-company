@@ -286,6 +286,11 @@ export type SocialDraft = {
   status: SocialDraftStatus;
   scheduledAt?: string;
   bufferPostId?: string;
+  /** Buffer公開後にX APIの本文・時刻照合で解決する */
+  xPostId?: string;
+  metricsLastSyncedAt?: string;
+  metricsSnapshotHours?: number;
+  metricsSyncError?: string;
   failureReason?: string;
 
   createdAt: string;
@@ -315,6 +320,10 @@ export type NoteArticleDraft = {
   price?: number;
   /** AI/ルールによる参考帯。実価格ではなく公開時に人が決める */
   priceSuggestion?: string;
+  sourceTrendClusterId?: string;
+  /** 自動昇格の週次重複防止キー（week:topic:type）。手動記事には付かない */
+  autoCandidateKey?: string;
+  autoCandidateWeek?: string;
 
   tags: string[];
 
@@ -376,6 +385,7 @@ export type ContentPerformance = {
   likes?: number;
   replies?: number;
   reposts?: number;
+  engagements?: number;
   linkClicks?: number;
   profileVisits?: number;
   followersGained?: number;
@@ -394,6 +404,20 @@ export type ContentPerformance = {
   affiliateRevenue?: number;
 
   measuredAt: string;
+  snapshotHours?: number;
+  metricAvailability?: Partial<
+    Record<
+      | "impressions"
+      | "likes"
+      | "replies"
+      | "reposts"
+      | "engagements"
+      | "profileVisits"
+      | "followersGained"
+      | "noteClicks",
+      "available" | "unavailable"
+    >
+  >;
 };
 
 export type PerformanceWeights = {

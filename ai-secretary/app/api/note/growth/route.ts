@@ -3,7 +3,9 @@ import { buildFunnel, diagnoseFunnel, evaluateWinningTopics } from "@/app/lib/no
 import {
   loadClusters,
   loadPerformance,
+  loadNoteQueue,
   loadResearchSettings,
+  loadSocialDrafts,
   savePerformance,
 } from "@/app/lib/note/research/store";
 import type { ContentPerformance } from "@/app/lib/note/research/types";
@@ -17,10 +19,12 @@ function last90Days(records: ContentPerformance[]): ContentPerformance[] {
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const [performance, settings, clusters] = await Promise.all([
+    const [performance, settings, clusters, queue, socialDrafts] = await Promise.all([
       loadPerformance(),
       loadResearchSettings(),
       loadClusters(),
+      loadNoteQueue(),
+      loadSocialDrafts(),
     ]);
     const records = last90Days(performance.records);
     const funnel = buildFunnel(records);
@@ -32,12 +36,32 @@ export async function GET(): Promise<NextResponse> {
       ...topic,
       title: clusters.find((cluster) => cluster.id === topic.topicId)?.title ?? topic.genreId,
     }));
+    const noteCandidates = topics.filter(
+      (topic) => topic.winning && (topic.nextStage === "free-note" || topic.nextStage === "paid-note")
+    );
+    const noteDrafts = queue.articles.filter((article) => article.status === "draft");
     return NextResponse.json({
       periodDays: 90,
       revenueGoal: 100_000,
       funnel,
       diagnosis: diagnoseFunnel(funnel),
       topics,
+      summary: {
+        postCount: socialDrafts.filter((draft) => draft.status === "published" || Boolean(draft.xPostId)).length,
+        metricsSyncedPostCount: records.filter(
+          (record) => record.platform === "x" && Object.values(record.metricAvailability ?? {}).includes("available")
+        ).length,
+        winningTopicCount: topics.filter((topic) => topic.winning).length,
+        noteCandidateCount: noteCandidates.length,
+        noteDraftCount: noteDrafts.length,
+        freeNoteCandidateCount: queue.articles.filter(
+          (article) => article.autoCandidateKey && article.articleType === "free"
+        ).length,
+        paidNoteCandidateCount: queue.articles.filter(
+          (article) => article.autoCandidateKey && article.articleType === "paid"
+        ).length,
+        revenueProgressPct: Math.min(100, Math.round((funnel.revenue / 100_000) * 1000) / 10),
+      },
       performanceWeights: settings.performanceWeights,
       winningTopicPolicy: settings.winningTopicPolicy,
     });
