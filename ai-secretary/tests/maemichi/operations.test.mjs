@@ -29,6 +29,16 @@ test("Safety Gateは通常投稿を通し成果保証・個人情報・根拠な
   assert.ok(unsafe.reasons.length >= 3);
 });
 
+test("X weighted lengthは日本語・英数字・URLをX/Buffer境界に合わせて数える", () => {
+  assert.equal(operations.xWeightedLength("a".repeat(280)), 280);
+  assert.equal(operations.xWeightedLength("あ".repeat(140)), 280);
+  assert.equal(operations.xWeightedLength(`確認 https://example.com/${"x".repeat(200)}`), 28);
+  assert.equal(operations.runXSafetyGate({ draft: { ...draft, text: "a".repeat(280) }, brand, experiences: [] }).safe, true);
+  const tooLong = operations.runXSafetyGate({ draft: { ...draft, text: "a".repeat(281) }, brand, experiences: [] });
+  assert.equal(tooLong.safe, false);
+  assert.ok(tooLong.reasons.includes("Xの文字数上限を超えています。投稿を短くしてください。"));
+});
+
 test("Performance Scoreは反応が強い投稿ほど高く、0〜100に収まる", () => {
   const weights = types.defaultPerformanceWeights();
   const low = operations.contentPerformanceScore({ contentId: "a", platform: "x", purpose: "reach", genreId: "ai", publishedAt: "", measuredAt: "", impressions: 100 }, weights);

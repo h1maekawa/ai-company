@@ -41,6 +41,41 @@ export function scheduledAtInTokyo(
 
 export type SafetyGateResult = { safe: boolean; reasons: string[] };
 
+export const X_MAX_WEIGHTED_LENGTH = 280;
+export const X_URL_WEIGHT = 23;
+
+/**
+ * Xのweighted lengthを外部依存なしで算出する。
+ * URLはt.coの固定長23、Latin系は1、それ以外（日本語・絵文字等）は2として扱う。
+ * 絵文字結合列などはXより保守的に数える場合があるが、上限超過を通さない側へ倒す。
+ */
+export function xWeightedLength(text: string): number {
+  let total = 0;
+  let cursor = 0;
+  const urlPattern = /https?:\/\/[^\s]+/giu;
+  for (const match of text.matchAll(urlPattern)) {
+    const index = match.index ?? cursor;
+    total += weightedCodePoints(text.slice(cursor, index));
+    total += X_URL_WEIGHT;
+    cursor = index + match[0].length;
+  }
+  return total + weightedCodePoints(text.slice(cursor));
+}
+
+function weightedCodePoints(text: string): number {
+  let total = 0;
+  for (const character of text) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    const singleWeight =
+      codePoint <= 0x10ff ||
+      (codePoint >= 0x2000 && codePoint <= 0x200d) ||
+      (codePoint >= 0x2010 && codePoint <= 0x201f) ||
+      (codePoint >= 0x2032 && codePoint <= 0x2037);
+    total += singleWeight ? 1 : 2;
+  }
+  return total;
+}
+
 const UNSAFE_CLAIMS = [
   /必ず.{0,12}(稼げ|儲か|成功|改善)/,
   /絶対に.{0,12}(稼げ|儲か|成功|改善)/,
@@ -59,7 +94,9 @@ export function runXSafetyGate(input: {
   const reasons: string[] = [];
   const text = input.draft.text.trim();
   if (!text) reasons.push("本文が空です");
-  if ([...text].length > 140) reasons.push("X投稿ルールの140文字を超えています");
+  if (xWeightedLength(text) > X_MAX_WEIGHTED_LENGTH) {
+    reasons.push("Xの文字数上限を超えています。投稿を短くしてください。");
+  }
   if (input.draft.failureReason) reasons.push(input.draft.failureReason);
   if ((input.draft.similarityScore ?? 0) >= 0.72) reasons.push("他者または過去投稿との類似度が高すぎます");
   if (UNSAFE_CLAIMS.some((pattern) => pattern.test(text))) reasons.push("成果保証・根拠のない断定を含みます");

@@ -149,7 +149,8 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
           continue;
         }
         const post = await createPost({
-          text: safeDraft.text,
+          draft: safeDraft,
+          safetyContext: { brand: brandFile.brand, experiences: usable },
           mode: "customScheduled",
           scheduledAt,
           maxScheduled: settings.flags.maxBufferScheduled,
