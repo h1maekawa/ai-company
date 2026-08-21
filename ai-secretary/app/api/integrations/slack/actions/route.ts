@@ -17,6 +17,7 @@ import {
   saveSocialDrafts,
 } from "@/app/lib/note/research/store";
 import { createPost, countScheduled } from "@/app/lib/note/publishing/buffer";
+import { loadBrand } from "@/app/lib/note/store";
 import {
   adoptLocalAiReview,
   rejectLocalAiReview,
@@ -438,8 +439,10 @@ async function handleBufferQueue(draftId: string, user: string): Promise<Respons
   if (draft.failureReason) return ok("エラーのある下書きは送信できません。");
 
   const maxScheduled = 20; // 無料プランの枠（環境変数化も検討）
+  const [brandFile, experiences] = await Promise.all([loadBrand(), loadExperiences()]);
   const result = await createPost({
-    text: draft.text,
+    draft,
+    safetyContext: { brand: brandFile.brand, experiences },
     mode: "addToQueue",
     maxScheduled,
   });
@@ -467,8 +470,10 @@ async function handleBufferNow(draftId: string, user: string): Promise<Response>
   if (!draft) return ok("その下書きが見つかりませんでした。");
   if (draft.failureReason) return ok("エラーのある下書きは送信できません。");
 
+  const [brandFile, experiences] = await Promise.all([loadBrand(), loadExperiences()]);
   const result = await createPost({
-    text: draft.text,
+    draft,
+    safetyContext: { brand: brandFile.brand, experiences },
     mode: "saveToDraft",
   });
 

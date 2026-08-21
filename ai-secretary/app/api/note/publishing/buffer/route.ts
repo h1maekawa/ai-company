@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPost, isBufferConfigured } from "@/app/lib/note/publishing/buffer";
+import { loadBrand } from "@/app/lib/note/store";
+import { runXSafetyGate } from "@/app/lib/note/operations";
 import {
   affiliateCooldownOk,
   canPublishToday,
@@ -9,6 +11,7 @@ import {
 import {
   appendHistory,
   loadResearchSettings,
+  loadExperiences,
   loadSocialDrafts,
   saveSocialDrafts,
 } from "@/app/lib/note/research/store";
@@ -50,23 +53,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    if (!isBufferConfigured()) {
-      return NextResponse.json(
-        { error: "Bufferの環境変数が未設定です（BUFFER_API_KEY / BUFFER_ORGANIZATION_ID / BUFFER_X_CHANNEL_ID）" },
-        { status: 422 }
-      );
-    }
-
-    const drafts = await loadSocialDrafts();
+    const [drafts, brandFile, experiences] = await Promise.all([
+      loadSocialDrafts(),
+      loadBrand(),
+      loadExperiences(),
+    ]);
     const draft = drafts.find((d) => d.id === body.draftId);
     if (!draft) {
       return NextResponse.json({ error: "その下書きが見つかりません" }, { status: 404 });
     }
 
-    // 3. 類似しすぎている案は投稿させない
-    if (draft.failureReason && draft.status === "draft") {
+    // 3. idempotency keyを消費する前にも同じSafety Policyでfail-closeする。
+    const gate = runXSafetyGate({ draft, brand: brandFile.brand, experiences });
+    if (!gate.safe) {
       return NextResponse.json(
-        { error: `この案は投稿できません: ${draft.failureReason}` },
+        { error: gate.reasons.join(" / "), hint: "下書きは保持しています", kind: "validation" },
+        { status: 422 }
+      );
+    }
+
+    if (!isBufferConfigured()) {
+      return NextResponse.json(
+        { error: "Bufferの環境変数が未設定です（BUFFER_API_KEY / BUFFER_ORGANIZATION_ID / BUFFER_X_CHANNEL_ID）" },
         { status: 422 }
       );
     }
@@ -106,24 +114,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const result = await createPost({
-      text: draft.text,
+      draft,
+      safetyContext: { brand: brandFile.brand, experiences },
       mode,
       scheduledAt: body.scheduledAt,
       maxScheduled: flags.maxBufferScheduled,
     });
 
     if (!result.ok) {
-      // 投稿に失敗しても本文は絶対に消さない
-      await saveSocialDrafts(
-        drafts.map((d) =>
-          d.id === draft.id
-            ? { ...d, status: "failed", failureReason: result.error.message, updatedAt: new Date().toISOString() }
-            : d
-        )
-      );
+      // Validation/Buffer失敗時は本文だけでなく既存status・failureReasonも変更しない。
       return NextResponse.json(
         { error: result.error.message, hint: result.error.hint, kind: result.error.kind },
-        { status: result.error.kind === "rate-limit" || result.error.kind === "slot-limit" ? 429 : 502 }
+        { status: result.error.kind === "validation" ? 422 : result.error.kind === "rate-limit" || result.error.kind === "slot-limit" ? 429 : 502 }
       );
     }
 

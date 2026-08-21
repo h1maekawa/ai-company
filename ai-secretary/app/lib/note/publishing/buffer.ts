@@ -5,12 +5,16 @@
  * 投稿に失敗しても下書き（SocialDraft.text）は残す。
  */
 
+import type { Brand } from "../types";
+import { runXSafetyGate } from "../operations";
+import type { ExperienceEntry, SocialDraft } from "../research/types";
+
 const BUFFER_ENDPOINT = "https://api.buffer.com";
 
 export type BufferMode = "saveToDraft" | "addToQueue" | "customScheduled";
 
 export type BufferError = {
-  kind: "auth" | "rate-limit" | "mutation" | "channel" | "config" | "network" | "slot-limit";
+  kind: "auth" | "rate-limit" | "mutation" | "channel" | "config" | "network" | "slot-limit" | "validation";
   message: string;
   /** 人が次に何をすればよいか */
   hint?: string;
@@ -197,7 +201,8 @@ export async function countScheduled(): Promise<BufferResult<number>> {
 /* ─── 投稿の作成 ───────────────────────── */
 
 export type CreatePostInput = {
-  text: string;
+  draft: SocialDraft;
+  safetyContext: { brand: Brand; experiences: ExperienceEntry[] };
   mode: BufferMode;
   /** customScheduled のときだけ使う（ISO文字列） */
   scheduledAt?: string;
@@ -210,6 +215,19 @@ export type CreatedPost = { id: string; status?: string; dueAt?: string };
 export async function createPost(
   input: CreatePostInput
 ): Promise<BufferResult<CreatedPost>> {
+  // Bufferへの全X送信経路が必ず通る最終境界。古いfailureReasonの有無にかかわらず再評価する。
+  const gate = runXSafetyGate({ draft: input.draft, ...input.safetyContext });
+  if (!gate.safe) {
+    return {
+      ok: false,
+      error: {
+        kind: "validation",
+        message: gate.reasons.join(" / "),
+        hint: "下書きは保持しています",
+      },
+    };
+  }
+
   const cfg = config();
   if (!cfg) return { ok: false, error: { kind: "config", message: "Bufferの環境変数が未設定です" } };
 
@@ -247,7 +265,7 @@ export async function createPost(
     {
       input: {
         channelId: cfg.channel,
-        text: input.text,
+        text: input.draft.text,
         schedulingType: "automatic",
         mode: input.mode === "saveToDraft" ? "addToQueue" : input.mode,
         saveToDraft: input.mode === "saveToDraft",

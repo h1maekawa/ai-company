@@ -14,6 +14,7 @@ npx tsc \
   app/lib/note/research/similarity.ts \
   app/lib/note/research/types.ts \
   app/lib/note/operations.ts \
+  app/lib/note/publishing/buffer.ts \
   app/lib/note/publishing/bufferMetrics.ts \
   app/lib/note/publishing/xMetrics.ts \
   app/lib/note/research/x-query.ts \
