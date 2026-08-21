@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import fs from "node:fs";
 
 const DIST = process.env.MAEMICHI_DIST;
 const operations = await import(path.join(DIST, "note/operations.js"));
@@ -37,6 +38,80 @@ test("X weighted lengthは日本語・英数字・URLをX/Buffer境界に合わ�
   const tooLong = operations.runXSafetyGate({ draft: { ...draft, text: "a".repeat(281) }, brand, experiences: [] });
   assert.equal(tooLong.safe, false);
   assert.ok(tooLong.reasons.includes("Xの文字数上限を超えています。投稿を短くしてください。"));
+});
+
+test("日本語120文字程度は生成TARGETと280上限以内", () => {
+  const length = operations.xWeightedLength("あ".repeat(120));
+  assert.equal(length, 240);
+  assert.ok(length <= operations.TARGET_X_WEIGHTED_LENGTH);
+  assert.ok(length <= operations.X_MAX_WEIGHTED_LENGTH);
+});
+
+test("生成結果が280以内ならretryせず採用する", async () => {
+  let calls = 0;
+  const result = await operations.validateGeneratedXText("あ".repeat(130), async () => {
+    calls += 1;
+    return "呼ばれない";
+  });
+  assert.equal(result.withinLimit, true);
+  assert.equal(calls, 0);
+});
+
+test("280超はAI短縮をretryし、収まれば採用する", async () => {
+  const inputs = [];
+  const original = "長".repeat(141);
+  const result = await operations.validateGeneratedXText(original, async (text) => {
+    inputs.push(text);
+    return "短".repeat(125);
+  });
+  assert.equal(result.withinLimit, true);
+  assert.equal(result.retryCount, 1);
+  assert.deepEqual(inputs, [original]);
+  assert.equal(result.text, "短".repeat(125));
+});
+
+test("retry後も280超なら2回で停止しBuffer対象外の結果にする", async () => {
+  let calls = 0;
+  const original = "長".repeat(141);
+  const result = await operations.validateGeneratedXText(original, async (text) => {
+    calls += 1;
+    assert.equal(text, original);
+    return text;
+  });
+  assert.equal(result.withinLimit, false);
+  assert.equal(result.retryCount, 2);
+  assert.equal(calls, 2);
+  assert.equal(result.text, original, "機械的にtruncateしてはいけない");
+});
+
+test("長すぎる既存Draftは検査しても書き換えない", async () => {
+  const existing = { ...draft, text: "既".repeat(141), failureReason: undefined };
+  const snapshot = structuredClone(existing);
+  await operations.validateGeneratedXText(existing.text, async (text) => text);
+  assert.deepEqual(existing, snapshot);
+});
+
+test("reach/trust/note-bridgeの生成長検査はすべて同じ280上限を使う", async () => {
+  for (const purpose of ["reach", "trust", "note-bridge"]) {
+    const result = await operations.validateGeneratedXText(`${purpose}:` + "あ".repeat(120), async () => "");
+    assert.equal(result.withinLimit, true, purpose);
+  }
+});
+
+test("生成Prompt・UI・importがweighted length SSOTを使用する", () => {
+  // テスト実行cwdはリポジトリルート。DIST外の実ソースを回帰契約として確認する。
+  const generateSource = fs.readFileSync(path.join(process.cwd(), "app/lib/note/research/generate.ts"), "utf8");
+  const queueSource = fs.readFileSync(path.join(process.cwd(), "components/note/PublishQueue.tsx"), "utf8");
+  const importSource = fs.readFileSync(path.join(process.cwd(), "app/api/note/content/import/route.ts"), "utf8");
+  assert.match(generateSource, /validateGeneratedXText/);
+  assert.match(generateSource, /120〜130文字程度/);
+  assert.match(generateSource, /1投稿につき1メッセージ/);
+  assert.match(generateSource, /文章を途中で切らない/);
+  assert.match(queueSource, /xWeightedLength\(d\.text\)/);
+  assert.match(queueSource, /文字数超過/);
+  assert.match(queueSource, /\|\| isOverLength/);
+  assert.match(importSource, /xWeightedLength\(text\)/);
+  assert.doesNotMatch(generateSource, /\.slice\([^\n]*X_MAX_WEIGHTED_LENGTH/);
 });
 
 test("Performance Scoreは反応が強い投稿ほど高く、0〜100に収まる", () => {
