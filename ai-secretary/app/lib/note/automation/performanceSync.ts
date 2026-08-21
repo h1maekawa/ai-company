@@ -2,11 +2,15 @@ import { loadBrand, loadIdeas } from "@/app/lib/note/store";
 import {
   evaluateWinningTopics,
   planWeeklyNoteCandidates,
-  nextMetricsSnapshotHour,
   weekKeyTokyo,
 } from "@/app/lib/note/operations";
-import { fetchXMetrics, type XMetricsResult } from "@/app/lib/note/publishing/xMetrics";
-import { getPost } from "@/app/lib/note/publishing/buffer";
+import {
+  bufferMetricsProvider,
+  hasNewerBufferMetrics,
+  isDailyMetricsCandidate,
+  samePerformanceValues,
+} from "@/app/lib/note/publishing/bufferMetrics";
+import type { PerformanceProviderResult } from "@/app/lib/note/publishing/performanceProvider";
 import { generateNoteArticle } from "@/app/lib/note/research/generate";
 import { usableExperiences } from "@/app/lib/note/research/experience";
 import {
@@ -27,6 +31,7 @@ import type { SocialDraft } from "@/app/lib/note/research/types";
 export type PerformanceSyncResult = {
   checked: number;
   synced: number;
+  unchanged: number;
   failed: number;
   winningTopics: number;
   noteCandidates: number;
@@ -34,33 +39,28 @@ export type PerformanceSyncResult = {
   failures: { draftId: string; error: string }[];
 };
 
-type MetricsFetcher = (draft: SocialDraft, now?: Date) => Promise<XMetricsResult>;
-type BufferChecker = typeof getPost;
+type MetricsFetcher = (draft: SocialDraft, now?: Date) => Promise<PerformanceProviderResult>;
 
 export function shouldSyncDraft(draft: SocialDraft, now = new Date()): boolean {
-  if (!draft.scheduledAt || !draft.bufferPostId) return false;
-  const age = now.getTime() - new Date(draft.scheduledAt).getTime();
-  if (age < 0) return false;
-  return nextMetricsSnapshotHour(age / 3_600_000, draft.metricsSnapshotHours) !== null;
+  return isDailyMetricsCandidate(draft, now);
 }
 
-export async function syncXPerformance(
+export async function syncPerformance(
   drafts: SocialDraft[],
   records: Awaited<ReturnType<typeof loadPerformance>>["records"],
-  fetcher: MetricsFetcher = fetchXMetrics,
-  now = new Date(),
-  bufferChecker: BufferChecker = getPost
+  fetcher: MetricsFetcher = bufferMetricsProvider.fetch,
+  now = new Date()
 ) {
   const nextDrafts = [...drafts];
   const nextRecords = [...records];
   const failures: { draftId: string; error: string }[] = [];
   let synced = 0;
-  const targets = drafts.filter((draft) => shouldSyncDraft(draft, now));
+  let unchanged = 0;
+  let metadataUpdated = 0;
+  const targets = drafts
+    .filter((draft) => shouldSyncDraft(draft, now))
+    .sort((a, b) => Number(Boolean(a.bufferMetricsUpdatedAt)) - Number(Boolean(b.bufferMetricsUpdatedAt)));
   for (const draft of targets) {
-    // Buffer障害はX投稿・下書きを変更せず、そのまま再試行可能にする。
-    const buffer = draft.bufferPostId ? await bufferChecker(draft.bufferPostId) : null;
-    // Bufferの状態APIが落ちても、X Post ID解決とMetrics取得は独立して続行する。
-    if (buffer && !buffer.ok) console.warn(`[performance-sync] Buffer確認失敗 (${draft.id}): ${buffer.error.message}`);
     const result = await fetcher(draft, now);
     const index = nextDrafts.findIndex((item) => item.id === draft.id);
     if (!result.ok) {
@@ -68,37 +68,47 @@ export async function syncXPerformance(
       nextDrafts[index] = { ...nextDrafts[index], metricsSyncError: result.error };
       continue;
     }
-    synced++;
+    const existingRecord = nextRecords.find(
+      (record) => record.platform === "x" && record.contentId === draft.id
+    );
+    if (!hasNewerBufferMetrics(draft, result.providerUpdatedAt, Boolean(existingRecord))) {
+      unchanged++;
+      continue;
+    }
     nextDrafts[index] = {
       ...nextDrafts[index],
       status: "published",
-      xPostId: result.xPostId,
+      bufferMetricsUpdatedAt: result.providerUpdatedAt,
+      bufferExternalLink: result.externalLink ?? nextDrafts[index].bufferExternalLink,
       metricsLastSyncedAt: now.toISOString(),
-      metricsSnapshotHours: nextMetricsSnapshotHour(
-        Math.max(0, (now.getTime() - new Date(draft.scheduledAt!).getTime()) / 3_600_000),
-        draft.metricsSnapshotHours
-      ) ?? draft.metricsSnapshotHours,
       metricsSyncError: undefined,
     };
+    metadataUpdated++;
+    if (existingRecord && samePerformanceValues(existingRecord, result.metrics)) {
+      unchanged++;
+      continue;
+    }
+    synced++;
     const recordIndex = nextRecords.findIndex((record) => record.platform === "x" && record.contentId === draft.id);
     if (recordIndex >= 0) nextRecords[recordIndex] = result.metrics;
     else nextRecords.unshift(result.metrics);
   }
-  return { checked: targets.length, synced, failures, drafts: nextDrafts, records: nextRecords };
+  return { checked: targets.length, synced, unchanged, metadataUpdated, failures, drafts: nextDrafts, records: nextRecords };
 }
 
 export async function runPerformanceSync(now = new Date()): Promise<PerformanceSyncResult> {
   const [drafts, performance, settings] = await Promise.all([
     loadSocialDrafts(), loadPerformance(), loadResearchSettings(),
   ]);
-  const synced = await syncXPerformance(drafts, performance.records, fetchXMetrics, now);
-  if (synced.checked > 0) await saveSocialDrafts(synced.drafts);
+  const synced = await syncPerformance(drafts, performance.records, bufferMetricsProvider.fetch, now);
+  if (synced.metadataUpdated > 0 || synced.failures.length > 0) await saveSocialDrafts(synced.drafts);
   if (synced.synced > 0) await savePerformance({ ...performance, records: synced.records });
   const topics = evaluateWinningTopics(synced.records, settings.performanceWeights, settings.winningTopicPolicy);
   const prepared = await prepareWeeklyNoteDrafts(topics, now);
   return {
     checked: synced.checked,
     synced: synced.synced,
+    unchanged: synced.unchanged,
     failed: synced.failures.length,
     winningTopics: topics.filter((topic) => topic.winning).length,
     noteCandidates: prepared.candidates,

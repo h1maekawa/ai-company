@@ -1,4 +1,5 @@
 import type { ContentPerformance, SocialDraft } from "../research/types";
+import type { PerformanceProvider } from "./performanceProvider";
 
 const X_API_BASE = "https://api.x.com/2";
 const POST_MATCH_WINDOW_MS = 6 * 60 * 60 * 1000;
@@ -143,3 +144,18 @@ export function metricsFromPost(
     },
   };
 }
+
+/** Optional / Future Provider。環境変数未設定時は既存どおり安全に失敗する。 */
+export const xMetricsProvider: PerformanceProvider = {
+  id: "x",
+  async fetch(draft, now) {
+    const result = await fetchXMetrics(draft, now);
+    if (result.ok === false) return result;
+    return {
+      ok: true,
+      metrics: result.metrics,
+      providerUpdatedAt: result.metrics.measuredAt,
+      externalPostId: result.xPostId,
+    };
+  },
+};

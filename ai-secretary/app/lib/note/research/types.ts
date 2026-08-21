@@ -288,6 +288,9 @@ export type SocialDraft = {
   bufferPostId?: string;
   /** Buffer公開後にX APIの本文・時刻照合で解決する */
   xPostId?: string;
+  /** Buffer Metrics Providerの更新判定用metadata */
+  bufferMetricsUpdatedAt?: string;
+  bufferExternalLink?: string;
   metricsLastSyncedAt?: string;
   metricsSnapshotHours?: number;
   metricsSyncError?: string;
@@ -412,6 +415,7 @@ export type ContentPerformance = {
       | "replies"
       | "reposts"
       | "engagements"
+      | "linkClicks"
       | "profileVisits"
       | "followersGained"
       | "noteClicks",

@@ -47,7 +47,9 @@ export async function GET(): Promise<NextResponse> {
       diagnosis: diagnoseFunnel(funnel),
       topics,
       summary: {
-        postCount: socialDrafts.filter((draft) => draft.status === "published" || Boolean(draft.xPostId)).length,
+        postCount: socialDrafts.filter(
+          (draft) => draft.status === "published" || Boolean(draft.xPostId) || Boolean(draft.bufferMetricsUpdatedAt)
+        ).length,
         metricsSyncedPostCount: records.filter(
           (record) => record.platform === "x" && Object.values(record.metricAvailability ?? {}).includes("available")
         ).length,
