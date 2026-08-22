@@ -372,6 +372,8 @@ export function usePublishQueue() {
       setNotice(
         data.deduped
           ? "同じ操作が既に実行済みでした"
+          : data.repaired
+            ? "未確認の体験表現を安全な表現へ修正してBufferへ送信しました"
           : mode === "saveToDraft"
             ? "Bufferへ下書き保存しました"
             : "Bufferへ予約しました"

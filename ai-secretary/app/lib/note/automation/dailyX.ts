@@ -13,8 +13,7 @@ import {
   saveSocialDrafts,
 } from "@/app/lib/note/research/store";
 import { createPost, isBufferConfigured } from "@/app/lib/note/publishing/buffer";
-import { callAI } from "@/app/lib/ai/client";
-import { repairUnverifiedExperience } from "@/app/lib/note/safetyRepair";
+import { prepareXDraftForPublishing } from "@/app/lib/note/safetyRepair";
 import {
   canPublishToday,
   claimOnce,
@@ -23,7 +22,6 @@ import {
 import { draftBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
 import {
   DEFAULT_X_SCHEDULE,
-  runXSafetyGate,
   scheduledAtInTokyo,
 } from "@/app/lib/note/operations";
 import type { SocialDraft } from "@/app/lib/note/research/types";
@@ -121,12 +119,12 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
 
   const gated = [];
   for (const draft of generated) {
-    const repaired = await repairUnverifiedExperience({
-      draft, brand: brandFile.brand, experiences: usable,
-      repair: (text) => callAI(text, `X投稿から、本人確認済み根拠のない一人称体験表現だけを削除してください。意味・意見・ブランドトーンを維持し、「調べると〜」「〜という考え方があります」等の事実・学習・意見表現へ直してください。新しい数値・URL・経験・実績・断定を追加せず、280 weighted characters以内の本文だけを返してください。`, { provider: "auto" }),
+    const prepared = await prepareXDraftForPublishing({
+      draft,
+      brand: brandFile.brand,
+      experiences: usable,
     });
-    const candidate = repaired.repaired ? repaired.draft : draft;
-    gated.push({ draft: candidate, gate: runXSafetyGate({ draft: candidate, brand: brandFile.brand, experiences: usable }) });
+    gated.push({ draft: prepared.draft, gate: prepared });
   }
   const prepared = gated.map(({ draft, gate }) =>
     gate.safe ? draft : { ...draft, failureReason: gate.reasons.join(" / ") }
