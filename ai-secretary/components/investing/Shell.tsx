@@ -129,8 +129,8 @@ export function InvestingShell({
   return (
     <div className="min-h-screen bg-ink-base text-white">
       {/* 左固定サイドバー（lg以上） */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-hairline bg-ink-card/60 px-3 py-5 backdrop-blur lg:flex">
-        <Link href="/investing" className="mb-6 flex items-center gap-2 px-2">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r border-hairline bg-ink-card/60 px-2.5 py-4 backdrop-blur lg:flex">
+        <Link href="/investing" className="mb-4 flex items-center gap-2 px-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-sm font-bold">
             AI
           </span>
@@ -177,10 +177,10 @@ export function InvestingShell({
         </div>
       )}
 
-      <div className="lg:pl-60">
+      <div className="lg:pl-56">
         {/* 上部ヘッダー */}
         <header className="sticky top-0 z-20 border-b border-hairline bg-ink-base/85 backdrop-blur">
-          <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
+          <div className="flex items-center gap-3 px-4 py-3 sm:px-5 xl:px-6">
             <button
               onClick={() => setMenuOpen(true)}
               aria-label="メニューを開く"
@@ -217,7 +217,7 @@ export function InvestingShell({
           </div>
         </header>
 
-        <main className="px-4 pb-24 pt-5 sm:px-6 lg:pb-10">{children}</main>
+        <main className="w-full px-4 pb-24 pt-4 sm:px-5 lg:pb-8 xl:px-6">{children}</main>
       </div>
 
       {/* モバイル下部ナビ */}
