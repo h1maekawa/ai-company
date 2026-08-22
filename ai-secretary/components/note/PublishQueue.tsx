@@ -4,7 +4,11 @@ import { useState } from "react";
 import { Send, ShieldAlert, TriangleAlert } from "lucide-react";
 import { Card, CardHeader, EmptyState, Skeleton } from "@/components/ui/primitives";
 import { usePublishQueue, useResearchSettings } from "@/app/note/useResearch";
-import { X_MAX_WEIGHTED_LENGTH, xWeightedLength } from "@/app/lib/note/operations";
+import {
+  isActionableXDraftStatus,
+  X_MAX_WEIGHTED_LENGTH,
+  xWeightedLength,
+} from "@/app/lib/note/operations";
 
 /** X下書き・note記事・投稿ジョブと、安全装置のスイッチ */
 export function PublishQueue() {
@@ -12,9 +16,7 @@ export function PublishQueue() {
   const settings = useResearchSettings();
   const [scheduleFor, setScheduleFor] = useState<Record<string, string>>({});
 
-  const pending = state.socialDrafts.filter(
-    (d) => d.status !== "discarded" && d.status !== "published"
-  );
+  const pending = state.socialDrafts.filter((d) => isActionableXDraftStatus(d.status));
 
   return (
     <div className="space-y-4">

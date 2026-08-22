@@ -21,6 +21,18 @@ test("初期Xスケジュールは07:30/12:15/20:30と目的を保持する", ()
   assert.equal(operations.scheduledAtInTokyo(new Date("2026-08-21T00:00:00Z"), "07:30"), "2026-08-20T22:30:00.000Z");
 });
 
+test("X下書き一覧は対応が必要なstatusだけを表示し、元データを保持する", () => {
+  const drafts = ["draft", "approved", "failed", "queued", "scheduled", "published", "discarded"]
+    .map((status) => ({ id: status, status }));
+  const snapshot = structuredClone(drafts);
+
+  const visible = drafts.filter((item) => operations.isActionableXDraftStatus(item.status));
+
+  assert.deepEqual(visible.map((item) => item.status), ["draft", "approved", "failed", "queued"]);
+  assert.deepEqual(drafts, snapshot, "表示フィルタはunderlying SocialDraftを削除・変更しない");
+  assert.equal(drafts.length, 7);
+});
+
 test("Safety Gateは通常投稿を通し成果保証・個人情報・根拠なし体験を止める", () => {
   assert.equal(operations.runXSafetyGate({ draft, brand, experiences: [] }).safe, true);
   const unsafe = operations.runXSafetyGate({

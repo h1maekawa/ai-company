@@ -5,9 +5,21 @@ import type {
   ExperienceEntry,
   PerformanceWeights,
   SocialDraft,
+  SocialDraftStatus,
   WinningTopicPolicy,
   NoteArticleDraft,
 } from "./research/types";
+
+const HIDDEN_X_DRAFT_STATUSES: ReadonlySet<SocialDraftStatus> = new Set([
+  "scheduled",
+  "published",
+  "discarded",
+]);
+
+/** UI上でまだ対応が必要なX下書きだけを表示する。永続データ自体は変更しない。 */
+export function isActionableXDraftStatus(status: SocialDraftStatus): boolean {
+  return !HIDDEN_X_DRAFT_STATUSES.has(status);
+}
 
 export type XScheduleSlot = {
   time: string;
