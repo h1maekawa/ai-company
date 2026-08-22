@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyRunnerToken } from "@/app/lib/integrations/machine-auth";
 import { postToSlack } from "@/app/lib/integrations/slack/blocks";
-import { appendHistory, loadNoteQueue, saveNoteQueue } from "@/app/lib/note/research/store";
+import { appendHistory, loadNoteQueue, loadPerformance, saveNoteQueue, savePerformance } from "@/app/lib/note/research/store";
+import { normalizeNoteMetrics, type NoteMetricsPayload } from "@/app/lib/note/publishing/noteMetricsProvider";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +15,28 @@ export async function POST(
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: 401 });
 
   try {
-    const body = (await req.json()) as { noteUrl?: string; screenshotPaths?: string[] };
+    const body = (await req.json()) as { noteUrl?: string; screenshotPaths?: string[]; metrics?: NoteMetricsPayload };
     const queue = await loadNoteQueue();
     const job = queue.jobs.find((j) => j.id === params.id);
     if (!job) return NextResponse.json({ error: "そのジョブが見つかりません" }, { status: 404 });
 
     const now = new Date().toISOString();
+    if (job.kind === "note-metrics-sync") {
+      const article = queue.articles.find((item) => item.id === job.articleId);
+      if (!article || !body.metrics) return NextResponse.json({ error: "note metricsが不足しています" }, { status: 400 });
+      const performance = await loadPerformance();
+      const metrics = normalizeNoteMetrics(article, body.metrics, new Date(now));
+      await savePerformance({
+        ...performance,
+        records: [metrics, ...performance.records.filter((record) => !(record.platform === "note" && record.contentId === article.id))],
+      });
+      const saved = await saveNoteQueue({
+        ...queue,
+        jobs: queue.jobs.map((item) => item.id === job.id ? { ...item, status: "done" as const, finishedAt: now, screenshotPaths: body.screenshotPaths } : item),
+      });
+      return NextResponse.json({ ok: true, queue: saved, metrics });
+    }
+
     const saved = await saveNoteQueue({
       articles: queue.articles.map((a) =>
         a.id === job.articleId

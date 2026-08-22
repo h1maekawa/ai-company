@@ -6,6 +6,7 @@ import {
   loadNoteQueue,
   loadResearchSettings,
   loadSocialDrafts,
+  loadGrowthReviews,
   savePerformance,
 } from "@/app/lib/note/research/store";
 import type { ContentPerformance } from "@/app/lib/note/research/types";
@@ -19,12 +20,13 @@ function last90Days(records: ContentPerformance[]): ContentPerformance[] {
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const [performance, settings, clusters, queue, socialDrafts] = await Promise.all([
+    const [performance, settings, clusters, queue, socialDrafts, growthReviews] = await Promise.all([
       loadPerformance(),
       loadResearchSettings(),
       loadClusters(),
       loadNoteQueue(),
       loadSocialDrafts(),
+      loadGrowthReviews(),
     ]);
     const records = last90Days(performance.records);
     const funnel = buildFunnel(records);
@@ -66,6 +68,8 @@ export async function GET(): Promise<NextResponse> {
       },
       performanceWeights: settings.performanceWeights,
       winningTopicPolicy: settings.winningTopicPolicy,
+      dailyReview: growthReviews[0],
+      reviewHistory: growthReviews.slice(0, 28),
     });
   } catch (error) {
     console.error("[api/note/growth] GET失敗:", error);

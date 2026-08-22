@@ -345,6 +345,33 @@ export type PurposeMix = {
   monetize: number;
 };
 
+export type StrategyConfidence = "low" | "medium" | "high";
+
+export type ContentGrowthStrategy = {
+  purposeMix: PurposeMix;
+  topicPriority: string[];
+  genrePriority: string[];
+  patternPriority: XPostPattern[];
+  draftTypePriority: XDraftType[];
+  ctaRate: number;
+  noteBridgeRate: number;
+  explorationRate: number;
+  updatedAt?: string;
+};
+
+export function defaultContentGrowthStrategy(): ContentGrowthStrategy {
+  return {
+    purposeMix: defaultPurposeMix(),
+    topicPriority: [],
+    genrePriority: [],
+    patternPriority: [],
+    draftTypePriority: [],
+    ctaRate: 20,
+    noteBridgeRate: 20,
+    explorationRate: 20,
+  };
+}
+
 export function defaultPurposeMix(): PurposeMix {
   return { reach: 70, noteBridge: 20, monetize: 10 };
 }
@@ -462,6 +489,7 @@ export type PaidValueType =
 
 export type NoteArticleDraft = {
   id: string;
+  genreId?: string;
   title: string;
   subtitle?: string;
   articleType: NoteArticleType;
@@ -567,6 +595,11 @@ export type ContentPerformance = {
   followerCountAtPost?: number;
   currentFollowerCount?: number;
   pattern?: XPostPattern;
+  draftType?: XDraftType;
+  postingSlot?: string;
+  weightedLength?: number;
+  hasCta?: boolean;
+  destination?: ContentDestination;
   length?: XPostLength;
   mediaSuggestion?: MediaSuggestion;
   hasQuestion?: boolean;
@@ -583,6 +616,10 @@ export type ContentPerformance = {
   freeNoteViews?: number;
   paidPurchases?: number;
   repeatPurchases?: number;
+  articleType?: "free" | "paid" | "affiliate";
+  noteFollowers?: number;
+  sourceXContentId?: string;
+  metricsStale?: boolean;
 
   affiliateClicks?: number;
   affiliateConversions?: number;
@@ -601,7 +638,12 @@ export type ContentPerformance = {
       | "linkClicks"
       | "profileVisits"
       | "followersGained"
-      | "noteClicks",
+      | "noteClicks"
+      | "noteViews"
+      | "noteLikes"
+      | "noteSales"
+      | "noteRevenue"
+      | "noteFollowers",
       "available" | "unavailable"
     >
   >;
@@ -674,7 +716,7 @@ export type PublishJobStatus = "pending" | "running" | "done" | "failed";
 
 export type PublishJob = {
   id: string;
-  kind: "note-draft" | "note-publish";
+  kind: "note-draft" | "note-publish" | "note-metrics-sync";
   articleId: string;
   status: PublishJobStatus;
   /** Slackで最終承認された時刻。未承認のジョブはランナーへ渡さない */

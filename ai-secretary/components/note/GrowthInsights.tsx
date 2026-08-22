@@ -19,6 +19,19 @@ type Insights = {
     topicId: string; title: string; postCount: number; averageScore: number;
     winning: boolean; nextStage: string;
   }[];
+  dailyReview?: {
+    date: string; confidence: string;
+    dataFreshness: { x: string; note: string };
+    xSummary: { postCount: number; impressions?: number; engagements?: number; linkClicks?: number; followersGained?: number };
+    noteSummary: { views?: number; sales?: number; revenue?: number };
+    comparisons: Record<"yesterday" | "last7Days" | "previous7Days" | "last28Days", { postCount: number; impressions?: number; engagements?: number; linkClicks?: number }>;
+    winningTopics: Array<{ topicId: string; averageScore: number }>;
+    winningPatterns: Array<{ key: string; sampleSize: number; averageScore: number }>;
+    bottleneck: string; insights: string[]; experiments: string[];
+    appliedChanges: Array<{ field: string; before: unknown; after: unknown; reason: string }>;
+    noteApprovalPriorities: Array<{ articleId: string; title: string; reason: string; priceSuggestion?: string }>;
+  };
+  reviewHistory: Insights["dailyReview"][];
 };
 
 export function GrowthInsights() {
@@ -45,6 +58,7 @@ export function GrowthInsights() {
   ] as const;
   return (
     <div className="space-y-4">
+      {data.dailyReview && <DailyReview review={data.dailyReview} />}
       <Card>
         <CardHeader title="90日ファネル" hint={`月間売上KGI ¥${data.revenueGoal.toLocaleString()}`} />
         <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -92,4 +106,41 @@ export function GrowthInsights() {
       </Card>
     </div>
   );
+}
+
+function DailyReview({ review }: { review: NonNullable<Insights["dailyReview"]> }) {
+  const [period, setPeriod] = useState<"yesterday" | "last7Days" | "last28Days">("yesterday");
+  const selected = review.comparisons[period];
+  const metric = (value?: number, prefix = "") => value === undefined ? "Unavailable" : `${prefix}${value.toLocaleString()}`;
+  return <Card>
+    <CardHeader title="今日の事業部レビュー" hint={`${review.date} / confidence: ${review.confidence}`} />
+    <div className="mb-3 flex gap-1">
+      {(["yesterday", "last7Days", "last28Days"] as const).map((key) => <button key={key} onClick={() => setPeriod(key)} className={`rounded px-2 py-1 text-[10px] ${period === key ? "bg-brand text-white" : "bg-white/[0.05] text-sub"}`}>{key === "yesterday" ? "Today / Yesterday" : key === "last7Days" ? "7 Days" : "28 Days"}</button>)}
+    </div>
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <ReviewMetric label="X投稿数" value={String(selected.postCount)} />
+      <ReviewMetric label="Impressions" value={metric(selected.impressions)} />
+      <ReviewMetric label="Engagement" value={metric(selected.engagements)} />
+      <ReviewMetric label="Link Clicks" value={metric(selected.linkClicks)} />
+      <ReviewMetric label="note Views" value={metric(review.noteSummary.views)} />
+      <ReviewMetric label="note Sales" value={metric(review.noteSummary.sales)} />
+      <ReviewMetric label="Revenue" value={metric(review.noteSummary.revenue, "¥")} />
+      <ReviewMetric label="Follower data" value={review.xSummary.followersGained === undefined ? "Unavailable" : review.xSummary.followersGained.toLocaleString()} />
+    </div>
+    <p className="mt-2 text-[10px] text-sub">note metrics: {review.dataFreshness.note}</p>
+    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <ReviewSection title="今日の結論" lines={[...review.insights, `Bottleneck: ${review.bottleneck}`, review.winningPatterns[0] ? `Winning Pattern: ${review.winningPatterns[0].key}（n=${review.winningPatterns[0].sampleSize}）` : "Winning Pattern: 最低サンプル待ち"]} />
+      <ReviewSection title="明日の戦略" lines={review.experiments.length ? review.experiments : ["データを蓄積し、現行戦略を維持"]} />
+      <ReviewSection title="Applied Automatically" lines={review.appliedChanges.length ? review.appliedChanges.map((item) => `${item.field}: ${JSON.stringify(item.before)} → ${JSON.stringify(item.after)} / ${item.reason}`) : ["自動変更なし"]} />
+      <ReviewSection title="Human Decision Needed" lines={review.noteApprovalPriorities.length ? review.noteApprovalPriorities.map((item) => `${item.title}${item.priceSuggestion ? ` / 価格候補 ${item.priceSuggestion}` : ""} — ${item.reason}`) : ["note公開候補なし。価格・公開は引き続き人が決定"]} />
+    </div>
+  </Card>;
+}
+
+function ReviewMetric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-lg bg-white/[0.03] p-2"><p className="text-[10px] text-sub">{label}</p><p className="text-sm font-semibold">{value}</p></div>;
+}
+
+function ReviewSection({ title, lines }: { title: string; lines: string[] }) {
+  return <div className="rounded-lg border border-hairline p-3"><p className="text-xs font-semibold">{title}</p><ol className="mt-2 space-y-1 text-[10px] text-sub">{lines.slice(0, 4).map((line, index) => <li key={`${title}-${index}`}>{index + 1}. {line}</li>)}</ol></div>;
 }

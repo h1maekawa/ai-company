@@ -111,7 +111,8 @@ function experienceBlock(experiences: ExperienceEntry[]): string {
     return `## 筆者の体験
 **登録された体験がありません。**
 「やってみた」「試した」など、実際に体験したかのような書き方をしてはいけません。
-一般的な考察・調べたことの整理として書いてください。`;
+「私は試した」「投資初心者の私が調べた」「私が実際に」など一人称の体験断定を使わないでください。
+「調べると〜」「〜という考え方があります」「〜を整理します」など、事実・学習・意見として書いてください。`;
   }
 
   return `## 筆者の体験（ここに書かれたことだけを体験談として使えます）
@@ -195,6 +196,8 @@ export type GenerateXInput = {
   outputType?: OutputType;
   length?: XPostLength;
   sourceContext?: ContentSourceContext;
+  /** Nightly Reviewが推奨した型。生成候補の範囲だけで優先し、Safety/Brandは変更しない。 */
+  preferredPatterns?: string[];
 };
 
 export type GenerateXResult = {
@@ -260,6 +263,10 @@ ${genre.label}（${genre.description}）
 
 ## このアカウントの役割
 ${account.role || "（未設定。ブランド全体のトーンに合わせる）"}
+
+## 実績からの型優先度
+${input.preferredPatterns?.length ? input.preferredPatterns.join(" → ") : "（データ不足。既定3案を均等に試す）"}
+優先度は切り口選択だけに使い、事実・Brand・Safetyルールより優先してはいけません。
 
 ${affiliateBlock}
 
@@ -606,6 +613,7 @@ ${policy!.claimRestrictions.length > 0 ? `禁止訴求: ${policy!.claimRestricti
   const now = new Date().toISOString();
   const article: NoteArticleDraft = {
     id: hashId("n", `${cluster.id}${parsed.title}${now}`),
+    genreId: genre.id,
     title: String(parsed.title),
     subtitle: parsed.subtitle ? String(parsed.subtitle) : undefined,
     articleType,

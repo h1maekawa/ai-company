@@ -13,6 +13,8 @@ import {
   saveSocialDrafts,
 } from "@/app/lib/note/research/store";
 import { createPost, isBufferConfigured } from "@/app/lib/note/publishing/buffer";
+import { callAI } from "@/app/lib/ai/client";
+import { repairUnverifiedExperience } from "@/app/lib/note/safetyRepair";
 import {
   canPublishToday,
   claimOnce,
@@ -58,9 +60,21 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       loadSocialDrafts(),
     ]);
 
-  const cluster = clusters
-    .filter((candidate) => candidate.status === "candidate" && !candidate.blocked)
-    .sort((left, right) => right.totalScore - left.totalScore)[0];
+  const candidates = clusters.filter((candidate) => candidate.status === "candidate" && !candidate.blocked);
+  const tokyoDayNumber = Number(new Date(Date.now() + 9 * 3_600_000).toISOString().slice(8, 10));
+  const explorationDay = tokyoDayNumber % 5 === 0; // 約20%は新しいTopic/Patternを探索する。
+  const cluster = candidates.sort((left, right) => {
+    if (explorationDay) return right.totalScore - left.totalScore;
+    const priority = (candidate: typeof left) => {
+      const topic = settings.growthStrategy.topicPriority.indexOf(candidate.id);
+      const genre = Math.min(...candidate.genreIds.map((id) => {
+        const index = settings.growthStrategy.genrePriority.indexOf(id);
+        return index < 0 ? 99 : index;
+      }), 99);
+      return (topic < 0 ? 99 : topic) * 100 + genre;
+    };
+    return priority(left) - priority(right) || right.totalScore - left.totalScore;
+  })[0];
 
   if (!cluster) {
     const slack = await postToSlack("本日のX投稿候補はありませんでした。リサーチ結果を確認してください。");
@@ -97,6 +111,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
         label: `過去投稿(${draft.id})`,
         text: draft.text,
       })),
+      preferredPatterns: settings.growthStrategy.patternPriority,
     });
     const candidate = result.drafts.find((draft) => !draft.failureReason);
     if (candidate) generated.push(candidate);
@@ -104,10 +119,15 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
   }
   if (generated.length === 0) throw new Error(warnings[0] ?? "X投稿案を生成できませんでした");
 
-  const gated = generated.map((draft) => ({
-    draft,
-    gate: runXSafetyGate({ draft, brand: brandFile.brand, experiences: usable }),
-  }));
+  const gated = [];
+  for (const draft of generated) {
+    const repaired = await repairUnverifiedExperience({
+      draft, brand: brandFile.brand, experiences: usable,
+      repair: (text) => callAI(text, `X投稿から、本人確認済み根拠のない一人称体験表現だけを削除してください。意味・意見・ブランドトーンを維持し、「調べると〜」「〜という考え方があります」等の事実・学習・意見表現へ直してください。新しい数値・URL・経験・実績・断定を追加せず、280 weighted characters以内の本文だけを返してください。`, { provider: "auto" }),
+    });
+    const candidate = repaired.repaired ? repaired.draft : draft;
+    gated.push({ draft: candidate, gate: runXSafetyGate({ draft: candidate, brand: brandFile.brand, experiences: usable }) });
+  }
   const prepared = gated.map(({ draft, gate }) =>
     gate.safe ? draft : { ...draft, failureReason: gate.reasons.join(" / ") }
   );

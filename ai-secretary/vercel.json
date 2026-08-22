@@ -9,8 +9,8 @@
       "schedule": "0 23 * * *"
     },
     {
-      "path": "/api/cron/x-performance-sync",
-      "schedule": "30 0 * * *"
+      "path": "/api/cron/content-nightly-review",
+      "schedule": "30 14 * * *"
     }
   ]
 }

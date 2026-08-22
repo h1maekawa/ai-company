@@ -32,7 +32,10 @@ import {
   defaultFeatureFlags,
   defaultPurposeMix,
   defaultXResearchSettings,
+  ContentGrowthStrategy,
+  defaultContentGrowthStrategy,
 } from "./types";
+import type { DailyGrowthReview } from "../growthLoop";
 
 const ROOT = "memory/personal/note";
 
@@ -48,6 +51,7 @@ export const RESEARCH_PATHS = {
   performance: `${ROOT}/content-performance.md`,
   noteQueue: `${ROOT}/note-publish-queue.md`,
   viewpoints: `${ROOT}/viewpoint-library.md`,
+  growthReviews: `${ROOT}/daily-growth-reviews.md`,
 } as const;
 
 function extractJson<T>(markdown: string): T | null {
@@ -159,6 +163,7 @@ export type ResearchSettingsFile = {
   winningTopicPolicy: WinningTopicPolicy;
   /** noteリサーチで巡回するタグ */
   noteTags: string[];
+  growthStrategy: ContentGrowthStrategy;
 };
 
 const DEFAULT_NOTE_TAGS = [
@@ -203,6 +208,11 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
       Array.isArray(data?.noteTags) && data.noteTags.length > 0
         ? data.noteTags
         : DEFAULT_NOTE_TAGS,
+    growthStrategy: {
+      ...defaultContentGrowthStrategy(),
+      ...(data?.growthStrategy ?? {}),
+      purposeMix: { ...defaultPurposeMix(), ...(data?.growthStrategy?.purposeMix ?? data?.purposeMix ?? {}) },
+    },
   };
 }
 
@@ -657,4 +667,28 @@ export async function savePerformance(file: PerformanceFile): Promise<Performanc
     )
   );
   return file;
+}
+
+export type GrowthReviewFile = { reviews: DailyGrowthReview[] };
+
+export async function loadGrowthReviews(): Promise<DailyGrowthReview[]> {
+  const data = await readJson<GrowthReviewFile>(RESEARCH_PATHS.growthReviews);
+  return Array.isArray(data?.reviews) ? data.reviews : [];
+}
+
+export async function saveGrowthReviews(reviews: DailyGrowthReview[]): Promise<DailyGrowthReview[]> {
+  const human = reviews.slice(0, 28).map((review) => [
+    `## ${review.date} — ${review.confidence}`,
+    `- X: ${review.xSummary.postCount}投稿 / Imp ${review.xSummary.impressions ?? "—"} / Engagement ${review.xSummary.engagements ?? "—"} / Click ${review.xSummary.linkClicks ?? "—"}`,
+    `- note: Views ${review.noteSummary.views ?? "—"} / Sales ${review.noteSummary.sales ?? "—"} / Revenue ${review.noteSummary.revenue ?? "—"}${review.dataFreshness.note === "stale" ? "（stale）" : ""}`,
+    `- Bottleneck: ${review.bottleneck}`,
+    `- 明日: ${review.experiments.join(" / ") || "データ蓄積"}`,
+  ].join("\n")).join("\n\n");
+  await write(RESEARCH_PATHS.growthReviews, buildDoc(
+    "note_daily_growth_reviews",
+    "AI管理の日次事業部レビュー履歴です。過去レビューと戦略は削除・上書きしません。",
+    human || "（まだありません）",
+    { reviews }
+  ));
+  return reviews;
 }

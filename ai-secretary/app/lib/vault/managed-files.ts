@@ -22,6 +22,7 @@ export const APP_MANAGED_VAULT_FILES = [
   "memory/personal/note/learnings.md",
   "memory/personal/note/content-recommendations.md",
   "memory/personal/note/content-plans.md",
+  "memory/personal/note/daily-growth-reviews.md",
   "memory/personal/fund/policy.md",
   "memory/personal/fund/capacity.md",
   "memory/personal/fund/holdings.md",

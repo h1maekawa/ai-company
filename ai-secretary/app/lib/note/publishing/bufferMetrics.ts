@@ -1,4 +1,5 @@
 import type { ContentPerformance, SocialDraft } from "../research/types";
+import { xWeightedLength } from "../operations";
 import { getPost, type BufferPostMetric, type BufferPostNode } from "./buffer";
 import type { PerformanceProvider, PerformanceProviderResult } from "./performanceProvider";
 
@@ -71,6 +72,14 @@ export function normalizeBufferMetrics(
     replies,
     reposts,
     linkClicks,
+    pattern: draft.pattern,
+    draftType: draft.draftType,
+    weightedLength: xWeightedLength(draft.text),
+    postingSlot: draft.scheduledAt
+      ? new Date(new Date(draft.scheduledAt).getTime() + 9 * 3_600_000).toISOString().slice(11, 16)
+      : undefined,
+    hasCta: draft.urls.length > 0 || draft.purpose === "note-bridge" || draft.purpose === "affiliate",
+    destination: draft.purpose === "note-bridge" ? "free-note" : draft.purpose === "paid-note" ? "paid-note" : draft.purpose === "affiliate" ? "affiliate-direct" : "none",
     measuredAt: measuredAt.toISOString(),
     metricAvailability: {
       impressions: availability(impressions),
