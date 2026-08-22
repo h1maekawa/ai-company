@@ -1,0 +1,4 @@
+export type ConnectionStatus = "connected" | "warning" | "disconnected" | "not_configured" | "unknown";
+export type ConnectionHealth = { service: string; label: string; icon: string; status: ConnectionStatus; message: string; lastCheckedAt: string; lastSuccessAt?: string; itemCount?: number; detail?: string; action?: string };
+export function summarizeConnections(services: ConnectionHealth[]) { return { total: services.length, healthy: services.filter((item) => item.status === "connected").length, warning: services.filter((item) => item.status === "warning").length, checkedAt: services.map((item) => item.lastCheckedAt).sort().at(-1) ?? null }; }
+export function statusLabel(status: ConnectionStatus) { return ({ connected: "正常", warning: "要確認", disconnected: "接続なし", not_configured: "未設定", unknown: "確認できません" } as const)[status]; }

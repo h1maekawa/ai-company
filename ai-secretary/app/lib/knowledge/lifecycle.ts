@@ -9,6 +9,7 @@
  */
 
 import { vaultDocumentStore } from "../persistence/vaultStore";
+import { indexKnowledgePathBestEffort } from "./indexSync";
 import { generateUniqueId } from "../utils/id";
 import { toSlug } from "../utils/slug";
 import { parseFrontmatter, asArray, asString } from "./frontmatter";
@@ -261,6 +262,8 @@ export async function promoteCandidate(
   };
   await vaultDocumentStore.saveFile(path, buildCaptureMarkdown(fm, item.body), undefined);
 
+  await indexKnowledgePathBestEffort(saved.path);
+
   return { candidate: { path, frontmatter: fm, body: item.body }, knowledgePath: saved.path };
 }
 
@@ -336,6 +339,8 @@ export async function mergeCandidate(
     promoted_to: targetPath,
   };
   await vaultDocumentStore.saveFile(path, buildCaptureMarkdown(fm, item.body), undefined);
+
+  await indexKnowledgePathBestEffort(targetPath);
 
   return { candidate: { path, frontmatter: fm, body: item.body }, targetPath };
 }

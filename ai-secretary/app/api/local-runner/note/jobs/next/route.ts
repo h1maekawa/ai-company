@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyRunnerToken } from "@/app/lib/integrations/machine-auth";
 import { loadNoteQueue, loadResearchSettings, saveNoteQueue } from "@/app/lib/note/research/store";
+import { syncStatusRepository } from "@/app/lib/persistence/supabase/syncStatusRepository";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: 401 });
 
   try {
+    if (syncStatusRepository.configured()) {
+      const checkedAt = new Date().toISOString();
+      await syncStatusRepository.upsert({ service: "note_runner", status: "connected", last_checked_at: checkedAt, last_success_at: checkedAt, last_sync_at: checkedAt, message: "note Runner heartbeat" }).catch(() => undefined);
+    }
     const [queue, settings] = await Promise.all([loadNoteQueue(), loadResearchSettings()]);
 
     // metrics-syncはread-onlyなので公開停止中・未承認でも取得可能。公開操作には既存承認を必須とする。
