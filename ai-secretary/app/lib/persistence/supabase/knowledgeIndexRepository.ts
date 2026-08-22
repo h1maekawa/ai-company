@@ -11,9 +11,18 @@ export interface KnowledgeIndexRepository {
   search(query: IndexSearch): Promise<KnowledgeIndexRecord[]>;
   upsert(records: KnowledgeIndexRecord[]): Promise<void>;
   count(): Promise<number | null>;
+  countUpdatedSince(date: string): Promise<number | null>;
 }
 
 const sanitize = (value: string) => value.replace(/[,%()]/g, " ").trim();
+async function countRows(filter = ""): Promise<number | null> {
+  const config = getSupabaseConfig();
+  if (!config) return null;
+  const response = await fetch(`${config.url}/rest/v1/knowledge_index?select=knowledge_id${filter}`, { method: "HEAD", cache: "no-store", headers: { apikey: config.serviceRoleKey, Authorization: `Bearer ${config.serviceRoleKey}`, Prefer: "count=exact" } });
+  if (!response.ok) throw new Error(`Supabase count failed (${response.status})`);
+  const total = response.headers.get("content-range")?.split("/")[1];
+  return total && total !== "*" ? Number(total) : null;
+}
 export const supabaseKnowledgeIndexRepository: KnowledgeIndexRepository = {
   configured: () => Boolean(getSupabaseConfig()),
   async search(query) {
@@ -33,11 +42,9 @@ export const supabaseKnowledgeIndexRepository: KnowledgeIndexRepository = {
     await supabaseRequest("knowledge_index?on_conflict=path", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(records) });
   },
   async count() {
-    const config = getSupabaseConfig();
-    if (!config) return null;
-    const response = await fetch(`${config.url}/rest/v1/knowledge_index?select=knowledge_id`, { method: "HEAD", cache: "no-store", headers: { apikey: config.serviceRoleKey, Authorization: `Bearer ${config.serviceRoleKey}`, Prefer: "count=exact" } });
-    if (!response.ok) throw new Error(`Supabase count failed (${response.status})`);
-    const range = response.headers.get("content-range");
-    return range ? Number(range.split("/")[1]) : null;
+    return countRows();
+  },
+  async countUpdatedSince(date) {
+    return countRows(`&updated_at=gte.${encodeURIComponent(date)}`);
   },
 };

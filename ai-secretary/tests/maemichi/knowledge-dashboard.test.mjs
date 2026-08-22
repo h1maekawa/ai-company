@@ -5,6 +5,8 @@ import path from "node:path";
 
 const DIST = process.env.MAEMICHI_DIST;
 const indexRecord = await import(path.join(DIST, "knowledge/indexRecord.js"));
+const knowledgeTypes = await import(path.join(DIST, "knowledge/types.js"));
+const knowledgeWalk = await import(path.join(DIST, "knowledge/walk.js"));
 const connections = await import(path.join(DIST, "system/connections.js"));
 const read = (file) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
 
@@ -16,6 +18,17 @@ test("Knowledge Indexは検索metadataと短いsummaryだけを派生し本文SS
   assert.deepEqual(record.tags, ["X", "Growth"]);
   assert.ok(record.summary.length <= 240);
   assert.equal("body" in record, false);
+});
+
+test("nested Knowledge directoryを含む全Markdownを再帰走査し非Markdownを除外する", async () => {
+  const tree = {
+    "memory/knowledge": [{ name: "content", type: "dir" }, { name: "root.md", type: "file" }, { name: "memo.txt", type: "file" }],
+    "memory/knowledge/content": [{ name: "x", type: "dir" }, { name: "note.md", type: "file" }],
+    "memory/knowledge/content/x": [{ name: "growth.md", type: "file" }, { name: "asset.png", type: "file" }],
+  };
+  const store = { listEntries: async (directory) => tree[directory] ?? [] };
+  const paths = await knowledgeWalk.listMarkdownPathsRecursively(store, "memory/knowledge");
+  assert.deepEqual(paths, ["memory/knowledge/content/note.md", "memory/knowledge/content/x/growth.md", "memory/knowledge/root.md"]);
 });
 
 test("Connectionsは5状態を保持しHome alert用集計でunknownを正常扱いしない", () => {
@@ -47,6 +60,24 @@ test("Knowledge検索はSupabase失敗時にVault fallbackし本文はVaultか�
   assert.match(route, /高速Indexが利用できないためVault検索を使用中/);
 });
 
+test("今週追加KPIは75件hitsや検索Filterではなく全件count/fallbackから算出する", () => {
+  const route = read("app/api/knowledge/dashboard/route.ts");
+  assert.match(route, /countUpdatedSince\(weekAgo\)/);
+  assert.match(route, /readVaultKnowledgeIndexRecords\(\)/);
+  assert.doesNotMatch(route, /recent\s*=\s*hits|hits\.filter/);
+  assert.ok(route.indexOf("countUpdatedSince(weekAgo)") > route.indexOf("const query"));
+});
+
+test("レビュー待ちはHuman未判断のcandidateだけで、capturedや終端statusを含めない", () => {
+  assert.equal(knowledgeTypes.isHumanReviewPending("candidate"), true);
+  for (const status of ["captured", "promoted", "merged", "rejected", "archived"]) {
+    assert.equal(knowledgeTypes.isHumanReviewPending(status), false, status);
+  }
+  const route = read("app/api/knowledge/dashboard/route.ts");
+  assert.match(route, /isHumanReviewPending\(item\.frontmatter\.status\)/);
+  assert.doesNotMatch(route, /domain_resolution_required \|\| item\.frontmatter\.conflict_candidates/);
+});
+
 test("Candidate UIは既存APIのPromote・Merge Preview・Human Approvalを再利用する", () => {
   const ui = read("components/knowledge/KnowledgeDashboard.tsx");
   assert.match(ui, /api\/knowledge\/candidates|candidates/); assert.match(ui, /api\/knowledge\/promote/); assert.match(ui, /api\/knowledge\/merge-preview/);
@@ -58,8 +89,18 @@ test("昇格・MergeはVault保存後にIndexを更新し、再同期はreadとu
   const sync = read("app/lib/knowledge/indexSync.ts");
   assert.ok(lifecycle.indexOf("saveKnowledge({") < lifecycle.indexOf("indexKnowledgePathBestEffort(saved.path)"));
   assert.ok(lifecycle.indexOf("saveFile(targetPath") < lifecycle.indexOf("indexKnowledgePathBestEffort(targetPath)"));
-  assert.match(sync, /vaultDocumentStore\.listFiles/); assert.match(sync, /vaultDocumentStore\.getFile/); assert.match(sync, /\.upsert\(records\)/);
+  assert.match(sync, /listMarkdownPathsRecursively/); assert.match(sync, /vaultDocumentStore\.getFile/); assert.match(sync, /\.upsert\(records\)/);
   assert.doesNotMatch(sync, /saveFile|delete|rename|move/);
+});
+
+test("Connections Knowledge件数は同期済みIndexを優先しVault fallbackも再帰総数を使う", () => {
+  const health = read("app/lib/system/health.ts");
+  const ui = read("components/connections/ConnectionsDashboard.tsx");
+  assert.match(health, /indexStatus\?\.status === "connected"/);
+  assert.match(health, /supabaseKnowledgeIndexRepository\.count\(\)/);
+  assert.match(health, /readVaultKnowledgeIndexRecords\(\)/);
+  assert.doesNotMatch(health, /listFiles\("memory\/knowledge"\)/);
+  assert.match(ui, /service\.itemCount!=null/);
 });
 
 test("Connection testはread-onlyで7サービスを判定する", () => {
