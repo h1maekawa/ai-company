@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPost, isBufferConfigured } from "@/app/lib/note/publishing/buffer";
 import { loadBrand } from "@/app/lib/note/store";
-import { runXSafetyGate } from "@/app/lib/note/operations";
+import { prepareXDraftForPublishing } from "@/app/lib/note/safetyRepair";
 import {
   affiliateCooldownOk,
   canPublishToday,
@@ -64,10 +64,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // 3. idempotency keyを消費する前にも同じSafety Policyでfail-closeする。
-    const gate = runXSafetyGate({ draft, brand: brandFile.brand, experiences });
-    if (!gate.safe) {
+    const prepared = await prepareXDraftForPublishing({
+      draft,
+      brand: brandFile.brand,
+      experiences,
+    });
+    if (!prepared.safe) {
       return NextResponse.json(
-        { error: gate.reasons.join(" / "), hint: "下書きは保持しています", kind: "validation" },
+        { error: prepared.reasons.join(" / "), hint: "下書きは保持しています", kind: "validation" },
         { status: 422 }
       );
     }
@@ -114,7 +118,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const result = await createPost({
-      draft,
+      draft: prepared.draft,
       safetyContext: { brand: brandFile.brand, experiences },
       mode,
       scheduledAt: body.scheduledAt,
@@ -135,6 +139,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         d.id === draft.id
           ? {
               ...d,
+              text: result.data.draft.text,
               status: mode === "saveToDraft" ? "queued" : "scheduled",
               bufferPostId: result.data.id,
               scheduledAt: result.data.dueAt ?? body.scheduledAt,
@@ -156,7 +161,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       detail: result.data.dueAt ? `予定 ${result.data.dueAt}` : undefined,
     });
 
-    return NextResponse.json({ ok: true, post: result.data });
+    return NextResponse.json({
+      ok: true,
+      post: result.data,
+      repaired: prepared.repaired || result.data.repaired,
+      message: prepared.repaired || result.data.repaired
+        ? "未確認の体験表現を安全な表現へ修正してBufferへ送信しました"
+        : undefined,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Bufferへの送信に失敗しました";
     console.error("[api/note/publishing/buffer] 失敗:", error);

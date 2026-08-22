@@ -17,6 +17,7 @@ import {
   saveSocialDrafts,
 } from "@/app/lib/note/research/store";
 import { createPost, countScheduled } from "@/app/lib/note/publishing/buffer";
+import { prepareXDraftForPublishing } from "@/app/lib/note/safetyRepair";
 import { loadBrand } from "@/app/lib/note/store";
 import {
   adoptLocalAiReview,
@@ -102,7 +103,8 @@ export async function POST(req: Request): Promise<Response> {
   const threadTs = payload.container?.thread_ts ?? payload.message?.thread_ts;
 
   // 同じボタンの二度押しで二重に走らせない
-  if (!(await claimOnce(`slack:${actionId}:${value}:${user}`))) {
+  const preparesBeforeClaim = actionId === ACTIONS.bufferQueue || actionId === ACTIONS.bufferNow;
+  if (!preparesBeforeClaim && !(await claimOnce(`slack:${actionId}:${value}:${user}`))) {
     return ok("この操作は既に受け付けています。");
   }
 
@@ -436,12 +438,16 @@ async function handleBufferQueue(draftId: string, user: string): Promise<Respons
   const drafts = await loadSocialDrafts();
   const draft = drafts.find((d) => d.id === draftId);
   if (!draft) return ok("その下書きが見つかりませんでした。");
-  if (draft.failureReason) return ok("エラーのある下書きは送信できません。");
 
   const maxScheduled = 20; // 無料プランの枠（環境変数化も検討）
   const [brandFile, experiences] = await Promise.all([loadBrand(), loadExperiences()]);
+  const prepared = await prepareXDraftForPublishing({ draft, brand: brandFile.brand, experiences });
+  if (!prepared.safe) return ok(`投稿をキューに追加できませんでした: ${prepared.reasons.join(" / ")}`);
+  if (!(await claimOnce(`slack:${ACTIONS.bufferQueue}:${draftId}:${user}`))) {
+    return ok("この操作は既に受け付けています。");
+  }
   const result = await createPost({
-    draft,
+    draft: prepared.draft,
     safetyContext: { brand: brandFile.brand, experiences },
     mode: "addToQueue",
     maxScheduled,
@@ -455,12 +461,12 @@ async function handleBufferQueue(draftId: string, user: string): Promise<Respons
   await saveSocialDrafts(
     drafts.map((d) =>
       d.id === draftId
-        ? { ...d, status: "queued" as const, updatedAt: new Date().toISOString() }
+        ? { ...d, text: result.data.draft.text, status: "queued" as const, updatedAt: new Date().toISOString() }
         : d
     )
   );
 
-  return ok(`✅ Bufferのキューに追加しました（投稿ID: ${result.data.id}）`);
+  return ok(`${prepared.repaired || result.data.repaired ? "✅ 未確認の体験表現を安全な表現へ修正し、" : "✅ "}Bufferのキューに追加しました（投稿ID: ${result.data.id}）`);
 }
 
 /** X投稿を Buffer の下書きに保存（人間が確認後に投稿） */
@@ -468,11 +474,15 @@ async function handleBufferNow(draftId: string, user: string): Promise<Response>
   const drafts = await loadSocialDrafts();
   const draft = drafts.find((d) => d.id === draftId);
   if (!draft) return ok("その下書きが見つかりませんでした。");
-  if (draft.failureReason) return ok("エラーのある下書きは送信できません。");
 
   const [brandFile, experiences] = await Promise.all([loadBrand(), loadExperiences()]);
+  const prepared = await prepareXDraftForPublishing({ draft, brand: brandFile.brand, experiences });
+  if (!prepared.safe) return ok(`Buffer下書きに保存できませんでした: ${prepared.reasons.join(" / ")}`);
+  if (!(await claimOnce(`slack:${ACTIONS.bufferNow}:${draftId}:${user}`))) {
+    return ok("この操作は既に受け付けています。");
+  }
   const result = await createPost({
-    draft,
+    draft: prepared.draft,
     safetyContext: { brand: brandFile.brand, experiences },
     mode: "saveToDraft",
   });
@@ -485,7 +495,7 @@ async function handleBufferNow(draftId: string, user: string): Promise<Response>
   await saveSocialDrafts(
     drafts.map((d) =>
       d.id === draftId
-        ? { ...d, status: "scheduled" as const, updatedAt: new Date().toISOString() }
+        ? { ...d, text: result.data.draft.text, status: "scheduled" as const, updatedAt: new Date().toISOString() }
         : d
     )
   );

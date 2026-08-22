@@ -6,7 +6,7 @@
  */
 
 import type { Brand } from "../types";
-import { runXSafetyGate } from "../operations";
+import { prepareXDraftForPublishing } from "../safetyRepair";
 import type { ExperienceEntry, SocialDraft } from "../research/types";
 
 const BUFFER_ENDPOINT = "https://api.buffer.com";
@@ -208,21 +208,33 @@ export type CreatePostInput = {
   scheduledAt?: string;
   /** 予約枠の上限。超える場合は投稿せずエラーを返す */
   maxScheduled?: number;
+  /** テスト・限定実行用。通常は共通AI Safety Repairを使う。 */
+  repair?: (text: string) => Promise<string>;
 };
 
-export type CreatedPost = { id: string; status?: string; dueAt?: string };
+export type CreatedPost = {
+  id: string;
+  status?: string;
+  dueAt?: string;
+  draft: SocialDraft;
+  repaired: boolean;
+};
 
 export async function createPost(
   input: CreatePostInput
 ): Promise<BufferResult<CreatedPost>> {
   // Bufferへの全X送信経路が必ず通る最終境界。古いfailureReasonの有無にかかわらず再評価する。
-  const gate = runXSafetyGate({ draft: input.draft, ...input.safetyContext });
-  if (!gate.safe) {
+  const prepared = await prepareXDraftForPublishing({
+    draft: input.draft,
+    ...input.safetyContext,
+    repair: input.repair,
+  });
+  if (!prepared.safe) {
     return {
       ok: false,
       error: {
         kind: "validation",
-        message: gate.reasons.join(" / "),
+        message: prepared.reasons.join(" / "),
         hint: "下書きは保持しています",
       },
     };
@@ -265,7 +277,7 @@ export async function createPost(
     {
       input: {
         channelId: cfg.channel,
-        text: input.draft.text,
+        text: prepared.draft.text,
         schedulingType: "automatic",
         mode: input.mode === "saveToDraft" ? "addToQueue" : input.mode,
         saveToDraft: input.mode === "saveToDraft",
@@ -288,7 +300,16 @@ export async function createPost(
   if (!post?.id) {
     return { ok: false, error: { kind: "mutation", message: "Bufferが投稿IDを返しませんでした" } };
   }
-  return { ok: true, data: { id: post.id, status: post.status, dueAt: post.dueAt } };
+  return {
+    ok: true,
+    data: {
+      id: post.id,
+      status: post.status,
+      dueAt: post.dueAt,
+      draft: prepared.draft,
+      repaired: prepared.repaired,
+    },
+  };
 }
 
 export async function deletePost(postId: string): Promise<BufferResult<boolean>> {
