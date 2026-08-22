@@ -28,6 +28,11 @@ export function isKnowledgeStatus(value: string): value is KnowledgeStatus {
   return (KNOWLEDGE_STATUSES as readonly string[]).includes(value);
 }
 
+/** AI整理済みで、Humanが昇格・統合・保留・破棄をまだ判断していない状態。 */
+export function isHumanReviewPending(status: KnowledgeStatus): boolean {
+  return status === "candidate";
+}
+
 /** 所有者。Human Managed の既存ノートを AI が自動編集しないための機械判定に使う（ADR-F）。 */
 export type ManagedBy = "ai" | "human";
 

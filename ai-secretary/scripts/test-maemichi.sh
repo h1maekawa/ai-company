@@ -14,6 +14,10 @@ npx tsc \
   app/lib/note/research/similarity.ts \
   app/lib/note/research/types.ts \
   app/lib/note/operations.ts \
+  app/lib/knowledge/indexRecord.ts \
+  app/lib/knowledge/types.ts \
+  app/lib/knowledge/walk.ts \
+  app/lib/system/connections.ts \
   app/lib/note/growthLoop.ts \
   app/lib/note/safetyRepair.ts \
   app/lib/note/publishing/buffer.ts \

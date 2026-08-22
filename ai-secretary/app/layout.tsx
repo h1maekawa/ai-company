@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { SecretaryHeader } from "@/components/SecretaryHeader";
+import { AppShell } from "@/components/app-shell/AppShell";
 
 export const metadata: Metadata = {
   title: "AI秘書",
@@ -33,7 +34,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="ja">
       <body>
         <SecretaryHeader />
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
