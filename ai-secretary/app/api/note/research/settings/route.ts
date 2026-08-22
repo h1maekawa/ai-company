@@ -32,6 +32,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
         ...(body.winningTopicPolicy ?? {}),
       },
       noteTags: Array.isArray(body.noteTags) ? body.noteTags : current.noteTags,
+      growthStrategy: current.growthStrategy,
     });
     return NextResponse.json(saved);
   } catch (error) {

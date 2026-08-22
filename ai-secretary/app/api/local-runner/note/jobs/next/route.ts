@@ -18,12 +18,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const [queue, settings] = await Promise.all([loadNoteQueue(), loadResearchSettings()]);
 
-    if (!settings.flags.publishingEnabled) {
+    // metrics-syncはread-onlyなので公開停止中・未承認でも取得可能。公開操作には既存承認を必須とする。
+    const job = queue.jobs.find((j) =>
+      j.status === "pending" && (j.kind === "note-metrics-sync" || Boolean(j.approvedAt))
+    );
+    if (!job) return NextResponse.json({ job: null });
+
+    if (job.kind !== "note-metrics-sync" && !settings.flags.publishingEnabled) {
       return NextResponse.json({ job: null, reason: "投稿が停止中です" });
     }
-
-    const job = queue.jobs.find((j) => j.status === "pending" && j.approvedAt);
-    if (!job) return NextResponse.json({ job: null });
 
     // 公開ジョブはフラグが揃っていなければ渡さない
     if (job.kind === "note-publish" && (!settings.flags.noteAutoPublish || settings.flags.noteDraftOnly)) {
@@ -48,6 +51,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       article,
       // ランナー側の安全装置
       constraints: {
+        readOnly: job.kind === "note-metrics-sync",
         draftOnly: settings.flags.noteDraftOnly || job.kind === "note-draft",
         requireConfirmForPaid: settings.flags.paidNoteRequireConfirm,
       },

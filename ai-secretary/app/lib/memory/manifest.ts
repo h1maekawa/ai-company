@@ -40,6 +40,7 @@ export const MEMORY_MANIFEST = {
       "memory/personal/note/learnings.md",
       "memory/personal/note/content-recommendations.md",
       "memory/personal/note/content-plans.md",
+      "memory/personal/note/daily-growth-reviews.md",
     ],
     fund: [
       "memory/personal/fund/watchlist.md",
@@ -56,4 +57,3 @@ export const MEMORY_MANIFEST = {
     chatLogs: "memory/chat-log/",
   },
 } as const;
-

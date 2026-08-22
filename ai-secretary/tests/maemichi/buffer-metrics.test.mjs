@@ -88,10 +88,11 @@ test("Metrics欠損・unexpected shape・API errorは保存せず再試行可能
   assert.deepEqual(failed, { ok: false, retryable: true, error: "temporary" });
 });
 
-test("Performance Sync cronはVercel Hobby対応のdaily schedule", () => {
+test("Performance SyncはNightly Reviewへ統合されVercel Hobby対応のdaily schedule", () => {
   const config = JSON.parse(fs.readFileSync(path.join(process.cwd(), "vercel.json"), "utf8"));
-  const cron = config.crons.find((item) => item.path === "/api/cron/x-performance-sync");
-  assert.deepEqual(cron, { path: "/api/cron/x-performance-sync", schedule: "30 0 * * *" });
+  const cron = config.crons.find((item) => item.path === "/api/cron/content-nightly-review");
+  assert.deepEqual(cron, { path: "/api/cron/content-nightly-review", schedule: "30 14 * * *" });
+  assert.equal(config.crons.some((item) => item.path === "/api/cron/x-performance-sync"), false);
 });
 
 test("Daily候補は前日以前で、同一metricsUpdatedAtは重複保存しない", () => {
