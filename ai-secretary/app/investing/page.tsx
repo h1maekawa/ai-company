@@ -58,7 +58,7 @@ export default function InvestingDashboard() {
       )}
 
       {/* ─── 上部KPI 4枚 ───────────────────────────── */}
-      <section className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {loading ? (
           [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[104px] rounded-2xl" />)
         ) : (
@@ -95,18 +95,18 @@ export default function InvestingDashboard() {
       </section>
 
       {/* ─── 中央: 資産推移 / 円グラフ / AI提案 ─────── */}
-      <section className="mb-5 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="min-w-0">
+      <section className="mb-4 grid grid-cols-1 items-stretch gap-3 xl:grid-cols-12">
+        <div className="min-w-0 xl:col-span-6 [&>*]:h-full">
           {loading ? <Skeleton className="h-[340px] rounded-2xl" /> : <AssetChart points={history} />}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 xl:col-span-3 [&>*]:h-full">
           {loading || !summary ? (
             <Skeleton className="h-[340px] rounded-2xl" />
           ) : (
             <PortfolioDonut summary={summary} />
           )}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 xl:col-span-3 [&>*]:h-full">
           <AiSuggestCard
             comment={analysis.comment}
             health={analysis.health}
@@ -116,8 +116,8 @@ export default function InvestingDashboard() {
       </section>
 
       {/* ─── 家計簿から取り込んだ「今月使えるお金」 ───── */}
-      <section className="mb-5 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <div className="min-w-0">
+      <section className="mb-4 grid grid-cols-1 items-stretch gap-3 xl:grid-cols-12">
+        <div className="min-w-0 xl:col-span-4 [&>*]:h-full">
           <CapacityCard
             capacity={capacity.capacity}
             configured={capacity.configured}
@@ -125,7 +125,7 @@ export default function InvestingDashboard() {
             loading={capacity.loading}
           />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 xl:col-span-8 [&>*]:h-full">
           {loading ? (
             <Skeleton className="h-[320px] rounded-2xl" />
           ) : (
@@ -135,7 +135,7 @@ export default function InvestingDashboard() {
       </section>
 
       {/* ─── 下部: ニュース ────────────────── */}
-      <section className="grid grid-cols-1 gap-4">
+      <section className="grid grid-cols-1 gap-3">
         <div className="min-w-0">
           <NewsPanel
             items={news.items}
