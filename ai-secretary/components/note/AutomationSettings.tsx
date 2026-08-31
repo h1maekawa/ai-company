@@ -9,6 +9,7 @@ import { Card, CardHeader, Skeleton } from "@/components/ui/primitives";
 type AutomationStatus = {
   mode: SocialOperationMode;
   buffer: { configured: boolean };
+  serpApi: { configured: boolean };
   xResearch: { enabled: boolean; mode: string };
   investing: { portfolioAvailable: boolean; newsAvailable: boolean };
   performanceSync: { lastRunAt: string | null };
@@ -113,6 +114,17 @@ export function AutomationSettings() {
               <option value="free">検索API（SerpAPI）</option>
               <option value="official-api">X公式API（有料の場合あり）</option>
             </select>
+            {x.mode === "free" && status && (
+              <p
+                className={`mt-2 text-[11px] leading-relaxed ${
+                  status.serpApi.configured ? "text-gain" : "text-loss"
+                }`}
+              >
+                SerpAPI: {status.serpApi.configured
+                  ? "✅ 接続済み"
+                  : "⚠️ VercelのSERPAPI_ENABLED / SERPAPI_KEYを確認してください"}
+              </p>
+            )}
           </Field>
           <NumberField
             label="月額API予算（USD）"
@@ -201,6 +213,7 @@ export function AutomationSettings() {
         {status && (
           <div className="mt-3 grid gap-2 rounded-lg border border-hairline bg-white/[0.02] p-3 text-[11px] text-sub sm:grid-cols-2">
             <span>Buffer接続: {status.buffer.configured ? "✅ 設定済み" : "⚠️ 未設定"}</span>
+            <span>SerpAPI: {status.serpApi.configured ? "✅ 設定済み" : "⚠️ 未設定"}</span>
             <span>X Research: {status.xResearch.enabled ? `✅ ON（${status.xResearch.mode}）` : "OFF"}</span>
             <span>投資Portfolio: {status.investing.portfolioAvailable ? "✅ 取込済み" : "⚠️ 未取込"}</span>
             <span>投資News: {status.investing.newsAvailable ? "✅ 取得可能" : "⚠️ 未取得"}</span>
