@@ -1,12 +1,41 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { useResearchSettings } from "@/app/note/useResearch";
+import type { SocialOperationMode } from "@/app/lib/note/research/types";
 import { Card, CardHeader, Skeleton } from "@/components/ui/primitives";
+
+type AutomationStatus = {
+  mode: SocialOperationMode;
+  buffer: { configured: boolean };
+  xResearch: { enabled: boolean; mode: string };
+  investing: { portfolioAvailable: boolean; newsAvailable: boolean };
+  performanceSync: { lastRunAt: string | null };
+};
+
+/** 接続状態を表示専用で取得する（設定は変更しない） */
+function useAutomationStatus() {
+  const [status, setStatus] = useState<AutomationStatus | null>(null);
+  useEffect(() => {
+    fetch("/api/note/automation/status")
+      .then((r) => r.json())
+      .then((d) => setStatus(d))
+      .catch(() => undefined);
+  }, []);
+  return status;
+}
+
+const MODE_LABEL: Record<SocialOperationMode, string> = {
+  autopilot: "AUTOPILOT（全自動投稿）",
+  review: "REVIEW（下書き保存＋人間承認後に投稿）",
+  draft: "DRAFT（下書き保存のみ・投稿しない）",
+};
 
 /** リサーチと自動投稿の設定を一か所で管理する画面 */
 export function AutomationSettings() {
   const settings = useResearchSettings();
+  const status = useAutomationStatus();
 
   if (settings.loading || !settings.x || !settings.flags) {
     return <Skeleton className="h-80 rounded-xl" />;
@@ -149,24 +178,57 @@ export function AutomationSettings() {
 
       <Card>
         <CardHeader
+          title="運用モード"
+          hint="AUTOPILOTは全自動、REVIEWは下書き保存後に人間が承認、DRAFTは下書き保存のみです"
+          action={<ShieldCheck className="h-4 w-4 text-gain" />}
+        />
+        <Field label="現在のモード" hint="切り替えると即座に反映されます（次回の自動実行から適用）">
+          <select
+            value={flags.socialOperationMode}
+            disabled={settings.saving}
+            onChange={(event) =>
+              settings.save({
+                flags: { socialOperationMode: event.target.value as SocialOperationMode },
+              })
+            }
+            className="w-full rounded-lg border border-hairline bg-ink-base px-3 py-2 text-sm text-white outline-none"
+          >
+            <option value="draft">{MODE_LABEL.draft}</option>
+            <option value="review">{MODE_LABEL.review}</option>
+            <option value="autopilot">{MODE_LABEL.autopilot}</option>
+          </select>
+        </Field>
+        {status && (
+          <div className="mt-3 grid gap-2 rounded-lg border border-hairline bg-white/[0.02] p-3 text-[11px] text-sub sm:grid-cols-2">
+            <span>Buffer接続: {status.buffer.configured ? "✅ 設定済み" : "⚠️ 未設定"}</span>
+            <span>X Research: {status.xResearch.enabled ? `✅ ON（${status.xResearch.mode}）` : "OFF"}</span>
+            <span>投資Portfolio: {status.investing.portfolioAvailable ? "✅ 取込済み" : "⚠️ 未取込"}</span>
+            <span>投資News: {status.investing.newsAvailable ? "✅ 取得可能" : "⚠️ 未取得"}</span>
+            <span>
+              Performance Sync:{" "}
+              {status.performanceSync.lastRunAt
+                ? `✅ 最終実行 ${new Date(status.performanceSync.lastRunAt).toLocaleString("ja-JP")}`
+                : "未実行"}
+            </span>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
           title="公開の安全設定"
-          hint="通常はすべてOFFのままで、下書きを自分で確認する運用がおすすめです"
+          hint="運用モードがdraft/reviewの間は、下の設定に関係なくBufferへは送りません"
           action={<ShieldCheck className="h-4 w-4 text-gain" />}
         />
         <div className="grid gap-3 sm:grid-cols-2">
           <Toggle
-            label="投稿全体を有効にする"
-            hint="これがOFFなら、ほかの設定に関係なく投稿しません"
-            checked={flags.publishingEnabled}
+            label="投資→X連携"
+            hint="ONだと信頼枠（12:15）でPortfolio/Newsから投資投稿を試みます。材料が無い日は通常投稿にfallbackします"
+            checked={flags.investmentBridgeEnabled}
             disabled={settings.saving}
-            onChange={(publishingEnabled) => settings.save({ flags: { publishingEnabled } })}
-          />
-          <Toggle
-            label="X自動投稿（Buffer予約）"
-            hint="ONにすると安全判定済みの投稿をBufferへ送ります"
-            checked={flags.xAutoPublish}
-            disabled={settings.saving}
-            onChange={(xAutoPublish) => settings.save({ flags: { xAutoPublish } })}
+            onChange={(investmentBridgeEnabled) =>
+              settings.save({ flags: { investmentBridgeEnabled } })
+            }
           />
           <Toggle
             label="note自動公開"

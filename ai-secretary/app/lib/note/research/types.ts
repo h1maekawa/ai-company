@@ -430,6 +430,14 @@ export type SocialDraft = {
   metricsSyncError?: string;
   failureReason?: string;
 
+  /**
+   * 本人編集Diff学習（要件P0.3）。REVIEWモードで本人がtextを修正した場合のみ設定する。
+   * originalTextはAI生成直後の本文を初回編集時に固定し、以後は上書きしない。
+   */
+  originalText?: string;
+  editedByUser?: boolean;
+  editedAt?: string;
+
   /* ─── Content Business OS 拡張（任意） ─── */
   draftType?: XDraftType;
   materialIds?: string[];
@@ -603,6 +611,11 @@ export type ContentPerformance = {
   length?: XPostLength;
   mediaSuggestion?: MediaSuggestion;
   hasQuestion?: boolean;
+  /** Style Signal（要件P0.2）。決定的分類のみ。AIには判定させない */
+  openingBucket?: "question" | "number-lead" | "short-hook" | "statement";
+  endingBucket?: "question" | "open-ended" | "resolved";
+  lineBreakBucket?: "dense" | "spaced" | "single";
+  sentenceLengthBucket?: "short" | "medium" | "long";
   hasExternalLink?: boolean;
   linkClicks?: number;
   profileVisits?: number;
@@ -759,6 +772,14 @@ export type FeatureFlags = {
   maxBufferScheduled: number;
   /** 同じアフィリエイトを連投しない最小間隔（投稿数） */
   affiliateCooldownPosts: number;
+  /**
+   * 完全自律SNS事業部の運用モード。publishingEnabled/xAutoPublishの組み合わせを
+   * 人間が読みやすい一段の切り替えにしたもの。保存時は常にこの値からbool 2つを再計算する
+   * （bool 2つは既存コードとの後方互換のために残し、値はモードに追従させる）。
+   */
+  socialOperationMode: SocialOperationMode;
+  /** 投資部門（Portfolio/News）を使ったX投稿の自動生成を試みるか。初期OFF */
+  investmentBridgeEnabled: boolean;
 };
 
 export function defaultFeatureFlags(): FeatureFlags {
@@ -779,7 +800,32 @@ export function defaultFeatureFlags(): FeatureFlags {
     maxXPostsPerDay: 3,
     maxBufferScheduled: 7,
     affiliateCooldownPosts: 5,
+    socialOperationMode: "draft",
+    investmentBridgeEnabled: false,
   };
+}
+
+/* ─── 運用モード（AUTOPILOT / REVIEW / DRAFT） ───────────── */
+
+export type SocialOperationMode = "autopilot" | "review" | "draft";
+
+/** 旧データ（socialOperationMode未保存）から、既存bool 2つでモードを復元する */
+export function deriveSocialOperationMode(flags: {
+  publishingEnabled: boolean;
+  xAutoPublish: boolean;
+}): SocialOperationMode {
+  if (flags.publishingEnabled && flags.xAutoPublish) return "autopilot";
+  if (flags.publishingEnabled && !flags.xAutoPublish) return "review";
+  return "draft";
+}
+
+/** モードから既存bool 2つを再計算する。モードが正、bool側は常にこの結果で上書きする */
+export function socialOperationModeBooleans(
+  mode: SocialOperationMode
+): Pick<FeatureFlags, "publishingEnabled" | "xAutoPublish"> {
+  if (mode === "autopilot") return { publishingEnabled: true, xAutoPublish: true };
+  if (mode === "review") return { publishingEnabled: true, xAutoPublish: false };
+  return { publishingEnabled: false, xAutoPublish: false };
 }
 
 /* ─── 高リスク題材の判定 ───────────────────────── */

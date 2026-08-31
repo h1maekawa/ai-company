@@ -11,6 +11,7 @@ export function PublishQueue() {
   const state = usePublishQueue();
   const settings = useResearchSettings();
   const [scheduleFor, setScheduleFor] = useState<Record<string, string>>({});
+  const [editText, setEditText] = useState<Record<string, string>>({});
 
   const pending = state.socialDrafts.filter(
     (d) => d.status !== "discarded" && d.status !== "published"
@@ -82,11 +83,58 @@ export function PublishQueue() {
         ) : (
           <div className="space-y-3">
             {pending.map((d) => {
+              const currentText = editText[d.id] ?? d.text;
+              const isDirty = currentText !== d.text;
               const weightedLength = xWeightedLength(d.text);
               const isOverLength = weightedLength > X_MAX_WEIGHTED_LENGTH;
+              const editWeightedLength = xWeightedLength(currentText);
+              const editIsOverLength = editWeightedLength > X_MAX_WEIGHTED_LENGTH;
               return (
               <div key={d.id} className={`rounded-xl border bg-white/[0.02] p-3 ${isOverLength ? "border-loss/60" : "border-hairline"}`}>
-                <pre className="whitespace-pre-wrap text-xs leading-6 text-slate-300">{d.text}</pre>
+                <textarea
+                  value={currentText}
+                  onChange={(e) => setEditText((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                  rows={4}
+                  className="w-full resize-y rounded-lg border border-hairline bg-transparent px-2 py-1.5 text-xs leading-6 text-slate-300 outline-none focus:border-brand/50"
+                />
+                {isDirty && (
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className={`text-[10px] ${editIsOverLength ? "font-semibold text-loss" : "text-sub"}`}>
+                      {editWeightedLength} / {X_MAX_WEIGHTED_LENGTH}
+                      {editIsOverLength ? " 文字数超過" : ""}
+                    </span>
+                    <button
+                      onClick={() =>
+                        state.updateDraftText(d.id, currentText).then(() =>
+                          setEditText((prev) => {
+                            const next = { ...prev };
+                            delete next[d.id];
+                            return next;
+                          })
+                        )
+                      }
+                      disabled={state.busy || editIsOverLength}
+                      className="rounded-lg bg-brand px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-brand/85 disabled:opacity-40"
+                    >
+                      編集を保存（Style学習に使われます）
+                    </button>
+                    <button
+                      onClick={() =>
+                        setEditText((prev) => {
+                          const next = { ...prev };
+                          delete next[d.id];
+                          return next;
+                        })
+                      }
+                      className="text-[11px] text-sub hover:underline"
+                    >
+                      元に戻す
+                    </button>
+                  </div>
+                )}
+                {d.editedByUser && (
+                  <p className="mt-1 text-[10px] text-brand">✓ 本人編集済み（AI OriginalとUser Finalを保存しています）</p>
+                )}
 
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-sub">
                   <span className="rounded bg-white/[0.06] px-1.5 py-0.5">{d.status}</span>
@@ -123,14 +171,14 @@ export function PublishQueue() {
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   <button
                     onClick={() => state.sendToBuffer(d.id, "saveToDraft")}
-                    disabled={state.busy || Boolean(d.failureReason) || isOverLength}
+                    disabled={state.busy || Boolean(d.failureReason) || isOverLength || isDirty}
                     className="rounded-lg border border-hairline px-2.5 py-1 text-[11px] text-slate-200 hover:bg-white/5 disabled:opacity-40"
                   >
                     Bufferへ下書き
                   </button>
                   <button
                     onClick={() => state.sendToBuffer(d.id, "addToQueue")}
-                    disabled={state.busy || Boolean(d.failureReason) || isOverLength}
+                    disabled={state.busy || Boolean(d.failureReason) || isOverLength || isDirty}
                     className="rounded-lg bg-brand px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-brand/85 disabled:opacity-40"
                   >
                     次の枠へ予約
@@ -151,7 +199,7 @@ export function PublishQueue() {
                         scheduleFor[d.id] ? new Date(scheduleFor[d.id]).toISOString() : undefined
                       )
                     }
-                    disabled={state.busy || !scheduleFor[d.id] || Boolean(d.failureReason) || isOverLength}
+                    disabled={state.busy || !scheduleFor[d.id] || Boolean(d.failureReason) || isOverLength || isDirty}
                     className="rounded-lg border border-hairline px-2.5 py-1 text-[11px] text-slate-200 hover:bg-white/5 disabled:opacity-40"
                   >
                     この日時で予約

@@ -1,5 +1,6 @@
 import type { ContentPerformance, SocialDraft } from "../research/types";
 import { xWeightedLength } from "../operations";
+import { classifyStyle } from "../styleSignals";
 import { getPost, type BufferPostMetric, type BufferPostNode } from "./buffer";
 import type { PerformanceProvider, PerformanceProviderResult } from "./performanceProvider";
 
@@ -60,6 +61,7 @@ export function normalizeBufferMetrics(
   const replies = values.get("comments");
   const reposts = values.get("reposts");
   const linkClicks = values.get("clicks");
+  const style = classifyStyle(draft.text);
   return {
     contentId: draft.id,
     trendClusterId: draft.trendClusterId,
@@ -80,6 +82,11 @@ export function normalizeBufferMetrics(
       : undefined,
     hasCta: draft.urls.length > 0 || draft.purpose === "note-bridge" || draft.purpose === "affiliate",
     destination: draft.purpose === "note-bridge" ? "free-note" : draft.purpose === "paid-note" ? "paid-note" : draft.purpose === "affiliate" ? "affiliate-direct" : "none",
+    hasQuestion: style.hasQuestion,
+    openingBucket: style.openingBucket,
+    endingBucket: style.endingBucket,
+    lineBreakBucket: style.lineBreakBucket,
+    sentenceLengthBucket: style.sentenceLengthBucket,
     measuredAt: measuredAt.toISOString(),
     metricAvailability: {
       impressions: availability(impressions),

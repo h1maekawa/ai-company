@@ -34,6 +34,8 @@ import {
   defaultXResearchSettings,
   ContentGrowthStrategy,
   defaultContentGrowthStrategy,
+  deriveSocialOperationMode,
+  socialOperationModeBooleans,
 } from "./types";
 import type { DailyGrowthReview } from "../growthLoop";
 
@@ -189,9 +191,17 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
     x.currentEstimatedSpendUsd = 0;
   }
 
+  // 旧データ（socialOperationMode未保存）は既存bool 2つからモードを復元する。
+  // 保存済みなら常にモードを正としてbool 2つを再計算する（手編集などでのズレを防ぐ）。
+  const hadMode = typeof (data?.flags as Partial<FeatureFlags> | undefined)?.socialOperationMode === "string";
   const flags = { ...defaultFeatureFlags(), ...(data?.flags ?? {}) };
   flags.xBrowserAutomationEnabled = false;
   if (process.env.X_API_ENABLED !== "true") flags.xPaidApiEnabled = false;
+  if (hadMode) {
+    Object.assign(flags, socialOperationModeBooleans(flags.socialOperationMode));
+  } else {
+    flags.socialOperationMode = deriveSocialOperationMode(flags);
+  }
   return {
     x,
     purposeMix: { ...defaultPurposeMix(), ...(data?.purposeMix ?? {}) },
@@ -217,10 +227,17 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
 }
 
 export async function saveResearchSettings(
-  file: ResearchSettingsFile
+  file: ResearchSettingsFile,
+  options?: { modeExplicit?: boolean }
 ): Promise<ResearchSettingsFile> {
+  // modeExplicit=true（新UIがsocialOperationModeを直接指定した場合）はモードが正でbool 2つを上書きする。
+  // それ以外（PublishQueue等の旧UIがbool 2つを直接操作した場合）はbool側を正としてモードを再導出する
+  // （後方互換: 旧UIのトグルがモード側に静かに上書きされないようにする）。
   const flags = {
     ...file.flags,
+    ...(options?.modeExplicit
+      ? socialOperationModeBooleans(file.flags.socialOperationMode)
+      : { socialOperationMode: deriveSocialOperationMode(file.flags) }),
     xBrowserAutomationEnabled: false as const,
     xPaidApiEnabled: process.env.X_API_ENABLED === "true" && file.flags.xPaidApiEnabled,
   };
@@ -244,6 +261,8 @@ export async function saveResearchSettings(
     `- 収益（アフィリエイト・有料note）: ${purposeMix.monetize}%`,
     "",
     "## 投稿フラグ（安全装置）",
+    `- 運用モード: **${flags.socialOperationMode}**（autopilot=自動投稿 / review=下書き保存＋人間承認 / draft=下書きのみ）`,
+    `- 投資→X連携: ${flags.investmentBridgeEnabled ? "有効" : "OFF"}`,
     `- 投稿全体: ${flags.publishingEnabled ? "有効" : "**停止中**"}`,
     `- X自動投稿: ${flags.xAutoPublish ? "有効" : "**OFF**"}`,
     `- note自動公開: ${flags.noteAutoPublish ? "有効" : "**OFF**"}`,

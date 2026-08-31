@@ -386,6 +386,25 @@ export function usePublishQueue() {
     }
   }
 
+  async function updateDraftText(draftId: string, text: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/note/publishing/queue", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftId, text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setSocialDrafts(data.socialDrafts ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "下書きの更新に失敗しました");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function updateArticle(articleId: string, patch: Partial<NoteArticleDraft>) {
     setBusy(true);
     setError("");
@@ -438,6 +457,7 @@ export function usePublishQueue() {
     error,
     notice,
     sendToBuffer,
+    updateDraftText,
     updateArticle,
     queueNoteJob,
     reload,

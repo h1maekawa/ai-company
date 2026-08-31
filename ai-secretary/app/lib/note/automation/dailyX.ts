@@ -2,6 +2,8 @@ import { accountForGenre, DEFAULT_GENRES } from "@/app/lib/note/types";
 import { loadBrand, loadIdeas } from "@/app/lib/note/store";
 import { usableExperiences } from "@/app/lib/note/research/experience";
 import { generateXPosts } from "@/app/lib/note/research/generate";
+import { tryGenerateInvestmentDraft } from "@/app/lib/note/investing/xBridge";
+import { loadStyleProfile } from "@/app/lib/note/styleProfile";
 import {
   appendHistory,
   loadClusters,
@@ -34,6 +36,8 @@ export type DailyXResult = {
   scheduledDraftId?: string;
   scheduledDraftIds?: string[];
   safetyBlocked?: number;
+  /** Human Escalation（要件P1.6）: 異常検知でSlackへ送った場合のみtrue */
+  escalated?: boolean;
   slackDelivered?: boolean;
   slackError?: string;
 };
@@ -47,7 +51,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     };
   }
 
-  const [settings, clusters, items, experiences, brandFile, ideaFile, existingDrafts] =
+  const [settings, clusters, items, experiences, brandFile, ideaFile, existingDrafts, styleProfile] =
     await Promise.all([
       loadResearchSettings(),
       loadClusters(),
@@ -56,6 +60,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       loadBrand(),
       loadIdeas(),
       loadSocialDrafts(),
+      loadStyleProfile(),
     ]);
 
   const candidates = clusters.filter((candidate) => candidate.status === "candidate" && !candidate.blocked);
@@ -97,6 +102,27 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
   const generated: SocialDraft[] = [];
   const warnings: string[] = [];
   for (const slot of DEFAULT_X_SCHEDULE) {
+    // 投資→X連携（要件4・13・16）: 信頼枠でだけ試みる。材料が無い/Fact Gate却下なら通常生成へfallback
+    if (slot.purpose === "trust" && settings.flags.investmentBridgeEnabled) {
+      const investmentDraft = await tryGenerateInvestmentDraft({
+        brand: brandFile.brand,
+        genre,
+        account,
+        purpose: slot.purpose,
+        pastPosts: [...existingDrafts, ...generated].map((draft) => ({
+          label: `過去投稿(${draft.id})`,
+          text: draft.text,
+        })),
+        styleProfile,
+      }).catch((error) => {
+        console.error("[daily-x] 投資→X連携に失敗。通常投稿へfallbackします:", error);
+        return null;
+      });
+      if (investmentDraft) {
+        generated.push(investmentDraft);
+        continue;
+      }
+    }
     const result = await generateXPosts({
       cluster,
       items: items.filter((item) => cluster.researchItemIds.includes(item.id)),
@@ -110,6 +136,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
         text: draft.text,
       })),
       preferredPatterns: settings.growthStrategy.patternPriority,
+      styleProfile,
     });
     const candidate = result.drafts.find((draft) => !draft.failureReason);
     if (candidate) generated.push(candidate);
@@ -207,23 +234,43 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     scheduleMessages.push("自動投稿フラグがOFFのため下書き保存で停止しました。");
   }
 
-  const slack = await postToSlack(
-    [
-      `本日のX投稿案を${prepared.length}件作成しました。`,
-      scheduleMessages.join(" / "),
-      warnings.length > 0 ? `注意: ${[...new Set(warnings)].join(" / ")}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n"),
-    prepared.flatMap((draft) => draftBlocks(draft))
+  // Human Escalation（要件P1.6）: 通常成功時は毎回通知しない。異常時のみSlackへ送る。
+  // 通常の実行結果はWeekly CEO Reportへ集約する。
+  const safetyBlocked = prepared.filter((draft) => Boolean(draft.failureReason)).length;
+  const bufferFailureCount = scheduleMessages.filter((m) => m.startsWith("予約失敗")).length;
+  const bufferAuthOrConfigError = scheduleMessages.some(
+    (m) => m.includes("未設定です") || m.includes("認証")
   );
+  const secretOrPersonalDataDetected = prepared.some(
+    (draft) => draft.failureReason?.includes("機密情報") || draft.failureReason?.includes("個人情報")
+  );
+  const escalate =
+    safetyBlocked > 0 || bufferFailureCount >= 2 || bufferAuthOrConfigError || secretOrPersonalDataDetected;
+
+  let slack: { ok: boolean; error?: string } = { ok: true };
+  if (escalate) {
+    slack = await postToSlack(
+      [
+        "⚠️ SNS事業部 異常検知",
+        `本日のX投稿案を${prepared.length}件作成しました。`,
+        scheduleMessages.join(" / "),
+        warnings.length > 0 ? `注意: ${[...new Set(warnings)].join(" / ")}` : "",
+        safetyBlocked > 0 ? `Safety/Fact Gateで${safetyBlocked}件却下しました。` : "",
+        secretOrPersonalDataDetected ? "機密情報・個人情報らしき文字列を検出したため却下しました。" : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      prepared.flatMap((draft) => draftBlocks(draft))
+    );
+  }
 
   return {
     clusterId: cluster.id,
     generated: prepared.length,
     scheduledDraftId: scheduledDraftIds[0],
     scheduledDraftIds,
-    safetyBlocked: prepared.filter((draft) => Boolean(draft.failureReason)).length,
+    safetyBlocked,
+    escalated: escalate,
     slackDelivered: slack.ok,
     slackError: slack.error,
   };
