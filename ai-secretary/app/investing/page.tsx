@@ -10,8 +10,9 @@ import { HoldingsTable } from "@/components/investing/HoldingsTable";
 import { NewsPanel } from "@/components/investing/NewsPanel";
 import { AiSuggestCard } from "@/components/investing/AiSuggestCard";
 import { CapacityCard } from "@/components/investing/CapacityCard";
+import { LearningBriefCard } from "@/components/investing/LearningBriefCard";
 import { Skeleton } from "@/components/investing/ui";
-import { useAnalysis, useCapacity, useNews, usePortfolio } from "./usePortfolio";
+import { useAnalysis, useCapacity, useLearningBrief, useNews, usePortfolio } from "./usePortfolio";
 
 const SOURCE_LABEL: Record<string, string> = {
   holdings_csv: "楽天証券CSV",
@@ -24,6 +25,7 @@ export default function InvestingDashboard() {
   const analysis = useAnalysis();
   const news = useNews();
   const capacity = useCapacity();
+  const learning = useLearningBrief();
 
   const summary = data?.summary;
   const history = data?.history ?? [];
@@ -134,15 +136,18 @@ export default function InvestingDashboard() {
         </div>
       </section>
 
-      {/* ─── 下部: ニュース ────────────────── */}
-      <section className="grid grid-cols-1 gap-3">
-        <div className="min-w-0">
+      {/* ─── 下部: ニュース / 今日のLearning ────────────────── */}
+      <section className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+        <div className="min-w-0 xl:col-span-7">
           <NewsPanel
             items={news.items}
             available={news.available}
             loading={news.loading}
             limit={4}
           />
+        </div>
+        <div className="min-w-0 xl:col-span-5">
+          <LearningBriefCard brief={learning.brief} loading={learning.loading} />
         </div>
       </section>
 

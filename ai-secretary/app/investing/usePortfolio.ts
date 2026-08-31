@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AiComment, PortfolioHealth } from "@/app/lib/investing/analysis";
 import type { Capacity, CapacityFailure } from "@/app/lib/investing/capacity";
 import { NewsItem, Portfolio, ValuePoint } from "@/app/lib/investing/types";
+import type { InvestmentLearningBrief } from "@/app/lib/note/investing/learningBrief";
 
 type PortfolioResponse = Portfolio & {
   history: ValuePoint[];
@@ -60,6 +61,26 @@ export function usePortfolio() {
   useEffect(reload, [reload]);
 
   return { data, loading, error, reload };
+}
+
+/** Investment Learning Brief（AI生成のため遅い。ポートフォリオとは別に読み込む） */
+export function useLearningBrief() {
+  const [brief, setBrief] = useState<InvestmentLearningBrief | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/investing/learning")
+      .then((r) => r.json())
+      .then((json: { brief?: InvestmentLearningBrief | null; error?: string }) => {
+        if (json.error) setError(json.error);
+        setBrief(json.brief ?? null);
+      })
+      .catch(() => setError("Learning Briefの取得に失敗しました"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return { brief, loading, error };
 }
 
 /** AI分析はLLM待ちで遅いため、ポートフォリオとは別に読み込む */

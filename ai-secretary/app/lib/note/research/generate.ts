@@ -35,6 +35,7 @@ import {
   XPostLength,
 } from "./types";
 import { normalizeMediaSuggestion, normalizeXPattern, X_LENGTH_GUIDE } from "./x-format";
+import { styleProfileBlock, type StyleProfile } from "../styleProfile";
 
 /* ─── 共通の前提ブロック ───────────────────── */
 
@@ -148,6 +149,38 @@ ${authorViewpoint.trim()}
 ただし、意見に含まれる数値・出来事・利用経験を、確認済みの客観的事実や実体験へ勝手に変換しないでください。`;
 }
 
+/**
+ * 投資→X連携（要件4）の入力。事実(FACT)・AI解釈・本人意見を明示的に分離して渡す。
+ * facts / disallowedNumbers は必ずPortfolio/News SSOT由来（呼び出し側で組み立てる）。
+ */
+export type InvestmentPostSeed = {
+  facts: string[];
+  aiInterpretation: string;
+  personalOpinion?: string;
+  disallowedNumbers: string[];
+};
+
+function investmentBlock(seed: InvestmentPostSeed): string {
+  return `## 投資の材料（すべてPortfolio/News SSOT由来の事実。ここに無い数値を書いてはいけない）
+${seed.facts.map((f) => `- ${f}`).join("\n") || "（事実なし）"}
+
+## AIの解釈（断定しすぎない。本人の意見ではない）
+${seed.aiInterpretation || "（未生成）"}
+
+${
+  seed.personalOpinion
+    ? `## 本人が承認済みの今回の意見\n${seed.personalOpinion}\nこの意見だけを主張の中心にしてよい。数値・出来事を勝手に変換しない。`
+    : `## 本人の意見\n未登録です。「買うべき」「上がる」「下がる」等の投資判断・売買推奨を書かず、
+投資記録・観察・学び・確認したいポイントとして書いてください。`
+}
+
+# 投資投稿の絶対ルール
+- 「買うべき」「売るべき」「絶対上がる」「今が買い時」「今が売り時」等の売買推奨・断定を書かない
+- 評価損益を「確定利益」と書かない（含み益であることが前提）
+- 上の「投資の材料」に無い数値（総資産額・現金残高・保有数量・取得単価等）を一切書かない
+- 本人の投資意見を創作しない`;
+}
+
 function dailyBlock(seed: DailyPostSeed): string {
   return `## 今日あったこと
 ${seed.whatHappened}
@@ -166,7 +199,8 @@ ${seed.uncertainty?.trim() || "（未入力）"}
 
 export type ContentSourceContext =
   | { type: "trend"; cluster: TrendCluster; items: ResearchItem[] }
-  | { type: "daily"; seed: DailyPostSeed };
+  | { type: "daily"; seed: DailyPostSeed }
+  | { type: "investment"; seed: InvestmentPostSeed };
 
 /* ─── X投稿の生成 ───────────────────────── */
 
@@ -198,6 +232,8 @@ export type GenerateXInput = {
   sourceContext?: ContentSourceContext;
   /** Nightly Reviewが推奨した型。生成候補の範囲だけで優先し、Safety/Brandは変更しない。 */
   preferredPatterns?: string[];
+  /** 本人のStyle Profile（要件P0.1）。Brand/Safetyより必ず下位で参照する。未指定なら影響しない */
+  styleProfile?: StyleProfile;
 };
 
 export type GenerateXResult = {
@@ -228,6 +264,10 @@ ${policy!.claimRestrictions.length > 0 ? `禁止訴求: ${policy!.claimRestricti
 
   const outputType = input.outputType ?? "x-post";
   const isDaily = input.sourceContext?.type === "daily";
+  const isInvestment = input.sourceContext?.type === "investment";
+  const investmentSeed = isInvestment
+    ? (input.sourceContext as { type: "investment"; seed: InvestmentPostSeed }).seed
+    : undefined;
   const length = input.length ?? "standard";
   const formatGuide =
     outputType === "x-thread"
@@ -240,7 +280,15 @@ ${policy!.claimRestrictions.length > 0 ? `禁止訴求: ${policy!.claimRestricti
 - reflection: 出来事→考えたこと→まだ決めきれていないこと、または小さな気づき
 - conversation: 出来事や考え→自分の現在地→必要な場合だけ自然で具体的な問い
 質問や結論を毎回強制しない。試したことが中心ならdailyの代わりにtriedを使ってよい。`
-          : `次の3案を必ず1つずつ作る。
+          : isInvestment
+            ? `投資投稿として次を作る（売買推奨・断定は一切しない）。
+- reflection: 投資記録・観察・学びとして書く（結論を急がない）
+- conversation: 確認したいポイントを本人の言葉で問いかける${
+                investmentSeed?.personalOpinion
+                  ? "\n- opinion: 本人が承認済みの意見を中心にした投稿"
+                  : ""
+              }`
+            : `次の3案を必ず1つずつ作る。
 - opinion: 意見型（意外性のある結論→理由→本人の考え→余韻）
 - save: 保存型（悩み・結論→3〜7要点→初心者向け補足→まとめ）
 - conversation: 会話型（考え→本人の立場→答えやすい具体的な質問）`;
@@ -249,11 +297,19 @@ const prompt = `あなたは「${brand.identity.name}」の投稿者ではなく
 
 ${brandBlock(brand, "x")}
 
-${isDaily ? dailyBlock((input.sourceContext as { type: "daily"; seed: DailyPostSeed }).seed) : trendBlock(cluster, items)}
+${
+  isDaily
+    ? dailyBlock((input.sourceContext as { type: "daily"; seed: DailyPostSeed }).seed)
+    : isInvestment
+      ? investmentBlock(investmentSeed!)
+      : trendBlock(cluster, items)
+}
 
 ${isDaily ? "## 本人入力の扱い\n上の日常入力は今回本人が入力した内容です。書かれている範囲だけ本人の出来事・感情として使えます。" : experienceBlock(experiences)}
 
 ${viewpointBlock(input.authorViewpoint)}
+
+${input.styleProfile ? styleProfileBlock(input.styleProfile) : ""}
 
 ## この投稿の目的
 ${PURPOSE_GUIDE[purpose]}
@@ -403,7 +459,12 @@ mediaSuggestionは text / diagram / screenshot / comparison / chart / video / no
       genreId: genre.id,
       text,
       pattern: normalizeXPattern(
-        post.pattern ?? ((isDaily ? ["daily", "reflection", "conversation"] : ["opinion", "save", "conversation"])[postIndex] as string | undefined),
+        post.pattern ??
+          ((isDaily
+            ? ["daily", "reflection", "conversation"]
+            : isInvestment
+              ? ["reflection", "conversation", "opinion"]
+              : ["opinion", "save", "conversation"])[postIndex] as string | undefined),
         outputType
       ),
       length,
@@ -431,7 +492,7 @@ mediaSuggestionは text / diagram / screenshot / comparison / chart / video / no
   }
 
   const warning =
-    experiences.length === 0 && !isDaily
+    experiences.length === 0 && !isDaily && !isInvestment
       ? "登録済みの体験が無いため、一般的な考察として生成しました（体験談としては書いていません）"
       : undefined;
 

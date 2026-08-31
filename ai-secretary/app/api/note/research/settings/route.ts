@@ -19,21 +19,25 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.json();
     const current = await loadResearchSettings();
-    const saved = await saveResearchSettings({
-      x: { ...current.x, ...(body.x ?? {}) },
-      purposeMix: { ...current.purposeMix, ...(body.purposeMix ?? {}) },
-      flags: { ...current.flags, ...(body.flags ?? {}) },
-      performanceWeights: {
-        ...current.performanceWeights,
-        ...(body.performanceWeights ?? {}),
+    const modeExplicit = typeof body.flags?.socialOperationMode === "string";
+    const saved = await saveResearchSettings(
+      {
+        x: { ...current.x, ...(body.x ?? {}) },
+        purposeMix: { ...current.purposeMix, ...(body.purposeMix ?? {}) },
+        flags: { ...current.flags, ...(body.flags ?? {}) },
+        performanceWeights: {
+          ...current.performanceWeights,
+          ...(body.performanceWeights ?? {}),
+        },
+        winningTopicPolicy: {
+          ...current.winningTopicPolicy,
+          ...(body.winningTopicPolicy ?? {}),
+        },
+        noteTags: Array.isArray(body.noteTags) ? body.noteTags : current.noteTags,
+        growthStrategy: current.growthStrategy,
       },
-      winningTopicPolicy: {
-        ...current.winningTopicPolicy,
-        ...(body.winningTopicPolicy ?? {}),
-      },
-      noteTags: Array.isArray(body.noteTags) ? body.noteTags : current.noteTags,
-      growthStrategy: current.growthStrategy,
-    });
+      { modeExplicit }
+    );
     return NextResponse.json(saved);
   } catch (error) {
     console.error("[api/note/research/settings] PUT失敗:", error);
