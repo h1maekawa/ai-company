@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadPerformance, loadResearchSettings } from "@/app/lib/note/research/store";
 import { isBufferConfigured } from "@/app/lib/note/publishing/buffer";
+import { isSerpApiConfigured } from "@/app/lib/note/research/serpapi";
 import { loadPortfolio } from "@/app/lib/investing/portfolio";
 import { loadNews } from "@/app/lib/investing/news";
 
@@ -30,6 +31,7 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({
       mode: settings.flags.socialOperationMode,
       buffer: { configured: isBufferConfigured() },
+      serpApi: { configured: isSerpApiConfigured() },
       xResearch: { enabled: settings.x.enabled, mode: settings.x.mode },
       investing: {
         portfolioAvailable: portfolio.source !== "none",

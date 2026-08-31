@@ -26,6 +26,7 @@ npx tsc \
   app/lib/note/publishing/noteMetricsProvider.ts \
   app/lib/note/research/x-query.ts \
   app/lib/note/research/x-format.ts \
+  app/lib/note/research/serpapi.ts \
   app/lib/note/research/performance.ts \
   app/lib/note/research/notebooklm.ts \
   app/lib/note/editor/types.ts \

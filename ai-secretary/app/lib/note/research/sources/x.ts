@@ -15,6 +15,7 @@ import { redisSafeGet, redisSafeSet } from "../../../utils/redis";
 import { ReferenceXAccount, ResearchItem, XResearchSettings } from "../types";
 import { detectGenres } from "./note";
 import { buildXQueries } from "../x-query";
+import { isSerpApiConfigured } from "../serpapi";
 
 export type XResearchResult = {
   items: ResearchItem[];
@@ -46,6 +47,7 @@ async function searchViaSerpApi(query: string): Promise<XResearchResult> {
   }
   const key = process.env.SERPAPI_KEY;
   if (!key) return empty("SERPAPI_KEY が未設定のため、freeモードでは検索結果を取得できません");
+  // 注意: keyはURL組み立てにのみ使う。ログ・エラー・レスポンスへは決して含めない
 
   const url = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(
     query
@@ -304,7 +306,7 @@ export async function researchX(
     fallbackKeywords: settings.keywords,
     maxQueries: 3,
   });
-  const queries = [
+  const rawQueries = [
     ...topicQueries.map((query) => `site:x.com ${query}`),
     ...accounts
       .filter((a) => a.active)
@@ -312,11 +314,23 @@ export async function researchX(
       .slice(0, 3)
       .map((a) => `site:x.com ${a.handle}`),
   ];
+  // 同一run内の重複queryはSerpAPIクレジットの無駄なので取り除く
+  const queries = [...new Set(rawQueries)];
 
   if (queries.length === 0) {
     return empty("キーワードも参考アカウントも未登録のため、検索していません");
   }
 
+  if (!isSerpApiConfigured()) {
+    const reason =
+      process.env.SERPAPI_ENABLED !== "true"
+        ? "無料モードではSerpAPIを呼びません"
+        : "SERPAPI_KEY が未設定のため、freeモードでは検索結果を取得できません";
+    console.log(`[X Research] provider=serpapi skipped: ${reason}`);
+    return empty(reason);
+  }
+
+  console.log(`[X Research] provider=serpapi queries=${queries.length}`);
   for (const query of queries) {
     const result = await searchViaSerpApi(query);
     if (result.skippedReason) return empty(result.skippedReason);
@@ -327,5 +341,7 @@ export async function researchX(
   const byUrl = new Map<string, ResearchItem>();
   for (const item of items) if (!byUrl.has(item.sourceUrl)) byUrl.set(item.sourceUrl, item);
 
-  return { items: [...byUrl.values()], failures, estimatedCostUsd: 0 };
+  const results = [...byUrl.values()];
+  console.log(`[X Research] provider=serpapi results=${results.length}`);
+  return { items: results, failures, estimatedCostUsd: 0 };
 }
