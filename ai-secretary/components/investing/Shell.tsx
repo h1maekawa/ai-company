@@ -6,6 +6,7 @@ import { FormEvent, ReactNode, useState } from "react";
 import {
   Bell,
   Briefcase,
+  ChevronDown,
   ChevronLeft,
   CircleDollarSign,
   Filter,
@@ -35,13 +36,18 @@ export type NavItem = {
 
 const ICON = "h-[18px] w-[18px]";
 
-export const NAV_ITEMS: NavItem[] = [
+/** 日常で使う4つ。モバイル下部ナビもこの並び */
+export const DAILY_NAV_ITEMS: NavItem[] = [
   { href: "/investing", label: "ダッシュボード", icon: <LayoutDashboard className={ICON} />, mobile: true },
   { href: "/investing/holdings", label: "保有株", icon: <Briefcase className={ICON} />, mobile: true },
-  { href: "/investing/allocation", label: "配分・集中度", icon: <Scale className={ICON} /> },
-  { href: "/investing/policy", label: "投資判断エンジン", icon: <Gauge className={ICON} /> },
   { href: "/investing/news", label: "ニュース", icon: <Newspaper className={ICON} />, mobile: true },
   { href: "/investing/analysis", label: "AI分析", icon: <Sparkles className={ICON} />, mobile: true },
+];
+
+/** 必要なときだけ開く。既存routeはすべて残す（Deep Linkは生きている） */
+export const MORE_NAV_ITEMS: NavItem[] = [
+  { href: "/investing/allocation", label: "配分・集中度", icon: <Scale className={ICON} /> },
+  { href: "/investing/policy", label: "投資判断エンジン", icon: <Gauge className={ICON} /> },
   { href: "/investing/portfolio", label: "ポートフォリオ", icon: <PieChart className={ICON} /> },
   { href: "/investing/screening", label: "スクリーニング", icon: <Filter className={ICON} /> },
   { href: "/investing/watchlist", label: "ウォッチリスト", icon: <Star className={ICON} /> },
@@ -50,6 +56,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/investing/import", label: "CSV取込", icon: <Upload className={ICON} /> },
   { href: "/investing/settings", label: "設定", icon: <Settings className={ICON} /> },
 ];
+
+/** 互換用: 全項目のフラット配列 */
+export const NAV_ITEMS: NavItem[] = [...DAILY_NAV_ITEMS, ...MORE_NAV_ITEMS];
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/investing") return pathname === "/investing";
@@ -89,29 +98,60 @@ function TickerSearch({ onDone }: { onDone?: () => void }) {
 
 function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  // 詳細メニューの中にいるときは最初から開いておく（今どこにいるか分からなくならないように）
+  const [moreOpen, setMoreOpen] = useState(() =>
+    MORE_NAV_ITEMS.some((item) => isActive(pathname, item.href))
+  );
 
   return (
     <nav className="flex flex-col gap-0.5">
-      {NAV_ITEMS.map((item) => {
-        const active = isActive(pathname, item.href);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            aria-current={active ? "page" : undefined}
-            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
-              active
-                ? "bg-brand-soft font-semibold text-brand"
-                : "text-sub hover:bg-white/[0.04] hover:text-white"
-            }`}
-          >
-            {item.icon}
-            <span className="truncate">{item.label}</span>
-          </Link>
-        );
-      })}
+      {DAILY_NAV_ITEMS.map((item) => (
+        <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
+      ))}
+
+      <button
+        type="button"
+        onClick={() => setMoreOpen((open) => !open)}
+        aria-expanded={moreOpen}
+        className="mt-2 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-sub transition-colors hover:bg-white/[0.04] hover:text-white"
+      >
+        <ChevronDown className={`h-[18px] w-[18px] transition-transform ${moreOpen ? "" : "-rotate-90"}`} />
+        <span>その他</span>
+      </button>
+
+      {moreOpen && (
+        <div className="flex flex-col gap-0.5 border-l border-hairline pl-2">
+          {MORE_NAV_ITEMS.map((item) => (
+            <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
+          ))}
+        </div>
+      )}
     </nav>
+  );
+}
+
+function NavLink({
+  item,
+  pathname,
+  onNavigate,
+}: {
+  item: NavItem;
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  const active = isActive(pathname, item.href);
+  return (
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
+        active ? "bg-brand-soft font-semibold text-brand" : "text-sub hover:bg-white/[0.04] hover:text-white"
+      }`}
+    >
+      {item.icon}
+      <span className="truncate">{item.label}</span>
+    </Link>
   );
 }
 
@@ -228,7 +268,7 @@ export function InvestingShell({
 
 function MobileNav({ onMenu }: { onMenu: () => void }) {
   const pathname = usePathname();
-  const items = NAV_ITEMS.filter((item) => item.mobile);
+  const items = DAILY_NAV_ITEMS.filter((item) => item.mobile);
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-ink-card/95 backdrop-blur lg:hidden">

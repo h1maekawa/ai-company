@@ -84,6 +84,14 @@ function notifyIfBackground(title: string, body: string) {
   }
 }
 
+/** 秘書からよく開く画面。会話でも頼めるが、直接行きたい人のための近道 */
+const ASSISTANT_SHORTCUTS = [
+  { href: "/grill", label: "🔥 壁打ちを始める" },
+  { href: "/planning", label: "🌅 今日を整理する" },
+  { href: "/note", label: "✍️ 投稿を作る" },
+  { href: "/investing", label: "📈 投資を見る" },
+];
+
 function ChatView() {
   const searchParams = useSearchParams();
   const node: HubNode = findHubNode(searchParams.get("node")) ?? CENTER_NODE;
@@ -406,6 +414,12 @@ function ChatView() {
             </div>
             <p className="text-slate-300 text-lg">{node.name}</p>
             <p className="text-slate-500 text-sm">{node.tagline}</p>
+            {node.id === CENTER_NODE.id && (
+              <p className="mx-auto max-w-md text-sm text-slate-400">
+                やりたいことをそのまま書いてください。投稿・投資・予定・知識の保存など、
+                担当が必要なものは秘書が振り分けます。
+              </p>
+            )}
             <div className="flex flex-col gap-2 items-center mt-6">
               {node.examples.map((ex) => (
                 <button
@@ -417,6 +431,22 @@ function ChatView() {
                 </button>
               ))}
             </div>
+            {node.id === CENTER_NODE.id && (
+              <div className="mt-8">
+                <p className="text-xs text-slate-600">画面を直接開く</p>
+                <div className="mt-2 flex flex-wrap justify-center gap-2">
+                  {ASSISTANT_SHORTCUTS.map((shortcut) => (
+                    <Link
+                      key={shortcut.href}
+                      href={shortcut.href}
+                      className="rounded-lg border border-slate-800 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-slate-600 hover:text-slate-200"
+                    >
+                      {shortcut.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
