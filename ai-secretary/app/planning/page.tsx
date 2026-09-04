@@ -199,7 +199,7 @@ export default function PlanningPage() {
         {/* ─── Header ─────────────────────────────── */}
         <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold tracking-widest text-amber-400">MORNING PLANNING</p>
+            <p className="text-xs font-semibold tracking-widest text-amber-400">今日</p>
             <h1 className="mt-1 text-2xl font-bold">
               {greeting()}
               <span className="ml-2 text-base font-normal text-slate-400">{plan?.date ?? ""}</span>
@@ -278,7 +278,7 @@ export default function PlanningPage() {
 
         {/* ─── 朝会入力 ───────────────────────────── */}
         <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <h2 className="text-sm font-bold">🌅 朝会 — 今日やることを書き出す</h2>
+          <h2 className="text-sm font-bold">🌅 今日やることを書き出す</h2>
           <p className="mt-1 text-xs text-slate-500">
             動詞ベースで1行ずつ。例：「営業電話を50件行う」「家計簿アプリを修正する」「noteを書く」
           </p>

@@ -38,17 +38,25 @@ test("Connectionsは5状態を保持しHome alert用集計でunknownを正常扱
   assert.deepEqual(connections.summarizeConnections(services), { total: 5, healthy: 1, warning: 1, checkedAt: services[4].lastCheckedAt });
 });
 
-test("共通SidebarはHUB_NODESをSSOTにしActiveとMobile Drawerを備える", () => {
+test("共通Sidebarはnavigation設定をSSOTにしActiveとMobile導線を備える", () => {
   const sidebar = read("components/app-shell/AppSidebar.tsx");
   const shell = read("components/app-shell/AppShell.tsx");
-  for (const href of ["/", "/knowledge", "/connections"]) assert.match(sidebar, new RegExp(href.replace("/", "\\/")));
-  assert.match(sidebar, /HUB_NODES/); assert.match(sidebar, /usePathname/); assert.match(sidebar, /bg-violet-500/);
+  const navigation = read("app/lib/config/navigation.ts");
+  // Navigation v2: Knowledge/Connectionsは日常ナビから外し、管理(/admin)配下へ移した
+  for (const href of ["/knowledge", "/connections"]) assert.ok(navigation.includes(`href: "${href}"`));
+  assert.match(sidebar, /PRIMARY_NAV/); assert.match(sidebar, /ADMIN_NAV/);
+  assert.match(sidebar, /usePathname/); assert.match(sidebar, /bg-violet-500/);
   assert.match(shell, /aria-expanded/); assert.match(shell, /lg:hidden/); assert.match(shell, /setOpen\(false\)/);
+  // モバイルはドロワーを開かなくても主要領域へ行ける
+  assert.match(shell, /MobileTabBar/);
 });
 
-test("HomeはDepartment CardsとSystem Healthを表示し異常時だけAlertを出す", () => {
+test("Homeは今日の状況とQuick Actionを表示し異常時だけAlertを出す", () => {
   const home = read("app/page.tsx");
-  assert.match(home, /cardIds/); assert.match(home, /System Health/); assert.match(home, /alerts\.length > 0/); assert.match(home, /System Alert/);
+  // Navigation v2: 部署カード一覧ではなく「今の状況」と「次の行動」を出す
+  assert.match(home, /useHomeStatus/); assert.match(home, /QUICK_ACTIONS/);
+  assert.match(home, /今日の状況/); assert.match(home, /システム状態/);
+  assert.match(home, /alerts\.length > 0/);
   assert.doesNotMatch(home, /DailyPlan|Growth Analytics|Knowledge本文/);
 });
 

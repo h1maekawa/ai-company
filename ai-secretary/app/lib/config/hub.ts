@@ -1,9 +1,11 @@
 import { SecretaryMode } from "./modes";
 
 /**
- * ブレインストーミング型ホーム（マインドマップハブ）のノード定義。
- * 中央の秘書ノードから各事業部ノードが派生し、タップすると
- * その事業部の秘書に直結したチャット (/chat?node=<id>) が開く。
+ * 各部署（Department）の定義。Backend側の担当割り当てはこのIDで行う。
+ *
+ * 表に出すNavigationは app/lib/config/navigation.ts が決める。
+ * ここに部署があっても、Sidebarへ出すとは限らない（ユーザーに部署を意識させないため）。
+ * /chat?node=<id> のDeep Linkは、Sidebarに出していない部署でも生きている。
  *
  * secretaryId は app/lib/config/departments.ts のレジストリIDと一致させること。
  */
@@ -41,13 +43,15 @@ export const CENTER_NODE: HubNode = {
   secretaryId: "executive-assistant",
   icon: "🤖",
   name: "秘書",
-  tagline: "専属秘書・唯一の窓口（各部署へ接続）",
+  tagline: "何でもここへ。必要な担当につなぎます",
   mode: "personal",
   color: "#2563eb",
   examples: [
-    "今日やるべきことを整理して",
-    "アイデアの壁打ちをしたい",
-    "リソース配分を相談したい",
+    "今日何をすればいい？",
+    "X投稿を作りたい",
+    "NVDAどう？",
+    "この設計を壁打ちしたい",
+    "Knowledgeに保存して",
   ],
 };
 
@@ -57,8 +61,8 @@ export const HUB_NODES: HubNode[] = [
     group: "personal",
     secretaryId: "personal-morning",
     icon: "🌅",
-    name: "朝会",
-    tagline: "今日の行動設計・タイムブロッキング",
+    name: "今日",
+    tagline: "今日やること・優先順位・時間割",
     mode: "personal",
     color: "#f59e0b",
     href: "/planning",
@@ -69,8 +73,8 @@ export const HUB_NODES: HubNode[] = [
     group: "personal",
     secretaryId: "personal-note",
     icon: "📝",
-    name: "Note事業",
-    tagline: "Creator Workflow・記事作成・収益化",
+    name: "コンテンツ",
+    tagline: "X・noteの作成から確認・成果まで",
     mode: "note",
     color: "#10b981",
     href: "/note",
@@ -85,8 +89,8 @@ export const HUB_NODES: HubNode[] = [
     group: "personal",
     secretaryId: "personal-note",
     icon: "🧭",
-    name: "Content Business OS",
-    tagline: "投稿→集客→販売→売上→学習→次の投稿までのLoop",
+    name: "コンテンツ詳細分析",
+    tagline: "投稿結果・売上・学びの記録（コンテンツの詳細画面）",
     mode: "note",
     color: "#22C55E",
     href: "/content",
@@ -101,8 +105,8 @@ export const HUB_NODES: HubNode[] = [
     group: "personal",
     secretaryId: "personal-fund",
     icon: "📈",
-    name: "投資・Fund",
-    tagline: "AI投資パートナー・銘柄分析",
+    name: "投資",
+    tagline: "保有状況・ニュース・AI分析",
     mode: "finance",
     color: "#ef4444",
     href: "/investing",
