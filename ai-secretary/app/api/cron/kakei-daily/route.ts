@@ -2,14 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyCronSecret } from "@/app/lib/integrations/machine-auth";
 import { postToSlack } from "@/app/lib/integrations/slack/blocks";
 import { loadLedger, aggregate, loadBudget } from "@/app/lib/kakei/ledger";
+import { currentMonth } from "@/app/lib/kakei/month";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-function currentMonth(): string {
-  const d = new Date(Date.now() + 9 * 3600 * 1000);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
 const yen = (n: number) => `¥${n.toLocaleString("ja-JP")}`;
 
 /** GET /api/cron/kakei-daily — 今月の家計サマリをSlackへ（開かなくても届く） */

@@ -25,6 +25,31 @@ test("normal Note and Fund scopes do not recursively load whole departments", ()
   assert.doesNotMatch(scopes, /investment-log\/"/);
 });
 
+test("kakei scope reads the ledger by month token, never the whole directory", () => {
+  const manifest = read("app/lib/memory/manifest.ts");
+  const scopes = read("app/lib/config/scopes.ts");
+  const loader = read("app/lib/memory/loader.ts");
+
+  // 台帳は毎月増える。ディレクトリ走査も個別列挙もしない
+  assert.doesNotMatch(manifest, /"memory\/personal\/kakei\/"/);
+  assert.doesNotMatch(scopes, /"memory\/personal\/kakei\/"/);
+  assert.doesNotMatch(manifest, /kakei\/\d{4}-\d{2}\.md/);
+  for (const token of ["{month}", "{prevMonth}"]) {
+    assert.ok(
+      manifest.includes(`memory/personal/kakei/${token}.md`),
+      `core.kakei should name the ledger with ${token}`
+    );
+  }
+  // トークンを解決できるのは loader だけ
+  assert.match(loader, /function expandMonthTokens/);
+  assert.match(loader, /\{prevMonth\}/);
+
+  // 家計秘書が分類軸(budget-rules)と手取り/固定費(profile)を読めること
+  assert.match(manifest, /memory\/personal\/finance\/budget-rules\.md/);
+  assert.match(manifest, /memory\/personal\/kakei\/profile\.md/);
+  assert.match(scopes, /"personal-finance": \{[\s\S]*?MEMORY_MANIFEST\.core\.kakei/);
+});
+
 test("local Vault has no hard-coded personal default", () => {
   const paths = read("app/lib/runtime/paths.ts");
   assert.doesNotMatch(paths, /\/Users\//);

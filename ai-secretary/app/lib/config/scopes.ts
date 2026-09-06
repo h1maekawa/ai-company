@@ -64,6 +64,7 @@ export const MEMORY_SCOPES: MemoryScopes = {
   "personal-finance": {
     local: [
       "memory/personal/rules.md",
+      ...MEMORY_MANIFEST.core.kakei,
       ...MEMORY_MANIFEST.core.fund
     ],
     shared: ["memory/personal/goals.md", "memory/shared/ai-development-rules.md"],

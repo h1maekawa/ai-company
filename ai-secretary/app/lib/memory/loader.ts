@@ -1,4 +1,5 @@
 import { MEMORY_SCOPES, DEFAULT_GLOBAL_SCOPE } from "../config/scopes";
+import { currentMonth, previousMonth } from "../kakei/month";
 import { getVaultFile, listVaultEntries, VaultEntry } from "../vault";
 
 export type LoadedMemory = {
@@ -39,6 +40,18 @@ async function scanDirectoryRecursive(dirPath: string): Promise<string[]> {
 }
 
 /**
+ * Expands month tokens in a scope path. Monthly ledgers (memory/personal/kakei/
+ * YYYY-MM.md) grow forever, so scopes name them as {month}/{prevMonth} instead of
+ * listing every file or scanning the directory. Resolved per load, in JST.
+ */
+function expandMonthTokens(rawPath: string): string {
+  if (!rawPath.includes("{")) return rawPath;
+  return rawPath
+    .replace(/\{month\}/g, currentMonth())
+    .replace(/\{prevMonth\}/g, previousMonth());
+}
+
+/**
  * Loads memory files dynamically based on Local, Shared, and Global scopes.
  * Follows the priority: local > shared > global.
  */
@@ -76,7 +89,8 @@ export async function loadScopedMemory(
   };
 
   for (const group of allScopeGroups) {
-    for (const rawPath of group.paths) {
+    for (const scopePath of group.paths) {
+      const rawPath = expandMonthTokens(scopePath);
       // A scope entry ending in "/" is a directory to scan recursively; otherwise it's a single file.
       const isDirectoryScope = rawPath.endsWith("/");
       const cleanPath = rawPath.replace(/\/$/, "");

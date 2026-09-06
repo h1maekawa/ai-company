@@ -2,25 +2,8 @@ import { createKakeiSource } from "./source";
 import { classifyMerchant } from "./classify";
 import { normalizeMerchant } from "./normalize";
 import { loadLedger, saveLedger, loadRules } from "./ledger";
+import { monthKeysBack, monthRange } from "./month";
 import type { KakeiTx } from "./types";
-
-function monthKeysBack(n: number): string[] {
-  const jst = new Date(Date.now() + 9 * 3600 * 1000);
-  const y = jst.getUTCFullYear();
-  const m = jst.getUTCMonth();
-  const keys: string[] = [];
-  for (let i = 0; i < n; i++) {
-    const d = new Date(Date.UTC(y, m - i, 1));
-    keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
-  }
-  return keys;
-}
-
-function monthRange(month: string): { from: string; to: string } {
-  const [y, m] = month.split("-").map(Number);
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}` };
-}
 
 /**
  * 家計簿アプリ → 分類 → Vault台帳 を月単位で冪等同期。

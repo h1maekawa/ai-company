@@ -1,16 +1,28 @@
 import { createClient } from "@supabase/supabase-js";
 import type { KakeiSource, RawTx } from "./types";
 
-/** 【要確認A】家計簿アプリの実テーブル/カラム名に合わせてここだけ直す */
+/**
+ * 家計簿アプリ（household-finance）の実スキーマ。
+ * supabase/migrations の transactions テーブルに合わせている。
+ *
+ * 注意点が2つある:
+ * - 店名の専用カラムが無い。手入力・チャット入力・Gmail取込のいずれも
+ *   店名は memo に入るので、これを merchantRaw として扱う。
+ * - kind で収入と支出を分けている。フィルタしないと収入が支出に混ざる。
+ * category は manual_category を設定すると同じ値で更新されるため、
+ * category だけ読めばユーザーの手修正も反映される。
+ */
 const TABLE = "transactions";
 const COL = {
   id: "id",
-  date: "occurred_on",
-  merchant: "merchant",
+  date: "date",
+  merchant: "memo",
   amount: "amount",
   category: "category",
   userId: "user_id",
+  kind: "kind",
 } as const;
+const EXPENSE_KIND = "expense";
 
 /** エクスポートAPI経由（家計簿アプリが {transactions:[{id,date,merchant,amount,category}]} を返す想定） */
 function exportSource(): KakeiSource {
@@ -47,6 +59,7 @@ function supabaseSource(): KakeiSource {
         .from(TABLE)
         .select(`${COL.id},${COL.date},${COL.merchant},${COL.amount},${COL.category}`)
         .eq(COL.userId, userId)
+        .eq(COL.kind, EXPENSE_KIND)
         .gte(COL.date, from)
         .lte(COL.date, to)
         .order(COL.date, { ascending: true });
