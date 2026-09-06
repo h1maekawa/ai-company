@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { ADMIN_NAV, PRIMARY_NAV, isNavActive, type AppNavItem } from "@/app/lib/config/navigation";
 
 /**
- * トップレベルの入口。日常は PRIMARY_NAV の5つ、管理系は「管理」1つに畳む。
+ * トップレベルの入口。日常は PRIMARY_NAV、管理系は「管理」1つに畳む。
  * ナビ定義は app/lib/config/navigation.ts が唯一の正。
  */
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {

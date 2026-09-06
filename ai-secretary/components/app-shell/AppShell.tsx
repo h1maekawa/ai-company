@@ -58,7 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-/** モバイルは主要5領域を下部タブに常時出す（メニューを開かなくても移動できる） */
+/** モバイルは主要領域を下部タブに常時出す（メニューを開かなくても移動できる） */
 function MobileTabBar({ pathname }: { pathname: string }) {
   return (
     <nav

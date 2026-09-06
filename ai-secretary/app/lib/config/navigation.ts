@@ -2,7 +2,7 @@
  * AI Company のフロント情報設計（Navigation v2）の唯一の定義。
  *
  * 方針:
- * - ユーザーに「どの部署か」を考えさせない。日常はトップ5領域だけで完結させる。
+ * - ユーザーに「どの部署か」を考えさせない。日常はトップ領域だけで完結させる。
  * - Backend の Department 構造（app/lib/config/hub.ts）は維持し、
  *   ここでは「表に出す入口」だけを決める。
  * - 既存 route は壊さない。UI から隠す場合も Deep Link は生かす。
@@ -57,6 +57,13 @@ export const PRIMARY_NAV: AppNavItem[] = [
     icon: "📈",
     href: "/investing",
     description: "保有状況・ニュース・AI分析",
+  },
+  {
+    id: "kakei",
+    label: "家計",
+    icon: "💴",
+    href: "/kakei",
+    description: "今月の支出・貯蓄ペース・要確認",
   },
 ];
 

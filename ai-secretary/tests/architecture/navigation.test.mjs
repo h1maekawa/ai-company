@@ -7,7 +7,7 @@ import path from "node:path";
  * Navigation v2 の情報設計を固定するテスト。
  *
  * 目的は「機能が増えてもフロントの入口が増えない」こと。
- * トップレベルは日常5領域 + 管理1つに保ち、UIから隠したrouteもDeep Linkとして残す。
+ * トップレベルは日常6領域 + 管理1つに保ち、UIから隠したrouteもDeep Linkとして残す。
  */
 
 const ROOT = process.cwd();
@@ -16,20 +16,20 @@ const exists = (relative) => fs.existsSync(path.join(ROOT, relative));
 
 const NAVIGATION = "app/lib/config/navigation.ts";
 
-test("top-level navigation stays at 5 daily areas plus one admin entry", () => {
+test("top-level navigation stays at 6 daily areas plus one admin entry", () => {
   const source = read(NAVIGATION);
   const primary = source.slice(
     source.indexOf("export const PRIMARY_NAV"),
     source.indexOf("export const ADMIN_NAV")
   );
   const ids = [...primary.matchAll(/^\s{4}id: "([a-z-]+)",$/gm)].map((match) => match[1]);
-  assert.deepEqual(ids, ["home", "assistant", "today", "content", "investing"]);
+  assert.deepEqual(ids, ["home", "assistant", "today", "content", "investing", "kakei"]);
   assert.match(source, /export const ADMIN_NAV: AppNavItem = \{[\s\S]*href: "\/admin"/);
 });
 
 test("primary navigation points at the existing routes", () => {
   const source = read(NAVIGATION);
-  for (const href of ["/", "/chat?node=assistant", "/planning", "/note", "/investing"]) {
+  for (const href of ["/", "/chat?node=assistant", "/planning", "/note", "/investing", "/kakei"]) {
     assert.ok(source.includes(`href: "${href}"`), `PRIMARY_NAV should link to ${href}`);
   }
   for (const page of [
@@ -39,6 +39,7 @@ test("primary navigation points at the existing routes", () => {
     "app/planning/page.tsx",
     "app/note/page.tsx",
     "app/investing/page.tsx",
+    "app/kakei/page.tsx",
   ]) {
     assert.ok(exists(page), `${page} must exist for navigation to resolve`);
   }

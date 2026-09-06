@@ -1,6 +1,14 @@
 {
   "crons": [
     {
+      "path": "/api/cron/kakei-sync",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/cron/kakei-daily",
+      "schedule": "20 21 * * *"
+    },
+    {
       "path": "/api/cron/note-daily-research",
       "schedule": "0 22 * * *"
     },
