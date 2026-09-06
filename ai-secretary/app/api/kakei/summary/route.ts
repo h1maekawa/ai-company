@@ -1,30 +1,37 @@
 import { NextResponse } from "next/server";
-import { loadLedger, aggregate, loadBudget } from "@/app/lib/kakei/ledger";
 import { currentMonth } from "@/app/lib/kakei/month";
-import { KAKEI_CATEGORIES } from "@/app/lib/kakei/classify";
+import { loadSnapshot } from "@/app/lib/kakei/snapshot";
+import { createKakeiSource } from "@/app/lib/kakei/source";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/kakei/summary — /kakei 画面用の集計JSON。middlewareでセッション保護済み */
+/**
+ * GET /api/kakei/summary — /kakei 画面用。middlewareでセッション保護済み。
+ *
+ * 家計簿アプリの集計を直接取りに行き、落ちていれば Vault のキャッシュに
+ * 縮退する（stale:true で返す）。ai-company 側で数字は作らない。
+ */
 export async function GET(): Promise<NextResponse> {
   const month = currentMonth();
-  const { txs } = await loadLedger(month);
-  const agg = aggregate(txs);
-  const { income, fixed } = await loadBudget();
-  const remaining =
-    income != null && fixed != null ? income - fixed - agg.total : null;
 
-  return NextResponse.json({
-    month,
-    total: agg.total,
-    count: agg.count,
-    byCategory: agg.byCategory,
-    remaining,
-    needsReview: agg.needsReview.map((t) => ({
-      sourceId: t.sourceId, date: t.date, merchantRaw: t.merchantRaw,
-      merchantNorm: t.merchantNorm, amount: t.amount, category: t.category,
-    })),
-    categories: KAKEI_CATEGORIES,
-    connected: agg.count > 0,
-  });
+  try {
+    const summary = await createKakeiSource().fetchSummary(month);
+    return NextResponse.json({ ...summary, stale: false, connected: true });
+  } catch (liveError) {
+    const { summary } = await loadSnapshot(month);
+    if (summary) {
+      return NextResponse.json({
+        ...summary,
+        stale: true,
+        connected: true,
+        error: (liveError as Error).message,
+      });
+    }
+    return NextResponse.json({
+      month,
+      connected: false,
+      stale: false,
+      error: (liveError as Error).message,
+    });
+  }
 }

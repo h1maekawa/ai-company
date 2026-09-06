@@ -1,38 +1,20 @@
 import { createKakeiSource } from "./source";
-import { classifyMerchant } from "./classify";
-import { normalizeMerchant } from "./normalize";
-import { loadLedger, saveLedger, loadRules } from "./ledger";
-import { monthKeysBack, monthRange } from "./month";
-import type { KakeiTx } from "./types";
+import { monthKeysBack } from "./month";
+import { loadSnapshot, saveSnapshot } from "./snapshot";
 
 /**
- * 家計簿アプリ → 分類 → Vault台帳 を月単位で冪等同期。
- * 既にユーザー確定済み（needs_review=false）の行は上書きしない。
+ * 家計簿アプリの集計を Vault へキャッシュする。
+ * 取引を取り込んで分類し直すことはしない（分類の正はあちら側）。
  */
-export async function runKakeiSync(monthsBack = 2): Promise<{ month: string; count: number }[]> {
+export async function runKakeiSync(monthsBack = 2): Promise<{ month: string; total: number }[]> {
   const source = createKakeiSource();
-  const rules = await loadRules();
-  const out: { month: string; count: number }[] = [];
+  const out: { month: string; total: number }[] = [];
 
   for (const month of monthKeysBack(monthsBack)) {
-    const raw = await source.fetchTransactions(monthRange(month));
-    const { txs: existing, sha } = await loadLedger(month);
-    const byId = new Map(existing.map((t) => [t.sourceId, t]));
-
-    const merged: KakeiTx[] = [];
-    for (const r of raw) {
-      const prev = byId.get(r.sourceId);
-      // 確定済みは尊重（手動修正・ルール確定を壊さない）
-      if (prev && !prev.needsReview) {
-        merged.push(prev);
-        continue;
-      }
-      const merchantNorm = normalizeMerchant(r.merchantRaw);
-      const cls = await classifyMerchant(merchantNorm, r.category, rules);
-      merged.push({ ...r, merchantNorm, ...cls });
-    }
-    await saveLedger(month, merged, sha);
-    out.push({ month, count: merged.length });
+    const summary = await source.fetchSummary(month);
+    const { sha } = await loadSnapshot(month);
+    await saveSnapshot(summary, sha);
+    out.push({ month, total: summary.totalSpent });
   }
   return out;
 }

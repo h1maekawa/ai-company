@@ -5,6 +5,7 @@ import path from "node:path";
 
 const ROOT = process.cwd();
 const read = (relative) => fs.readFileSync(path.join(ROOT, relative), "utf8");
+const exists = (relative) => fs.existsSync(path.join(ROOT, relative));
 
 test("retired creator secretary has no active code references", () => {
   const files = [
@@ -23,6 +24,25 @@ test("normal Note and Fund scopes do not recursively load whole departments", ()
   assert.doesNotMatch(scopes, /"memory\/personal\/note\/"/);
   assert.doesNotMatch(scopes, /"memory\/personal\/fund\/"/);
   assert.doesNotMatch(scopes, /investment-log\/"/);
+});
+
+test("kakei does not re-implement classification owned by the household app", () => {
+  // 分類の正は家計簿アプリ側(merchant_rules / manual_category / needs_review)。
+  // こちらに分類器や再分類APIを作ると、家計の正が2箇所に散る。
+  for (const gone of [
+    "app/lib/kakei/classify.ts",
+    "app/lib/kakei/normalize.ts",
+    "app/api/kakei/recategorize/route.ts",
+  ]) {
+    assert.ok(!exists(gone), `${gone} must not come back`);
+  }
+  const source = read("app/lib/kakei/source.ts");
+  assert.match(source, /x-import-secret/);
+  // Supabase直読みはRLS(auth.uid())上できない。家計簿DBの鍵を持ち出さない。
+  // 説明コメントには出てよいので、import と env 参照だけを見る
+  assert.doesNotMatch(source, /from ["']@supabase/);
+  assert.doesNotMatch(source, /process\.env\.[A-Z_]*SUPABASE[A-Z_]*/);
+  assert.doesNotMatch(read("package.json"), /@supabase\/supabase-js/);
 });
 
 test("kakei scope reads the ledger by month token, never the whole directory", () => {
@@ -44,9 +64,8 @@ test("kakei scope reads the ledger by month token, never the whole directory", (
   assert.match(loader, /function expandMonthTokens/);
   assert.match(loader, /\{prevMonth\}/);
 
-  // 家計秘書が分類軸(budget-rules)と手取り/固定費(profile)を読めること
+  // 家計秘書が分類軸(budget-rules)と当月の集計を読めること
   assert.match(manifest, /memory\/personal\/finance\/budget-rules\.md/);
-  assert.match(manifest, /memory\/personal\/kakei\/profile\.md/);
   assert.match(scopes, /"personal-finance": \{[\s\S]*?MEMORY_MANIFEST\.core\.kakei/);
 });
 

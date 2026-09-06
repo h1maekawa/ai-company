@@ -26,13 +26,12 @@ export const MEMORY_MANIFEST = {
       "memory/personal/fund/positions.md",
     ],
     /**
-     * 家計。月次台帳は YYYY-MM.md が毎月増え続けるので、個別列挙も
-     * ディレクトリ走査もしない。{month}/{prevMonth} は loader が読み込み時に
-     * JSTで解決する（＝常に当月＋前月の2枚だけを読む）。
+     * 家計。YYYY-MM.md は家計簿アプリの月次集計スナップショットで毎月増える。
+     * 個別列挙もディレクトリ走査もせず、{month}/{prevMonth} を loader が
+     * 読み込み時にJSTで解決する（＝常に当月＋前月の2枚だけを読む）。
      */
     kakei: [
       "memory/personal/finance/budget-rules.md",
-      "memory/personal/kakei/profile.md",
       "memory/personal/kakei/{month}.md",
       "memory/personal/kakei/{prevMonth}.md",
     ],

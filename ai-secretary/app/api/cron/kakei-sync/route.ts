@@ -5,7 +5,7 @@ import { runKakeiSync } from "@/app/lib/kakei/sync";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** GET /api/cron/kakei-sync — 家計簿アプリを読み取り、分類してVault台帳へ同期 */
+/** GET /api/cron/kakei-sync — 家計簿アプリの月次集計をVaultへキャッシュ */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const auth = verifyCronSecret(req);
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: 401 });

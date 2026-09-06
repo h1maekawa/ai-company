@@ -16,11 +16,11 @@
     "test:knowledge": "bash scripts/test-knowledge.sh",
     "test:grill": "bash scripts/test-grill.sh",
     "bench:grill": "bash scripts/bench-grill.sh",
-    "test": "npm run test:architecture && npm run test:maemichi && npm run test:fund && npm run test:content && npm run test:knowledge && npm run test:grill"
+    "test:kakei": "bash scripts/test-kakei.sh",
+    "test": "npm run test:architecture && npm run test:maemichi && npm run test:fund && npm run test:kakei && npm run test:content && npm run test:knowledge && npm run test:grill"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
-    "@supabase/supabase-js": "^2.115.0",
     "@upstash/redis": "^1.38.0",
     "dompurify": "^3.4.11",
     "framer-motion": "^12.42.2",

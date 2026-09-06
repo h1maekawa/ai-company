@@ -1,22 +1,56 @@
-/** 家計連携の共通型 */
+/**
+ * 家計連携の型。
+ *
+ * ai-company は取引を分類しない。分類の正（merchant_rules / manual_category /
+ * needs_review / 固定費カテゴリ）は元帳を持つ家計簿アプリ側にある。
+ * ここで扱うのは、あちらが計算した集計だけ。
+ */
 
-/** 家計簿アプリから読んだ生取引（categoryは空でも可） */
-export type RawTx = {
-  date: string;        // YYYY-MM-DD
-  merchantRaw: string; // 原文の店名
-  amount: number;      // 支出は正の数（円）
-  category: string;    // あちらが持っていれば尊重。無ければ ""
-  sourceId: string;    // 家計簿アプリ側の一意ID（冪等化キー）
+/** 変動費のカテゴリ内訳1行 */
+export type KakeiCategoryBreakdown = {
+  category: string;
+  amount: number;
+  /** 件数と平均は「外食を1回減らせば戻せる」の材料になる */
+  count: number;
+  average: number;
 };
 
-/** ai-company 側の台帳1行 */
-export type KakeiTx = RawTx & {
-  merchantNorm: string; // 正規化店名（ルール照合キー）
-  confidence: number;   // 0.0〜1.0
-  needsReview: boolean; // 低確信度＝要確認（未分類は作らない）
+/** 要確認の取引。修正は家計簿アプリ側で行うので、ここでは表示だけ */
+export type KakeiReviewItem = {
+  id: string;
+  date: string;
+  amount: number;
+  category: string;
+  memo: string | null;
 };
 
-/** データソース抽象。Supabase直読み / エクスポートAPI の両方を差せる */
+/** 家計簿アプリの月次集計スナップショット */
+export type KakeiSummary = {
+  month: string;
+  /** ai-company が取得した時刻。キャッシュの鮮度判定に使う */
+  syncedAt: string;
+  currency: string;
+  /** 固定費(確定分)＋変動費 */
+  totalSpent: number;
+  income: { planned: number; actual: number };
+  fixed: { effective: number; unpaid: number };
+  variable: {
+    budget: number;
+    spent: number;
+    /** 今月あと使える額。マイナスもあり得る */
+    remaining: number;
+    dailyAllowance: number;
+    daysLeft: number;
+    /** 1.0超で使いすぎ傾向 */
+    pace: number;
+  };
+  byCategory: KakeiCategoryBreakdown[];
+  needsReview: { count: number; items: KakeiReviewItem[] };
+  /** 要確認を直しに行く先（家計簿アプリの取引画面） */
+  appUrl: string;
+};
+
+/** 家計簿アプリからの集計取得 */
 export interface KakeiSource {
-  fetchTransactions(range: { from: string; to: string }): Promise<RawTx[]>;
+  fetchSummary(month: string): Promise<KakeiSummary>;
 }
