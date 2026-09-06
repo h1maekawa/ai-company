@@ -47,7 +47,7 @@ test("primary navigation points at the existing routes", () => {
 
 test("admin holds the non-daily areas instead of the sidebar", () => {
   const source = read(NAVIGATION);
-  for (const href of ["/knowledge", "/connections", "/chat?node=kaizen", "/chat?node=kakei", "/content"]) {
+  for (const href of ["/knowledge", "/connections", "/chat?node=kaizen", "/content"]) {
     assert.ok(source.includes(`href: "${href}"`), `ADMIN_SECTIONS should link to ${href}`);
   }
 });
@@ -77,6 +77,8 @@ test("routes hidden from the sidebar are still reachable", () => {
       `PRESERVED_ROUTES should document ${href}`
     );
   }
+  // 家計チャットは管理から外したので、/kakei が唯一の入口になる
+  assert.match(read("app/kakei/page.tsx"), /\/chat\?node=kakei/);
 });
 
 test("content department exposes four daily tabs and keeps settings separate", () => {

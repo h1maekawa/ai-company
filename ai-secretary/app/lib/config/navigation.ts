@@ -136,18 +136,6 @@ export const ADMIN_SECTIONS: { label: string; items: AppNavItem[] }[] = [
     ],
   },
   {
-    label: "パーソナル",
-    items: [
-      {
-        id: "kakei",
-        label: "家計",
-        icon: "💰",
-        href: "/chat?node=kakei",
-        description: "収支管理・予算の相談",
-      },
-    ],
-  },
-  {
     label: "詳細・分析",
     items: [
       {
@@ -199,7 +187,7 @@ export const PRESERVED_ROUTES: { href: string; reason: string }[] = [
   { href: "/planning", reason: "トップレベル「今日」" },
   { href: "/note", reason: "トップレベル「コンテンツ」" },
   { href: "/investing", reason: "トップレベル「投資」" },
-  { href: "/chat", reason: "秘書・各部署チャット（?node=assistant / kaizen / kakei ...）" },
+  { href: "/chat", reason: "秘書・各部署チャット（?node=assistant / kaizen / kakei ...）。家計チャットは /kakei から入る" },
 ];
 
 /** pathname がそのナビ項目に属するか（?query は無視する） */

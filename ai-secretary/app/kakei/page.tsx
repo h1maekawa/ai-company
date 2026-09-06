@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type Summary = {
@@ -44,6 +45,9 @@ export default function KakeiPage() {
           支出合計 {yen(data.total)}（{data.count}件）
           {data.needsReview.length === 0 ? "・未分類なし" : `・要確認 ${data.needsReview.length}件`}
         </p>
+        <Link href="/chat?node=kakei" className="mt-1 inline-block text-xs text-blue-600 underline">
+          家計を秘書に相談する →
+        </Link>
         {!data.connected && (
           <p className="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-700">
             家計簿アプリと未接続です。環境変数（HOUSEHOLD_*）と cron を設定してください。
