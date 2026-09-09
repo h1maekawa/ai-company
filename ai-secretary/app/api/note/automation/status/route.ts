@@ -40,7 +40,7 @@ export async function GET(): Promise<NextResponse> {
         portfolioAvailable: portfolio.source !== "none",
         newsAvailable: news.available,
       },
-      performanceSync: { lastRunAt: status.recent.lastSyncedAt },
+      performanceSync: { lastRunAt: status.recent.lastMeasuredAt ?? status.recent.lastSyncedAt },
     });
   } catch (error) {
     console.error("[api/note/automation/status] 失敗:", error);

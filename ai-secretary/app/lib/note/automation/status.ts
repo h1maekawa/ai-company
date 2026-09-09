@@ -53,6 +53,8 @@ export type AutomationStatus = {
   recent: {
     records: number;
     lastSyncedAt: string | null;
+    /** 実績レコードの最終計測時刻。接続状態表示の「Performance Sync 最終実行」に使う */
+    lastMeasuredAt: string | null;
   };
   freshness: DataFreshness;
 };
@@ -144,6 +146,13 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
+  const lastMeasuredAt =
+    performance.records
+      .map((record) => record.measuredAt)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .pop() ?? null;
+
   const lastSyncedAt =
     drafts
       .map((draft) => draft.metricsLastSyncedAt)
@@ -166,6 +175,7 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
     recent: {
       records: performance.records.length,
       lastSyncedAt,
+      lastMeasuredAt,
     },
     freshness: {
       level: lastSyncedAt ? "daily" : "none",
