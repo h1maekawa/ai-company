@@ -7,53 +7,9 @@ import {
   extractHoldingsJson,
   type Holding,
 } from "@/app/lib/fund/rakutenCsv";
+import { diffHoldings } from "@/app/lib/fund/holdingsDiff";
 
 const HOLDINGS_PATH = "memory/personal/fund/holdings.md";
-
-/** 取込前後で何が変わったか（TASK-F4: 取込後の差分ハイライト） */
-export type HoldingsDiff = {
-  previousImportedAt: string | null;
-  added: { name: string; code: string; quantity: number | null }[];
-  removed: { name: string; code: string; quantity: number | null }[];
-  changed: { name: string; code: string; from: number | null; to: number | null }[];
-};
-
-const keyOf = (h: Holding) => `${h.code || ""}|${h.name}`;
-
-/**
- * 保有の差分だけを見る（数量・銘柄）。評価額は表示のたびに再計算するので比較しない。
- * これにより「前回からトレードがあったか」が一目で分かる。
- */
-export function diffHoldings(
-  previous: Holding[],
-  next: Holding[],
-  previousImportedAt: string | null
-): HoldingsDiff {
-  const before = new Map(previous.map((h) => [keyOf(h), h]));
-  const after = new Map(next.map((h) => [keyOf(h), h]));
-
-  const added = next
-    .filter((h) => !before.has(keyOf(h)))
-    .map((h) => ({ name: h.name, code: h.code, quantity: h.quantity }));
-
-  const removed = previous
-    .filter((h) => !after.has(keyOf(h)))
-    .map((h) => ({ name: h.name, code: h.code, quantity: h.quantity }));
-
-  const changed = next
-    .filter((h) => {
-      const old = before.get(keyOf(h));
-      return old !== undefined && old.quantity !== h.quantity;
-    })
-    .map((h) => ({
-      name: h.name,
-      code: h.code,
-      from: before.get(keyOf(h))?.quantity ?? null,
-      to: h.quantity,
-    }));
-
-  return { previousImportedAt, added, removed, changed };
-}
 
 interface ImportRequest {
   /** Shift_JISからデコード済みのCSVテキスト */

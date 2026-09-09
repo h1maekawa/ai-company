@@ -850,7 +850,6 @@ export function socialOperationModeBooleans(
   if (mode === "review") return { publishingEnabled: true, xAutoPublish: false };
   return { publishingEnabled: false, xAutoPublish: false };
 }
-}
 
 /* ─── 高リスク題材の判定 ───────────────────────── */
 
