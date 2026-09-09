@@ -807,7 +807,30 @@ export function defaultFeatureFlags(): FeatureFlags {
 
 /* ─── 運用モード（AUTOPILOT / REVIEW / DRAFT） ───────────── */
 
+/**
+ * ノート事業部の運用モード。個別フラグの組み合わせを1つの言葉に畳んで、
+ * 「今どのモードで回っているか」を画面と通知で同じ語彙にする（TASK-N1 / N4）。
+ *
+ *   draft     … 生成まで。どのチャネルにも出さない（初期値・最も安全）
+ *   review    … 生成してSlackへ提示し、本人承認を経てから投稿する
+ *   autopilot … Safety/Factゲートを通ったものをBufferへ自動予約する
+ *
+ * autopilot でも Safety/Fact Gate と Human Escalation は外れない（要件P1.6）。
+ */
 export type SocialOperationMode = "autopilot" | "review" | "draft";
+
+/** 画面・通知で使う表示名。事業部をまたいでこの語彙だけを使う */
+export const OPERATION_MODE_LABELS: Record<SocialOperationMode, string> = {
+  autopilot: "全自動",
+  review: "承認あり",
+  draft: "下書きのみ",
+};
+
+export const OPERATION_MODE_HINTS: Record<SocialOperationMode, string> = {
+  autopilot: "安全チェックを通った投稿をBufferへ自動予約します",
+  review: "投稿案をSlackへ出し、承認したものだけ投稿します",
+  draft: "投稿案を作るだけ。どこにも出しません",
+};
 
 /** 旧データ（socialOperationMode未保存）から、既存bool 2つでモードを復元する */
 export function deriveSocialOperationMode(flags: {
@@ -826,6 +849,7 @@ export function socialOperationModeBooleans(
   if (mode === "autopilot") return { publishingEnabled: true, xAutoPublish: true };
   if (mode === "review") return { publishingEnabled: true, xAutoPublish: false };
   return { publishingEnabled: false, xAutoPublish: false };
+}
 }
 
 /* ─── 高リスク題材の判定 ───────────────────────── */
