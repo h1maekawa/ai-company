@@ -4,7 +4,10 @@ import {
   parseRakutenAssetCsv,
   calcAllocation,
   buildHoldingsMarkdown,
+  extractHoldingsJson,
+  type Holding,
 } from "@/app/lib/fund/rakutenCsv";
+import { diffHoldings } from "@/app/lib/fund/holdingsDiff";
 
 const HOLDINGS_PATH = "memory/personal/fund/holdings.md";
 
@@ -46,12 +49,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const markdown = buildHoldingsMarkdown(holdings, summary, importedAtJst);
 
     let existingSha: string | undefined;
+    let previous: Holding[] = [];
+    let previousImportedAt: string | null = null;
     try {
       const existing = await getVaultFile(HOLDINGS_PATH);
       existingSha = existing.sha;
+      const parsed = extractHoldingsJson(existing.content || "");
+      previous = parsed?.holdings ?? [];
+      previousImportedAt = parsed?.importedAt ?? null;
     } catch {
       // 新規作成
     }
+
+    const diff = diffHoldings(previous, holdings, previousImportedAt);
 
     await saveVaultFile(HOLDINGS_PATH, markdown, existingSha);
 
@@ -61,6 +71,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       holdingsCount: holdings.length,
       summary,
       holdings,
+      diff,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

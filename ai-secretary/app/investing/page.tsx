@@ -12,6 +12,8 @@ import { AiSuggestCard } from "@/components/investing/AiSuggestCard";
 import { CapacityCard } from "@/components/investing/CapacityCard";
 import { LearningBriefCard } from "@/components/investing/LearningBriefCard";
 import { Skeleton } from "@/components/investing/ui";
+import { FreshnessBadge } from "@/components/ui/Freshness";
+import { formatAsOf, relativeAge } from "@/app/lib/freshness";
 import { useAnalysis, useCapacity, useLearningBrief, useNews, usePortfolio } from "./usePortfolio";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -29,6 +31,8 @@ export default function InvestingDashboard() {
 
   const summary = data?.summary;
   const history = data?.history ?? [];
+  const freshness = data?.freshness ?? null;
+  const fx = data?.fx ?? null;
 
   return (
     <InvestingShell title="ダッシュボード">
@@ -72,6 +76,7 @@ export default function InvestingDashboard() {
               deltaPct={summary?.todayPnlPct ?? null}
               spark={history}
               delay={0}
+              freshness={freshness}
             />
             <StatCard
               label="含み益"
@@ -79,6 +84,7 @@ export default function InvestingDashboard() {
               deltaPct={summary?.totalPnlPct ?? null}
               emphasis
               delay={0.05}
+              freshness={freshness}
             />
             <StatCard
               label="現金残高"
@@ -151,12 +157,22 @@ export default function InvestingDashboard() {
         </div>
       </section>
 
-      {/* データ出所を明示する（数字の信頼性のため） */}
+      {/* データ出所と鮮度を明示する（数字の信頼性のため） */}
       {!loading && data && data.source !== "none" && (
-        <p className="mt-5 text-center text-[11px] text-sub">
-          データ出所: {SOURCE_LABEL[data.source]}
-          {data.updatedAt ? ` ・ 最終更新 ${data.updatedAt}` : ""}
-        </p>
+        <div className="mt-5 flex flex-col items-center gap-1.5 text-[11px] text-sub">
+          <FreshnessBadge freshness={freshness} />
+          <p className="text-center leading-relaxed">
+            保有（数量・取得単価）: {SOURCE_LABEL[data.source]}
+            {data.updatedAt ? ` ・ 取込 ${data.updatedAt}` : ""}
+            <br />
+            評価額: 株＝遅延クオート / 投信＝前営業日の基準価額
+            {data.revaluedAt ? ` ・ 再評価 ${relativeAge(data.revaluedAt)}` : ""}
+            {fx
+              ? ` ・ USD/JPY ${fx.rate.toFixed(2)}（${formatAsOf(fx.asOf)}）`
+              : " ・ USD/JPY 未取得"}
+          </p>
+          {freshness?.note && <p className="text-loss/80">{freshness.note}</p>}
+        </div>
       )}
     </InvestingShell>
   );

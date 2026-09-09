@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, PenLine } from "lucide-react";
+import { AutomationMonitor } from "@/components/note/AutomationMonitor";
 
 type HomeData = {
   week: { publishedCount: number; revenue: number; conversions: number };
@@ -24,6 +25,9 @@ export default function ContentHomePage() {
 
   return (
     <div className="space-y-5">
+      {/* 監視が先、作文は後（TASK-N4）。全自動運用では「見る」が主な操作になる */}
+      <AutomationMonitor />
+
       <section className="rounded-2xl border border-hairline bg-ink-card p-5">
         <p className="text-xs text-sub">今週</p>
         <div className="mt-3 grid grid-cols-3 gap-3">
@@ -60,7 +64,7 @@ export default function ContentHomePage() {
         className="flex items-center justify-center gap-2 rounded-2xl border border-brand/30 bg-brand/10 px-4 py-4 text-sm font-semibold text-brand hover:bg-brand/15"
       >
         <PenLine className="h-4 w-4" />
-        記事を作る
+        自分で記事を作る（承認・微修正はXタブから）
       </Link>
     </div>
   );

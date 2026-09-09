@@ -1,7 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
+import type { DataFreshness } from "@/app/lib/freshness";
 import { ValuePoint, formatJpy, formatPct } from "@/app/lib/investing/types";
+import { FreshnessBadge } from "@/components/ui/Freshness";
 import { useCountUp, toneOf } from "./ui";
 
 /** カード右上に置く極小スパークライン（Rechartsを使わずSVGで軽量に描く） */
@@ -59,6 +61,7 @@ export function StatCard({
   spark,
   delay = 0,
   emphasis = false,
+  freshness,
 }: {
   label: string;
   value: number | null;
@@ -69,6 +72,8 @@ export function StatCard({
   spark?: ValuePoint[];
   delay?: number;
   emphasis?: boolean;
+  /** この数字の鮮度（TASK-C2の共通表示） */
+  freshness?: DataFreshness | null;
 }) {
   const animated = useCountUp(value);
   const display =
@@ -110,6 +115,11 @@ export function StatCard({
                 : ""}
             </p>
           ) : null}
+          {freshness && (
+            <p className="mt-2">
+              <FreshnessBadge freshness={freshness} compact />
+            </p>
+          )}
         </div>
 
         {spark && spark.length >= 2 && (

@@ -5,6 +5,10 @@
  * 取得できない項目は 0 や推定値で埋めず null のままにし、UIで「未取得」と表示する。
  */
 
+import type { DataFreshness } from "../freshness";
+
+export type { DataFreshness };
+
 export type AssetClass = "us_stock" | "jp_stock" | "fund" | "cash" | "other";
 
 export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
@@ -38,6 +42,11 @@ export type Position = {
   thesis?: string | null;
   risk?: string | null;
   conviction?: string | null;
+  /**
+   * この行の価格の鮮度（TASK-F2）。
+   * 株は遅延クオート、投信は前営業日NAV、取得失敗時は "stale" になる。
+   */
+  freshness?: DataFreshness | null;
 };
 
 export type PortfolioSummary = {
@@ -59,16 +68,28 @@ export type PortfolioSummary = {
 export type Portfolio = {
   positions: Position[];
   summary: PortfolioSummary;
-  /** データの出所（UIで明示する） */
+  /** 保有データ（数量・取得単価）の出所。評価額の出所は freshness を見る */
   source: "holdings_csv" | "positions_md" | "none";
+  /** 保有データの最終取込時刻（CSV取込時刻）。評価額の鮮度ではない */
   updatedAt: string | null;
+  /** 現在値で再評価した時刻（ISO）。再評価していなければ null */
+  revaluedAt?: string | null;
+  /** 円換算に使ったUSD/JPY */
+  fx?: { rate: number; asOf: string; source: string } | null;
+  /** ポートフォリオ全体の価格鮮度（一番古い銘柄に合わせる） */
+  freshness?: DataFreshness | null;
 };
 
 /** 資産推移チャートの1点 */
 export type ValuePoint = {
-  /** YYYY-MM-DD */
+  /** YYYY-MM-DD（JST） */
   date: string;
   totalValueJpy: number;
+  /**
+   * 記録時刻（ISO8601）。市場時間中のスナップショット（TASK-F3）で入る。
+   * 同じ date に複数点が並ぶことがあるため、時系列の並び替えは at を優先する。
+   */
+  at?: string;
 };
 
 export type ChartRange = "1D" | "1W" | "1M" | "3M" | "1Y" | "ALL";

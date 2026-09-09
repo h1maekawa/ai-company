@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { Briefcase, ChevronRight } from "lucide-react";
 import { Position, formatJpy, formatPct } from "@/app/lib/investing/types";
+import { FRESHNESS_LABELS, formatAsOf } from "@/app/lib/freshness";
+import { FreshnessDot } from "@/components/ui/Freshness";
 import { Card, CardHeader, EmptyState, toneOf } from "./ui";
 
 /** ロゴ画像は持たないので、ティッカー由来の配色モノグラムで代用する */
@@ -54,6 +56,7 @@ export function HoldingsTable({
       <div className="px-5 pt-5">
         <CardHeader
           title={limit ? `${title}TOP${limit}` : title}
+          hint="株＝遅延クオート / 投信＝前営業日の基準価額。行の丸印にカーソルを合わせると出所が出ます"
           action={
             limit && positions.length > limit ? (
               <Link
@@ -116,7 +119,16 @@ export function HoldingsTable({
                         : "—"}
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums font-medium text-white">
-                      {formatJpy(position.marketValueJpy)}
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        <FreshnessDot freshness={position.freshness} />
+                        {formatJpy(position.marketValueJpy)}
+                      </span>
+                      {position.freshness && (
+                        <span className="block text-[10px] font-normal tabular-nums text-sub">
+                          {FRESHNESS_LABELS[position.freshness.level]} ·{" "}
+                          {formatAsOf(position.freshness.asOf)}
+                        </span>
+                      )}
                     </td>
                     <td
                       className={`px-3 py-3 text-right tabular-nums font-medium ${toneOf(position.pnlJpy)}`}
@@ -164,6 +176,12 @@ export function HoldingsTable({
                     <p className={`text-[11px] tabular-nums ${toneOf(position.pnlPct)}`}>
                       {formatPct(position.pnlPct, { sign: true })}
                     </p>
+                    {position.freshness && (
+                      <p className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-sub">
+                        <FreshnessDot freshness={position.freshness} />
+                        {formatAsOf(position.freshness.asOf)}
+                      </p>
+                    )}
                   </div>
                   <ChevronRight className="h-4 w-4 shrink-0 text-sub" />
                 </Link>
