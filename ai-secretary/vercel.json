@@ -14,11 +14,7 @@
     },
     {
       "path": "/api/cron/investing-snapshot",
-      "schedule": "0 0-6 * * 1-5"
-    },
-    {
-      "path": "/api/cron/investing-snapshot",
-      "schedule": "0 14-20 * * 1-5"
+      "schedule": "0 6 * * 1-5"
     }
   ]
 }

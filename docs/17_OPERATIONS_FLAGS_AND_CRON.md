@@ -16,8 +16,7 @@
 | `/api/cron/note-daily-research` | `0 22 * * *` | 毎日 07:00 | トレンド調査・候補クラスタ更新 |
 | `/api/cron/x-daily-publish` | `0 23 * * *` | 毎日 08:00 | 候補選定→生成→Safety/Factゲート→Buffer予約 |
 | `/api/cron/content-nightly-review` | `30 14 * * *` | 毎日 23:30 | 実績回収（Performance Sync）＋夜間の成長戦略見直し |
-| `/api/cron/investing-snapshot` | `0 0-6 * * 1-5` | 平日 09:00〜15:00 毎正時 | 東京市場中の資産スナップショット |
-| `/api/cron/investing-snapshot` | `0 14-20 * * 1-5` | 平日 23:00〜翌05:00 毎正時 | 米国市場中の資産スナップショット |
+| `/api/cron/investing-snapshot` | `0 6 * * 1-5` | 平日 15:00 | 東京市場の引けで資産スナップショット |
 
 補足:
 
@@ -30,10 +29,13 @@
   二重登録すると同じ実績を2回取りに行くだけになる。
   ループは `x-daily-publish`（生成）→ 夜間レビュー内の実績回収・勝ちトピック再評価 →
   翌朝の `x-daily-publish` の候補スコアへ反映、で一周する。
-- `investing-snapshot` を1日に複数回走らせるには、Vercel が
-  **1日1回より細かい cron を許可するプラン（Pro 以上）** が必要。
-  Hobby プランのままなら日中スナップショットは動かないので、
-  `0 6 * * 1-5`（15:00 JST・東京市場の引け）など1日1回へ落とすこと。
+- **日中スナップショットは実装済みだが、cron は1日1回に留めている。**
+  現行の Vercel プランは1日1回より細かい cron を受け付けず、
+  `0 0-6 * * 1-5` のような時間刻みを入れるとデプロイ自体が失敗する。
+  `recordSnapshot(total, { intraday: true })` と `/api/cron/investing-snapshot` は
+  複数点の記録に対応済みなので、プランを上げたら schedule を
+  `0 0-6 * * 1-5`（東京場中）と `0 14-20 * * 1-5`（米国場中）へ増やすだけで
+  日中の推移が滑らかになる。
 - `investing-snapshot` は値が動いていなければ書き込まない。
   連続実行の最小間隔は 20 分（`app/lib/investing/history.ts`）。
 - cron はすべて `CRON_SECRET` で認証する（`verifyCronSecret`）。
