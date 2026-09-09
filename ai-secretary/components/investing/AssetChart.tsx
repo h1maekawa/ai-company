@@ -12,15 +12,24 @@ import {
 } from "recharts";
 import { TrendingUp } from "lucide-react";
 import { CHART_RANGES, ChartRange, ValuePoint, formatJpy, formatPct } from "@/app/lib/investing/types";
+import { formatAsOf } from "@/app/lib/freshness";
 import { Card, CardHeader, EmptyState, toneOf } from "./ui";
 
-function filterByRange(points: ValuePoint[], range: ChartRange): ValuePoint[] {
+/** 同じ日に複数点（日中スナップショット）が並ぶため、X軸のキーは時刻込みで作る */
+type ChartPoint = ValuePoint & { key: string };
+
+function toChartPoints(points: ValuePoint[]): ChartPoint[] {
+  return points.map((p) => ({ ...p, key: p.at ?? p.date }));
+}
+
+function filterByRange(points: ChartPoint[], range: ChartRange): ChartPoint[] {
   const spec = CHART_RANGES.find((r) => r.id === range);
   if (!spec?.days) return points;
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - spec.days);
-  const cutoffKey = cutoff.toISOString().slice(0, 10);
-  const filtered = points.filter((p) => p.date >= cutoffKey);
+  const cutoffMs = Date.now() - spec.days * 24 * 60 * 60 * 1000;
+  const filtered = points.filter((p) => {
+    const ms = new Date(p.at ?? `${p.date}T23:59:59+09:00`).getTime();
+    return Number.isFinite(ms) ? ms >= cutoffMs : false;
+  });
   // 期間内に点が少なすぎる場合は全期間を見せる（空グラフを避ける）
   return filtered.length >= 2 ? filtered : points;
 }
@@ -30,13 +39,13 @@ function TooltipCard({
   payload,
 }: {
   active?: boolean;
-  payload?: { payload: ValuePoint }[];
+  payload?: { payload: ChartPoint }[];
 }) {
   if (!active || !payload?.length) return null;
   const point = payload[0].payload;
   return (
     <div className="rounded-xl border border-hairline bg-ink-raised px-3 py-2 shadow-lift">
-      <p className="text-[11px] text-sub">{point.date}</p>
+      <p className="text-[11px] text-sub">{formatAsOf(point.at ?? point.date)}</p>
       <p className="text-sm font-semibold text-white">{formatJpy(point.totalValueJpy)}</p>
     </div>
   );
@@ -44,7 +53,10 @@ function TooltipCard({
 
 export function AssetChart({ points }: { points: ValuePoint[] }) {
   const [range, setRange] = useState<ChartRange>("1M");
-  const data = useMemo(() => filterByRange(points, range), [points, range]);
+  const chartPoints = useMemo(() => toChartPoints(points), [points]);
+  const data = useMemo(() => filterByRange(chartPoints, range), [chartPoints, range]);
+  // 短期レンジは日中スナップショットが主役になるので時刻まで出す
+  const showTime = range === "1D" || range === "1W";
 
   const change = useMemo(() => {
     if (data.length < 2) return { diff: null as number | null, pct: null as number | null };
@@ -61,8 +73,8 @@ export function AssetChart({ points }: { points: ValuePoint[] }) {
         title="資産推移"
         hint={
           data.length >= 2
-            ? `${data[0].date} 〜 ${data[data.length - 1].date}`
-            : "毎日ひらくと1点ずつ記録されます"
+            ? `${data[0].date} 〜 ${data[data.length - 1].date}（${data.length}点）`
+            : "市場時間中のスナップショットと表示時の記録が溜まると伸びます"
         }
         action={
           <div className="flex flex-wrap gap-1 rounded-xl bg-white/[0.04] p-1">
@@ -87,7 +99,7 @@ export function AssetChart({ points }: { points: ValuePoint[] }) {
         <EmptyState
           icon={<TrendingUp className="h-7 w-7" />}
           title="推移データを蓄積中です"
-          description="証券会社から過去の時系列は取得できないため、この画面を開いた日の総評価額を1日1点ずつ記録しています。明日以降グラフが伸びていきます。"
+          description="証券会社から過去の時系列は取得できないため、市場時間中のスナップショットと画面表示時の総評価額を実測して積み上げています。時間が経つほどグラフが滑らかになります。"
         />
       ) : (
         <>
@@ -112,12 +124,16 @@ export function AssetChart({ points }: { points: ValuePoint[] }) {
                 </defs>
                 <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
                 <XAxis
-                  dataKey="date"
+                  dataKey="key"
                   tick={{ fontSize: 11, fill: "#94A3B8" }}
                   tickLine={false}
                   axisLine={false}
                   minTickGap={28}
-                  tickFormatter={(value: string) => value.slice(5).replace("-", "/")}
+                  tickFormatter={(value: string) =>
+                    showTime
+                      ? formatAsOf(value)
+                      : formatAsOf(value.slice(0, 10))
+                  }
                 />
                 <YAxis
                   tick={{ fontSize: 11, fill: "#94A3B8" }}

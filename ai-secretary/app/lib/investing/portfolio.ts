@@ -5,10 +5,16 @@
  *   1. holdings.md … 楽天CSV取込のjsonブロック（最も正確）
  *   2. positions.md … 手動更新のMarkdown表（CSV未取込でも実データが入っている）
  * どちらも無ければ空のポートフォリオを返し、UIは「未取込」を表示する。
+ *
+ * 保有と評価の分離（TASK-F1）:
+ *   CSV / positions.md から取るのは「保有」（コード・数量・取得単価・資産クラス）だけ。
+ *   評価額・含み損益は loadPortfolio のたびに revaluePositions で現在値から計算し直す。
+ *   CSVを再取込しなくても株の評価額が動くのはこのため。
  */
 
 import { getVaultFile } from "../vault";
 import { extractHoldingsJson } from "../fund/rakutenCsv";
+import { revaluePositions } from "./revalue";
 import {
   ASSET_CLASS_LABELS,
   AssetClass,
@@ -63,9 +69,21 @@ function classifyByCode(code: string): AssetClass {
   return "us_stock";
 }
 
+/**
+ * 読み込み段階の中間表現。サマリーは再評価の後に組み立てるため、
+ * ここでは「保有」と、Markdownに明示された合計値だけを持つ。
+ */
+type LoadedHoldings = {
+  positions: Position[];
+  source: "holdings_csv" | "positions_md";
+  updatedAt: string | null;
+  /** positions.md に「時価評価額合計：〜」と書かれている場合のみ入る */
+  totals: { totalJpy: number | null; totalPnlJpy: number | null } | null;
+};
+
 // ─── 1. holdings.md（CSV取込） ─────────────────────────
 
-async function loadFromHoldings(): Promise<Portfolio | null> {
+async function loadFromHoldings(): Promise<LoadedHoldings | null> {
   let data: ReturnType<typeof extractHoldingsJson> = null;
   try {
     const file = await getVaultFile(HOLDINGS_PATH);
@@ -100,9 +118,9 @@ async function loadFromHoldings(): Promise<Portfolio | null> {
 
   return {
     positions,
-    summary: buildSummary(positions, null),
     source: "holdings_csv",
     updatedAt: data.importedAt ?? null,
+    totals: null,
   };
 }
 
@@ -192,7 +210,7 @@ function parseValueBreakdown(markdown: string): {
   return { totalJpy, totalPnlJpy, byName };
 }
 
-async function loadFromPositions(): Promise<Portfolio | null> {
+async function loadFromPositions(): Promise<LoadedHoldings | null> {
   let markdown = "";
   try {
     const file = await getVaultFile(POSITIONS_PATH);
@@ -225,9 +243,9 @@ async function loadFromPositions(): Promise<Portfolio | null> {
 
   return {
     positions,
-    summary: buildSummary(positions, { totalJpy, totalPnlJpy }),
     source: "positions_md",
     updatedAt,
+    totals: { totalJpy, totalPnlJpy },
   };
 }
 
@@ -293,9 +311,9 @@ async function loadCashJpy(): Promise<number | null> {
 
 /** ポートフォリオ全体を組み立てて返す（データが無ければ source: "none"） */
 export async function loadPortfolio(): Promise<Portfolio> {
-  const portfolio = (await loadFromHoldings()) ?? (await loadFromPositions());
+  const loaded = (await loadFromHoldings()) ?? (await loadFromPositions());
 
-  if (!portfolio) {
+  if (!loaded) {
     return {
       positions: [],
       summary: {
@@ -309,9 +327,31 @@ export async function loadPortfolio(): Promise<Portfolio> {
       },
       source: "none",
       updatedAt: null,
+      revaluedAt: null,
+      fx: null,
+      freshness: { level: "none", asOf: null, source: "未取込", note: null },
     };
   }
 
-  portfolio.summary.cashJpy = await loadCashJpy();
-  return portfolio;
+  // 評価は毎回やり直す（CSVの凍結値をそのまま出さない）
+  const revaluation = await revaluePositions(loaded.positions, {
+    source: loaded.source,
+    importedAt: loaded.updatedAt,
+  });
+
+  // 1銘柄でも現在値を反映できたら、Markdownに書かれた古い合計値は使わない
+  const totals = revaluation.repriced > 0 ? null : loaded.totals;
+
+  return {
+    positions: revaluation.positions,
+    summary: {
+      ...buildSummary(revaluation.positions, totals),
+      cashJpy: await loadCashJpy(),
+    },
+    source: loaded.source,
+    updatedAt: loaded.updatedAt,
+    revaluedAt: revaluation.revaluedAt,
+    fx: revaluation.fx,
+    freshness: revaluation.freshness,
+  };
 }
