@@ -15,6 +15,11 @@ import {
   loadViewpoints,
 } from "@/app/lib/note/research/store";
 import { runNoteArticleQa, runXDraftQa } from "@/app/lib/qa/runner";
+import {
+  runExperienceQa,
+  runLearningQa,
+  runViewpointQa,
+} from "@/app/lib/qa/researchChecks";
 import type { QaReport } from "@/app/lib/qa/types";
 import {
   experienceToReviewItem,
@@ -89,9 +94,17 @@ export async function loadReviewFeed(): Promise<ReviewFeed> {
   const items: ReviewItem[] = [
     ...xItems,
     ...noteItems,
-    ...viewpoints.filter(isCandidate).map(viewpointToReviewItem),
-    ...experiences.filter(isCandidate).map(experienceToReviewItem),
-    ...learnings.filter(isCandidate).map(learningToReviewItem),
+    // リサーチ工程も検査対象にする。自動承認（要件10）は
+    // 「テストを通過した」ことを条件にしており、検査が無いものは通せないため
+    ...viewpoints
+      .filter(isCandidate)
+      .map((v) => ({ ...viewpointToReviewItem(v), qa: runViewpointQa(v) })),
+    ...experiences
+      .filter(isCandidate)
+      .map((e) => ({ ...experienceToReviewItem(e), qa: runExperienceQa(e) })),
+    ...learnings
+      .filter(isCandidate)
+      .map((l) => ({ ...learningToReviewItem(l), qa: runLearningQa(l) })),
   ];
 
   // 新しいものを上に。工程順ではなく時系列にするのは、

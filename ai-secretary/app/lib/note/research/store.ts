@@ -8,6 +8,10 @@
 
 import { getVaultFile, saveVaultFile } from "../../vault";
 import {
+  type ApprovalPolicy,
+  normalizeApprovalPolicy,
+} from "../../review/approvalPolicy";
+import {
   AffiliatePolicy,
   ContentBrief,
   ContentPerformance,
@@ -159,6 +163,8 @@ export async function saveReferences(file: ReferenceFile): Promise<ReferenceFile
 
 export type ResearchSettingsFile = {
   x: XResearchSettings;
+  /** 工程ごとの承認要否（要件10）。未設定は既定（全工程 auto）へ倒す */
+  approvalPolicy: ApprovalPolicy;
   purposeMix: PurposeMix;
   flags: FeatureFlags;
   performanceWeights: PerformanceWeights;
@@ -194,6 +200,7 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
   // 旧データ（socialOperationMode未保存）は既存bool 2つからモードを復元する。
   // 保存済みなら常にモードを正としてbool 2つを再計算する（手編集などでのズレを防ぐ）。
   const hadMode = typeof (data?.flags as Partial<FeatureFlags> | undefined)?.socialOperationMode === "string";
+  const approvalPolicy = normalizeApprovalPolicy(data?.approvalPolicy);
   const flags = { ...defaultFeatureFlags(), ...(data?.flags ?? {}) };
   flags.xBrowserAutomationEnabled = false;
   if (process.env.X_API_ENABLED !== "true") flags.xPaidApiEnabled = false;
@@ -204,6 +211,7 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
   }
   return {
     x,
+    approvalPolicy,
     purposeMix: { ...defaultPurposeMix(), ...(data?.purposeMix ?? {}) },
     flags,
     performanceWeights: {

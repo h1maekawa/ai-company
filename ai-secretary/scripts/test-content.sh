@@ -20,6 +20,7 @@ npx tsc \
   app/lib/planning/store.ts \
   app/lib/note/research/types.ts \
   app/lib/note/research/store.ts \
+  app/lib/review/approvalPolicy.ts \
   app/lib/content/core/types.ts \
   app/lib/content/core/store.ts \
   app/lib/content/core/approval.ts \
