@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight, PenLine } from "lucide-react";
 import { AutomationMonitor } from "@/components/note/AutomationMonitor";
 import { AgentTaskList } from "@/components/note/AgentTaskList";
+import { StyleProfileCard } from "@/components/note/StyleProfileCard";
 
 type HomeData = {
   week: { publishedCount: number; revenue: number; conversions: number };
@@ -31,6 +32,9 @@ export default function ContentHomePage() {
 
       {/* チャット指示から生まれたタスク（要件1） */}
       <AgentTaskList />
+
+      {/* 文体の学習状況。種が入っているかを一目で見せる（要件4） */}
+      <StyleProfileCard />
 
       <section className="rounded-2xl border border-hairline bg-ink-card p-5">
         <p className="text-xs text-sub">今週</p>

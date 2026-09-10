@@ -9,6 +9,7 @@ import {
 import type { PublishJob } from "../research/types";
 import { captureKnowledgeCandidate } from "../../knowledge/captureService";
 import { computeLearnedStyleProfile, loadStyleProfile, saveStyleProfile } from "../styleProfile";
+import { loadXWorkspace } from "../x/store";
 import { buildWeeklyCeoReport, loadWeeklyCeoReports, saveWeeklyCeoReport, weeklyCeoReportSlackText } from "./weeklyReport";
 import { postToSlack } from "../../integrations/slack/blocks";
 import { weekKeyTokyo } from "../operations";
@@ -88,10 +89,13 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     autoApprovalError = error instanceof Error ? error.message : "Auto approval failed";
   }
 
-  const [performance, settings, queue, existingReviews, socialDrafts, styleProfile] = await Promise.all([
-    loadPerformance(), loadResearchSettings(), loadNoteQueue(), loadGrowthReviews(),
-    loadSocialDrafts(), loadStyleProfile(),
-  ]);
+  const [performance, settings, queue, existingReviews, socialDrafts, styleProfile, workspace] =
+    await Promise.all([
+      loadPerformance(), loadResearchSettings(), loadNoteQueue(), loadGrowthReviews(),
+      loadSocialDrafts(), loadStyleProfile(),
+      // 本人のX過去投稿（アーカイブ）。文体学習の「種」（TASK-N3 / 要件4）
+      loadXWorkspace().catch(() => ({ ownedPosts: [], referenceNotes: [] })),
+    ]);
   const tokyoDate = new Date(now.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
   const pendingArticleIds = new Set(queue.jobs.filter((job) => job.kind === "note-metrics-sync" && (job.status === "pending" || job.status === "running")).map((job) => job.articleId));
   const existingJobIds = new Set(queue.jobs.map((job) => job.id));
@@ -145,7 +149,8 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
   // 要件P0.1/P0.2: Performance → Style自己改善。source:manualのフィールドは上書きしない。
   // Brand自体（人格）はここでは一切変更しない（StyleProfileはBrand/Safetyより下位の参照情報）。
   const learnedStyleProfile = computeLearnedStyleProfile(
-    styleProfile, socialDrafts, performance.records, settings.performanceWeights
+    styleProfile, socialDrafts, performance.records, settings.performanceWeights,
+    workspace.ownedPosts
   );
   const styleProfileUpdated = JSON.stringify(learnedStyleProfile) !== JSON.stringify(styleProfile);
   if (styleProfileUpdated) await saveStyleProfile(learnedStyleProfile);
