@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAutomationStatus } from "@/app/lib/note/automation/status";
 import { isSerpApiConfigured } from "@/app/lib/note/research/serpapi";
+import { isBufferConfigured } from "@/app/lib/note/publishing/buffer";
 import { loadResearchSettings } from "@/app/lib/note/research/store";
 import { loadPortfolio } from "@/app/lib/investing/portfolio";
 import { loadNews } from "@/app/lib/investing/news";
@@ -32,14 +33,14 @@ export async function GET(): Promise<NextResponse> {
 
     return NextResponse.json({
       ...status,
-      buffer: { configured: !status.blockers.some((b) => b.kind === "integration") },
+      buffer: { configured: isBufferConfigured() },
       serpApi: { configured: isSerpApiConfigured() },
       xResearch: { enabled: settings.x.enabled, mode: settings.x.mode },
       investing: {
         portfolioAvailable: portfolio.source !== "none",
         newsAvailable: news.available,
       },
-      performanceSync: { lastRunAt: status.recent.lastSyncedAt },
+      performanceSync: { lastRunAt: status.recent.lastMeasuredAt ?? status.recent.lastSyncedAt },
     });
   } catch (error) {
     console.error("[api/note/automation/status] 失敗:", error);
