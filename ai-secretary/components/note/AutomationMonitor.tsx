@@ -14,7 +14,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, CalendarClock, CheckCircle2, Inbox, Settings } from "lucide-react";
-import type { AutomationStatus } from "@/app/lib/note/automation/status";
+import type { ApprovalQueueEntry, AutomationStatus } from "@/app/lib/note/automation/status";
 import { OPERATION_MODE_HINTS, OPERATION_MODE_LABELS } from "@/app/lib/note/research/types";
 import { FreshnessBadge } from "@/components/ui/Freshness";
 import { Skeleton } from "@/components/ui/primitives";
@@ -31,6 +31,45 @@ function timeJst(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(iso));
+}
+
+/**
+ * 自動テスト（要件9）の結果表示。
+ * 承認前の必須条件なので、通過していないものは理由まで出す。
+ */
+function QaBadge({ entry }: { entry: ApprovalQueueEntry }) {
+  if (!entry.qa) {
+    return (
+      <span className="mt-1 block text-[10px] text-sub">自動テスト: 未実行</span>
+    );
+  }
+
+  const { qa } = entry;
+  const failed = qa.checks.filter(
+    (c) => c.severity === "blocking" && c.status === "fail"
+  );
+
+  return (
+    <span className="mt-1 block">
+      <span
+        className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
+          qa.passed
+            ? "border-gain/25 bg-gain/10 text-gain"
+            : "border-loss/25 bg-loss/10 text-loss"
+        }`}
+      >
+        {qa.passed ? "自動テスト通過" : "自動テスト未通過"}
+      </span>
+      {entry.qaSummary && qa.passed && (
+        <span className="ml-1.5 text-[10px] text-sub">{entry.qaSummary}</span>
+      )}
+      {failed.length > 0 && (
+        <span className="mt-0.5 block text-[10px] leading-relaxed text-loss/80">
+          {failed.map((c) => `${c.label}: ${c.detail}`).join(" / ")}
+        </span>
+      )}
+    </span>
+  );
 }
 
 export function AutomationMonitor() {
@@ -165,6 +204,7 @@ export function AutomationMonitor() {
                   >
                     <span className="block truncate text-white">{entry.text}</span>
                     <span className="mt-0.5 block text-[10px] text-loss/80">{entry.reason}</span>
+                    <QaBadge entry={entry} />
                   </Link>
                 </li>
               ))}

@@ -220,9 +220,25 @@ export type CreatedPost = {
   repaired: boolean;
 };
 
-export async function createPost(
+/** 送信直前まで通過した状態。ドライラン（要件9）と実送信で同じものを使う */
+export type PublishPreflight = {
+  /** Safety/Fact Gateを通過（必要なら修復済み）の下書き */
+  draft: SocialDraft;
+  repaired: boolean;
+  /** Bufferへ実際に送るペイロード */
+  payload: Record<string, unknown>;
+};
+
+/**
+ * 送信前に通る検証とペイロード構築をすべてここへ集約する。
+ *
+ * createPost と dryRunPost が同じ関数を呼ぶことで、
+ * 「ドライランは通ったのに本番で落ちる」という乖離を構造的に防ぐ。
+ * ここから下（graphql呼び出し）だけが本番と検証の差になる。
+ */
+export async function preflightPost(
   input: CreatePostInput
-): Promise<BufferResult<CreatedPost>> {
+): Promise<BufferResult<PublishPreflight>> {
   // Bufferへの全X送信経路が必ず通る最終境界。古いfailureReasonの有無にかかわらず再評価する。
   const prepared = await prepareXDraftForPublishing({
     draft: input.draft,
@@ -258,6 +274,44 @@ export async function createPost(
     }
   }
 
+  return {
+    ok: true,
+    data: {
+      draft: prepared.draft,
+      repaired: prepared.repaired,
+      payload: {
+        channelId: cfg.channel,
+        text: prepared.draft.text,
+        schedulingType: "automatic",
+        mode: input.mode === "saveToDraft" ? "addToQueue" : input.mode,
+        saveToDraft: input.mode === "saveToDraft",
+        aiAssisted: true,
+        ...(input.mode === "customScheduled" && input.scheduledAt
+          ? { dueAt: input.scheduledAt }
+          : {}),
+      },
+    },
+  };
+}
+
+/**
+ * ドライラン（要件9）。実際には送信せず、送信前に落ちる条件だけを確かめる。
+ * 成功時は本番と同一のペイロードを返すので、内容の目視確認にも使える。
+ */
+export async function dryRunPost(
+  input: CreatePostInput
+): Promise<BufferResult<PublishPreflight>> {
+  return preflightPost(input);
+}
+
+export async function createPost(
+  input: CreatePostInput
+): Promise<BufferResult<CreatedPost>> {
+  const pre = await preflightPost(input);
+  // 明示的に組み直す（テストは非strictでコンパイルするため、判別共用体の絞り込みに頼らない）
+  if (pre.ok === false) return { ok: false, error: pre.error };
+  const prepared = pre.data;
+
   const result = await graphql<{
     createPost?: {
       post?: { id?: string; status?: string; dueAt?: string };
@@ -274,19 +328,7 @@ export async function createPost(
         }
       }
     }`,
-    {
-      input: {
-        channelId: cfg.channel,
-        text: prepared.draft.text,
-        schedulingType: "automatic",
-        mode: input.mode === "saveToDraft" ? "addToQueue" : input.mode,
-        saveToDraft: input.mode === "saveToDraft",
-        aiAssisted: true,
-        ...(input.mode === "customScheduled" && input.scheduledAt
-          ? { dueAt: input.scheduledAt }
-          : {}),
-      },
-    }
+    { input: prepared.payload }
   );
 
   if (result.ok === false) return result;
