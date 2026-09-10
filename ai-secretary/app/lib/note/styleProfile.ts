@@ -9,31 +9,30 @@
 
 import { getVaultFile, saveVaultFile } from "../vault";
 import { classifyStyle, aggregateStyleSignals, type StyleDimensionKey, type StyleSignalGroup } from "./styleSignals";
+import type { OwnedXPost } from "./x/types";
 import type { ContentPerformance, PerformanceWeights, SocialDraft } from "./research/types";
 
 const PATH = "memory/personal/note/style-profile.md";
 
-export type StyleFieldSource = "manual" | "own-posts" | "performance" | "external-pattern" | "unset";
+export type {
+  StyleFieldSource,
+  StyleField,
+  StyleDimension,
+  StyleProfile,
+  StyleLearningSources,
+} from "./styleProfileTypes";
+export {
+  STYLE_DIMENSIONS,
+  STYLE_DIMENSION_LABELS,
+  STYLE_SOURCE_LABELS,
+} from "./styleProfileTypes";
 
-export type StyleField = {
-  description: string;
-  source: StyleFieldSource;
-  updatedAt: string;
-};
-
-export type StyleProfile = {
-  opening: StyleField;
-  ending: StyleField;
-  tone: StyleField;
-  sentenceLength: StyleField;
-  lineBreak: StyleField;
-  question: StyleField;
-  cta: StyleField;
-  /** 本人が明示的に登録した表現のみ。外部投稿からの自動抽出はしない */
-  preferredExpressions: string[];
-  avoidedExpressions: string[];
-  updatedAt: string;
-};
+import {
+  STYLE_DIMENSIONS,
+  type StyleField,
+  type StyleLearningSources,
+  type StyleProfile,
+} from "./styleProfileTypes";
 
 function unsetField(): StyleField {
   return { description: "", source: "unset", updatedAt: new Date().toISOString() };
@@ -164,26 +163,74 @@ type OwnPostsProfile = Partial<
  * 本人がREVIEWモードで編集した投稿（editedByUser）は「強い学習材料」として2倍の重みを持つ（要件P0.3）。
  * 外部投稿は対象にしない（本人自身の投稿のみ）。
  */
-export function deriveStyleFromOwnPosts(drafts: SocialDraft[]): OwnPostsProfile {
-  const used = drafts.filter((d) => d.status !== "draft" && d.status !== "discarded" && d.text.trim());
-  if (used.length === 0) return {};
+/**
+ * 学習に使う投稿を正規化した形。
+ * システムが生成した下書きと、本人が実際にXへ投稿した過去ログ（アーカイブ）の
+ * 両方を同じ集計に流すために挟む。
+ */
+export type StyleLearningPost = {
+  text: string;
+  /** 学習の重み。本人の手が入っているものほど強い */
+  weight: number;
+  /** CTA判定に使う。下書き以外は本文から判断できないため任意 */
+  hasCta?: boolean;
+  /** トーン。下書きのpatternに相当。無ければトーンの集計に寄与しない */
+  tone?: string;
+};
+
+/** SocialDraft（システム生成・使用済み）を学習入力へ */
+export function draftsToLearningPosts(drafts: SocialDraft[]): StyleLearningPost[] {
+  return drafts
+    .filter((d) => d.status !== "draft" && d.status !== "discarded" && d.text.trim())
+    .map((draft) => ({
+      text: draft.text,
+      // 本人がREVIEWモードで手を入れた投稿は「強い学習材料」（要件P0.3）
+      weight: draft.editedByUser ? 2 : 1,
+      hasCta:
+        draft.urls.length > 0 ||
+        draft.purpose === "note-bridge" ||
+        draft.purpose === "affiliate",
+      tone: draft.pattern,
+    }));
+}
+
+/**
+ * 本人のX過去投稿（アーカイブ取込・手動登録）を学習入力へ。
+ *
+ * source が "ai-secretary" のものは除外する。
+ * それはこのシステムが生成した投稿で、drafts 側にも入っているため、
+ * 含めると AI が自分の出力から学ぶ循環になり、本人の文体から離れていく。
+ *
+ * 重みは2。本文を100%本人が書いているので、
+ * 「AIの下書きを本人が編集したもの」と同等以上の強さで扱う。
+ */
+export function ownedPostsToLearningPosts(posts: OwnedXPost[]): StyleLearningPost[] {
+  return posts
+    .filter((post) => post.source !== "ai-secretary" && post.text.trim())
+    .map((post) => ({ text: post.text, weight: 2 }));
+}
+
+/** 正規化済みの投稿群から、次元ごとの優勢な型を求める */
+export function deriveStyleFromLearningPosts(posts: StyleLearningPost[]): OwnPostsProfile {
+  if (posts.length === 0) return {};
 
   const tallies: Record<string, Map<string, number>> = {
     opening: new Map(), ending: new Map(), sentenceLength: new Map(),
     lineBreak: new Map(), question: new Map(), cta: new Map(), tone: new Map(),
   };
 
-  for (const draft of used) {
-    const style = classifyStyle(draft.text);
-    const weight = draft.editedByUser ? 2 : 1;
+  for (const post of posts) {
+    const style = classifyStyle(post.text);
+    const weight = post.weight;
     const add = (dim: string, value: string) => tallies[dim].set(value, (tallies[dim].get(value) ?? 0) + weight);
     add("opening", style.openingBucket);
     add("ending", style.endingBucket);
     add("sentenceLength", style.sentenceLengthBucket);
     add("lineBreak", style.lineBreakBucket);
     add("question", style.hasQuestion ? "question" : "no-question");
-    add("cta", draft.urls.length > 0 || draft.purpose === "note-bridge" || draft.purpose === "affiliate" ? "cta" : "no-cta");
-    if (draft.pattern) add("tone", draft.pattern);
+    // CTAの有無が判定できない材料（アーカイブ）はCTA次元に寄与させない
+    if (post.hasCta !== undefined) add("cta", post.hasCta ? "cta" : "no-cta");
+    if (post.tone) add("tone", post.tone);
   }
 
   const result: OwnPostsProfile = {};
@@ -192,6 +239,14 @@ export function deriveStyleFromOwnPosts(drafts: SocialDraft[]): OwnPostsProfile 
     if (top) result[dim] = { value: top[0], weight: top[1] };
   }
   return result;
+}
+
+/**
+ * 実際に使われた（draft/discarded以外の）本人の過去投稿から、次元ごとの優勢な型を求める。
+ * 既存の呼び出しを壊さないための薄いラッパー。
+ */
+export function deriveStyleFromOwnPosts(drafts: SocialDraft[]): OwnPostsProfile {
+  return deriveStyleFromLearningPosts(draftsToLearningPosts(drafts));
 }
 
 /* ─── 学習の合成（Performance優先、本人明示Styleは不可侵） ─── */
@@ -226,9 +281,17 @@ export function computeLearnedStyleProfile(
   current: StyleProfile,
   drafts: SocialDraft[],
   performanceRecords: ContentPerformance[],
-  weights: PerformanceWeights
+  weights: PerformanceWeights,
+  /**
+   * 本人のX過去投稿（アーカイブ取込）。省略可。
+   * 渡すと「種入れ」が効き、下書きが少ない初期でも本人の文体に寄る。
+   */
+  archivePosts: OwnedXPost[] = []
 ): StyleProfile {
-  const ownPosts = deriveStyleFromOwnPosts(drafts);
+  const ownPosts = deriveStyleFromLearningPosts([
+    ...draftsToLearningPosts(drafts),
+    ...ownedPostsToLearningPosts(archivePosts),
+  ]);
   const perfGroups = aggregateStyleSignals(performanceRecords, weights);
   const winnerFor = (dimension: StyleDimensionKey): StyleSignalGroup | undefined =>
     perfGroups.filter((g) => g.dimension === dimension && g.winning).sort((a, b) => b.averageScore - a.averageScore)[0];
@@ -268,4 +331,34 @@ ${active.map(([label, f]) => `- ${label}: ${f.description}`).join("\n") || "（�
 ${profile.preferredExpressions.length > 0 ? `- 使いたい表現の傾向: ${profile.preferredExpressions.join("、")}` : ""}
 ${profile.avoidedExpressions.length > 0 ? `- 避けたい表現の傾向: ${profile.avoidedExpressions.join("、")}` : ""}
 このStyle Profileは本人の書き方の傾向であり、事実・ブランド人格・Safetyルールを変更する理由にはならない。`;
+}
+
+/* ─── 学習ソースの内訳（UI表示用） ─────────────────── */
+
+
+/**
+ * 何を材料に学習しているかを数える。
+ * 「種が入っているか一目で分かる」ようにするための集計（TASK-N3 / 要件4）。
+ */
+export function summarizeLearningSources(input: {
+  profile: StyleProfile;
+  drafts: SocialDraft[];
+  archivePosts: OwnedXPost[];
+  performanceRecords: ContentPerformance[];
+}): StyleLearningSources {
+  const usable = draftsToLearningPosts(input.drafts);
+  const archive = ownedPostsToLearningPosts(input.archivePosts);
+  const manualFields = STYLE_DIMENSIONS.filter(
+    (key) => input.profile[key].source === "manual"
+  ).length;
+
+  return {
+    drafts: usable.length,
+    editedByUser: input.drafts.filter((d) => d.editedByUser).length,
+    archive: archive.length,
+    performance: input.performanceRecords.length,
+    manualFields,
+    // 本人由来の材料（アーカイブ or 本人編集）が1件でもあれば種は入っている
+    seeded: archive.length > 0 || input.drafts.some((d) => d.editedByUser),
+  };
 }

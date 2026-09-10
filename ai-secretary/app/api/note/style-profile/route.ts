@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { loadStyleProfile, saveStyleProfile, type StyleField, type StyleProfile } from "@/app/lib/note/styleProfile";
+import {
+  loadStyleProfile,
+  saveStyleProfile,
+  summarizeLearningSources,
+  type StyleField,
+  type StyleProfile,
+} from "@/app/lib/note/styleProfile";
+import { loadPerformance, loadSocialDrafts } from "@/app/lib/note/research/store";
+import { loadXWorkspace } from "@/app/lib/note/x/store";
 
 export const dynamic = "force-dynamic";
 
@@ -10,10 +18,28 @@ function isEditableField(v: string): v is EditableField {
   return (EDITABLE_FIELDS as readonly string[]).includes(v);
 }
 
-/** GET — 現在のStyle Profileを返す */
+/**
+ * GET — 現在のStyle Profileと、その学習ソースの内訳を返す。
+ * 内訳を併せて返すのは「種が入っているか一目で分かる」ようにするため（要件4）。
+ */
 export async function GET(): Promise<NextResponse> {
   try {
-    return NextResponse.json(await loadStyleProfile());
+    const [profile, drafts, performance, workspace] = await Promise.all([
+      loadStyleProfile(),
+      loadSocialDrafts(),
+      loadPerformance(),
+      loadXWorkspace().catch(() => ({ ownedPosts: [], referenceNotes: [] })),
+    ]);
+
+    return NextResponse.json({
+      ...profile,
+      sources: summarizeLearningSources({
+        profile,
+        drafts,
+        archivePosts: workspace.ownedPosts,
+        performanceRecords: performance.records,
+      }),
+    });
   } catch (error) {
     console.error("[api/note/style-profile] GET失敗:", error);
     return NextResponse.json({ error: "Style Profileの取得に失敗しました" }, { status: 500 });
