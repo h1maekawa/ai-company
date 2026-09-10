@@ -12,8 +12,9 @@
 name: CI
 
 on:
+  # ベースブランチで絞らない。要件ごとに積み重ねたPR（base が main 以外）も
+  # 検証対象にするため。branches: [main] にすると stacked PR が素通りする
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
