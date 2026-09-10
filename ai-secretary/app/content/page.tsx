@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, PenLine } from "lucide-react";
 import { AutomationMonitor } from "@/components/note/AutomationMonitor";
+import { PipelineSteps } from "@/components/note/PipelineSteps";
 import { AgentTaskList } from "@/components/note/AgentTaskList";
 import { StyleProfileCard } from "@/components/note/StyleProfileCard";
 
@@ -29,6 +30,9 @@ export default function ContentHomePage() {
     <div className="space-y-5">
       {/* 監視が先、作文は後（TASK-N4）。全自動運用では「見る」が主な操作になる */}
       <AutomationMonitor />
+
+      {/* リサーチ→執筆→SEO→投稿 の進行状況（要件7） */}
+      <PipelineSteps />
 
       {/* チャット指示から生まれたタスク（要件1） */}
       <AgentTaskList />
