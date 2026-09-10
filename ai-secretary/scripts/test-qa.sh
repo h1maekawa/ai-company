@@ -27,7 +27,13 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/qa/types.ts",
     "$PWD/app/lib/qa/contentChecks.ts",
     "$PWD/app/lib/qa/factChecks.ts",
-    "$PWD/app/lib/router/executive.ts"
+    "$PWD/app/lib/router/executive.ts",
+    "$PWD/app/lib/review/types.ts",
+    "$PWD/app/lib/review/adapters.ts",
+    "$PWD/app/lib/review/approvalPolicy.ts",
+    "$PWD/app/lib/qa/researchChecks.ts",
+    "$PWD/app/lib/agents/types.ts",
+    "$PWD/app/lib/agents/dispatch.ts"
   ]
 }
 TSCONFIG

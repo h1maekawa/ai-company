@@ -17,6 +17,7 @@ import type {
   OutputType,
   XPostLength,
 } from "@/app/lib/note/research/types";
+import type { ApprovalPolicy } from "@/app/lib/review/approvalPolicy";
 
 type ClusterWithSources = TrendCluster & {
   items: ResearchItem[];
@@ -470,6 +471,7 @@ export function usePublishQueue() {
 export function useResearchSettings() {
   const [x, setX] = useState<XResearchSettings | null>(null);
   const [flags, setFlags] = useState<FeatureFlags | null>(null);
+  const [approvalPolicy, setApprovalPolicy] = useState<ApprovalPolicy | null>(null);
   const [noteTags, setNoteTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -481,6 +483,7 @@ export function useResearchSettings() {
       .then((d) => {
         setX(d.x ?? null);
         setFlags(d.flags ?? null);
+        setApprovalPolicy(d.approvalPolicy ?? null);
         setNoteTags(d.noteTags ?? []);
       })
       .catch(() => setError("設定の読み込みに失敗しました"))
@@ -490,6 +493,7 @@ export function useResearchSettings() {
   async function save(patch: {
     x?: Partial<XResearchSettings>;
     flags?: Partial<FeatureFlags>;
+    approvalPolicy?: Partial<ApprovalPolicy>;
     noteTags?: string[];
   }) {
     setSaving(true);
@@ -504,6 +508,7 @@ export function useResearchSettings() {
       if (!res.ok) throw new Error(data.error);
       setX(data.x ?? null);
       setFlags(data.flags ?? null);
+      setApprovalPolicy(data.approvalPolicy ?? null);
       setNoteTags(data.noteTags ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存に失敗しました");
@@ -512,5 +517,5 @@ export function useResearchSettings() {
     }
   }
 
-  return { x, flags, noteTags, loading, saving, error, save };
+  return { x, flags, approvalPolicy, noteTags, loading, saving, error, save };
 }
