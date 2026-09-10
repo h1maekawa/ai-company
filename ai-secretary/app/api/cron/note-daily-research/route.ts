@@ -3,7 +3,12 @@ import { verifyCronSecret } from "@/app/lib/integrations/machine-auth";
 import { candidateBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
 import { withLock } from "@/app/lib/note/publishing/queue";
 import { runResearch } from "@/app/lib/note/research/run";
-import { loadExperiences, loadResearchInbox } from "@/app/lib/note/research/store";
+import {
+  loadExperiences,
+  loadResearchInbox,
+  loadResearchSettings,
+} from "@/app/lib/note/research/store";
+import { runMarketIntake, type MarketIntakeResult } from "@/app/lib/agents/market";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,6 +25,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
+    /*
+     * 市況をリサーチの材料として先に取り込む（要件5）。
+     * runResearch より前に置くことで、その日の市況ネタも
+     * 同じ実行の中でクラスタ化・候補化の対象に入る。
+     * 既存の investmentBridgeEnabled で制御し、OFFなら何もしない。
+     */
+    let marketIntake: MarketIntakeResult | null = null;
+    let marketIntakeError: string | undefined;
+    try {
+      const settings = await loadResearchSettings();
+      if (settings.flags.investmentBridgeEnabled) {
+        marketIntake = await runMarketIntake();
+      }
+    } catch (error) {
+      // 市況の取り込みが落ちても通常のリサーチは走らせる
+      marketIntakeError = error instanceof Error ? error.message : "市況の取り込みに失敗しました";
+      console.error("[cron/note-daily-research] 市況の取り込みに失敗:", error);
+    }
+
     const result = await withLock("research-run", () => runResearch());
     if (!result) {
       return NextResponse.json({ skipped: true, reason: "既に実行中のためスキップしました" });
@@ -66,6 +90,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       xSkippedReason: result.xSkippedReason,
       slackDelivered: slack.ok,
       slackError: slack.error,
+      marketIntake,
+      marketIntakeError,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "リサーチに失敗しました";
