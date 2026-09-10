@@ -27,7 +27,13 @@ export type QaCheck = {
   detail: string | null;
 };
 
-export type QaTargetKind = "x_draft" | "note_article" | "publish_flow";
+export type QaTargetKind =
+  | "x_draft"
+  | "note_article"
+  | "viewpoint"
+  | "experience"
+  | "learning"
+  | "publish_flow";
 
 export type QaReport = {
   targetId: string;

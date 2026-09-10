@@ -1,6 +1,7 @@
 import { callAI } from "../../ai/client";
 import { buildDailyGrowthReview } from "../growthLoop";
 import { runPerformanceSync, type PerformanceSyncResult } from "./performanceSync";
+import { runAutoApproval, type AutoApprovalResult } from "../../review/autoApprove";
 import {
   loadGrowthReviews, loadNoteQueue, loadPerformance, loadResearchSettings,
   loadSocialDrafts, saveGrowthReviews, saveNoteQueue, saveResearchSettings,
@@ -16,6 +17,9 @@ export type NightlyGrowthResult = {
   reviewDate: string;
   performanceSync?: PerformanceSyncResult;
   performanceSyncError?: string;
+  /** 自動承認（要件10）の結果 */
+  autoApproval?: AutoApprovalResult;
+  autoApprovalError?: string;
   noteMetricsJobsQueued: number;
   strategyChanged: boolean;
   styleProfileUpdated: boolean;
@@ -69,6 +73,19 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     performanceSync = await runPerformanceSync(now);
   } catch (error) {
     performanceSyncError = error instanceof Error ? error.message : "Performance Sync failed";
+  }
+
+  /*
+   * 自動承認（要件10）。実績同期の後に置くことで、
+   * その日の実績から生まれた学びも同じ夜のうちに判定対象へ入る。
+   * 落ちても夜間レビュー自体は続ける。
+   */
+  let autoApproval: AutoApprovalResult | undefined;
+  let autoApprovalError: string | undefined;
+  try {
+    autoApproval = await runAutoApproval();
+  } catch (error) {
+    autoApprovalError = error instanceof Error ? error.message : "Auto approval failed";
   }
 
   const [performance, settings, queue, existingReviews, socialDrafts, styleProfile] = await Promise.all([
@@ -179,6 +196,8 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     reviewDate: review.date,
     performanceSync,
     performanceSyncError,
+    autoApproval,
+    autoApprovalError,
     noteMetricsJobsQueued: metricJobs.length,
     strategyChanged,
     styleProfileUpdated,

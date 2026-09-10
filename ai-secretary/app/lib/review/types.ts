@@ -16,7 +16,7 @@
  *   各種別に対応する Adapter が、共通の ReviewItem へ写像して返す。
  */
 
-import type { QaReport } from "@/app/lib/qa/types";
+import type { QaReport } from "../qa/types";
 
 export type ReviewItemKind =
   | "x_draft"
