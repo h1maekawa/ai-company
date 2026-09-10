@@ -12,6 +12,7 @@ import {
   Home,
   Megaphone,
   Rss,
+  ListChecks,
   Settings,
   Tag,
   Wallet,

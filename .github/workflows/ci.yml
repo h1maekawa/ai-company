@@ -1,0 +1,75 @@
+# CI — 要件9「CI連携」
+#
+# 背景: 2026-09、vercel.json のcron頻度がプラン制限を超えていたためVercelが
+# デプロイを拒否し、mainの本番デプロイが失敗した。`npm run build` はビルドを
+# 検証するだけでプラットフォーム側の設定検証は通らず、ローカルでは検出できなかった。
+# その再発防止として、設定の契約テストを含むテスト一式をPRで必ず走らせる。
+#
+# ここに置かないもの:
+#   - LLMを呼ぶテスト（test:grill）… APIキーと課金が必要で、CIの決定性も失われる
+#   - 実際の投稿（Buffer/note）… ドライランのみをQAゲート側で行う
+
+name: CI
+
+on:
+  # ベースブランチで絞らない。要件ごとに積み重ねたPR（base が main 以外）も
+  # 検証対象にするため。branches: [main] にすると stacked PR が素通りする
+  pull_request:
+  push:
+    branches: [main]
+
+# 同じPRに連続でpushしたとき、古い実行は打ち切る
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: ai-secretary
+
+jobs:
+  verify:
+    name: typecheck / build / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ai-secretary/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # 設定の契約（cron頻度・ルート実在）。実デプロイ前にここで落とす
+      - name: Deploy config contract
+        run: npm run test:architecture
+
+      - name: Test — QA gate
+        run: npm run test:qa
+
+      - name: Test — fund
+        run: npm run test:fund
+
+      - name: Test — content
+        run: npm run test:content
+
+      - name: Test — maemichi
+        run: npm run test:maemichi
+
+      - name: Test — knowledge
+        run: npm run test:knowledge
+
+      # ビルドは最後。前段が落ちていれば時間をかけない
+      - name: Build
+        run: npm run build
+        env:
+          # ビルド時にVaultへ触らせない（GitHub Vaultの認証情報はCIに置かない）
+          VAULT_ROOT: ${{ github.workspace }}/vault-ci-placeholder

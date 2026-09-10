@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { useResearchSettings } from "@/app/note/useResearch";
 import type { SocialOperationMode } from "@/app/lib/note/research/types";
+import {
+  APPROVAL_MODE_LABELS,
+  type ApprovalMode,
+} from "@/app/lib/review/approvalPolicy";
+import { REVIEW_PHASE_LABELS, REVIEW_PHASE_ORDER } from "@/app/lib/review/types";
 import { Card, CardHeader, Skeleton } from "@/components/ui/primitives";
 
 type AutomationStatus = {
@@ -210,6 +215,8 @@ export function AutomationSettings() {
             <option value="autopilot">{MODE_LABEL.autopilot}</option>
           </select>
         </Field>
+        <PhaseApprovalSettings settings={settings} />
+
         {status && (
           <div className="mt-3 grid gap-2 rounded-lg border border-hairline bg-white/[0.02] p-3 text-[11px] text-sub sm:grid-cols-2">
             <span>Buffer接続: {status.buffer.configured ? "✅ 設定済み" : "⚠️ 未設定"}</span>
@@ -376,5 +383,54 @@ function Toggle({
         <span className="block text-[10px] leading-relaxed text-sub">{hint}</span>
       </span>
     </label>
+  );
+}
+
+/**
+ * 工程ごとの承認要否（要件10）。
+ * ここを「自動承認」にしても、自動テストを全て通過した項目だけが対象になる。
+ * 通っていないものは自動的に人間承認へ回る。
+ */
+function PhaseApprovalSettings({
+  settings,
+}: {
+  settings: ReturnType<typeof useResearchSettings>;
+}) {
+  const policy = settings.approvalPolicy;
+  if (!policy) return null;
+
+  return (
+    <div className="mt-4 border-t border-hairline pt-4">
+      <p className="text-xs font-semibold text-white">工程ごとの承認</p>
+      <p className="mt-1 text-[11px] leading-relaxed text-sub">
+        「自動承認」にしても、自動テストを全て通過した項目だけがスキップされます。
+        1つでも落ちた項目・未検証の項目は人間承認へ回ります。
+      </p>
+
+      <div className="mt-3 space-y-2">
+        {REVIEW_PHASE_ORDER.map((phase) => (
+          <div key={phase} className="flex items-center justify-between gap-3">
+            <span className="text-xs text-slate-300">{REVIEW_PHASE_LABELS[phase]}</span>
+            <div className="flex gap-1 rounded-lg bg-white/[0.04] p-1">
+              {(["auto", "human"] as ApprovalMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={settings.saving}
+                  onClick={() => settings.save({ approvalPolicy: { [phase]: mode } })}
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                    policy[phase] === mode
+                      ? "bg-brand text-white"
+                      : "text-sub hover:text-white"
+                  }`}
+                >
+                  {APPROVAL_MODE_LABELS[mode]}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

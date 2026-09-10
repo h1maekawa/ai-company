@@ -18,6 +18,9 @@ import {
   parseSaveSuggestion,
 } from "@/app/lib/parser/saveSuggestion";
 import { captureKnowledgeCandidate } from "@/app/lib/knowledge/captureService";
+import { dispatchFromChat } from "@/app/lib/agents/dispatch";
+import { appendAgentTask } from "@/app/lib/agents/store";
+import { AGENT_ROLE_LABELS } from "@/app/lib/agents/types";
 
 const ROLE_DEFAULT_TEMPLATE = `# 現在の役割
 
@@ -86,11 +89,13 @@ export async function POST(req: NextRequest) {
     //    department; otherwise fall back to keyword intent routing
     const requestedProvider = resolveProvider(provider);
     let targetSecretaryId: string;
+    let routedIntent = "";
     if (secretaryId && findSecretary(secretaryId)) {
       targetSecretaryId = secretaryId;
     } else {
       const routeResult = await routeRequest(message, activeCompany, requestedProvider);
       targetSecretaryId = routeResult.secretary;
+      routedIntent = routeResult.intent;
     }
 
     // 3. Find secretary config
@@ -216,12 +221,37 @@ export async function POST(req: NextRequest) {
       console.error("Failed to save chat summary log (non-fatal):", logErr);
     }
 
+    /*
+     * 10. 実行を伴う指示なら専門エージェントのタスクにする（要件1）。
+     *     相談・質問はタスク化せず、チャットの返答だけで完結させる。
+     *     ここが落ちても会話は成立させたいので、失敗しても応答は返す。
+     */
+    let dispatchedTask: { id: string; role: string; label: string } | null = null;
+    try {
+      const dispatch = dispatchFromChat({
+        message,
+        intent: routedIntent,
+        secretaryId: targetSecretaryId,
+      });
+      if (dispatch.dispatched) {
+        await appendAgentTask(dispatch.task);
+        dispatchedTask = {
+          id: dispatch.task.id,
+          role: dispatch.role,
+          label: AGENT_ROLE_LABELS[dispatch.role],
+        };
+      }
+    } catch (dispatchErr) {
+      console.error("Failed to dispatch agent task (non-fatal):", dispatchErr);
+    }
+
     return NextResponse.json({
       reply: replyForUser,
       provider: usedProvider,
       mode: mode ?? "note",
       secretary: targetSecretaryId,
       kaizen,
+      task: dispatchedTask,
     });
   } catch (error: any) {
     const msg = error instanceof Error ? error.message : "不明なエラー";

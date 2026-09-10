@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, PenLine } from "lucide-react";
 import { AutomationMonitor } from "@/components/note/AutomationMonitor";
+import { AgentTaskList } from "@/components/note/AgentTaskList";
 
 type HomeData = {
   week: { publishedCount: number; revenue: number; conversions: number };
@@ -27,6 +28,9 @@ export default function ContentHomePage() {
     <div className="space-y-5">
       {/* 監視が先、作文は後（TASK-N4）。全自動運用では「見る」が主な操作になる */}
       <AutomationMonitor />
+
+      {/* チャット指示から生まれたタスク（要件1） */}
+      <AgentTaskList />
 
       <section className="rounded-2xl border border-hairline bg-ink-card p-5">
         <p className="text-xs text-sub">今週</p>

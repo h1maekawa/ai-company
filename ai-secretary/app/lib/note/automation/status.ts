@@ -12,13 +12,34 @@ import {
   type SocialDraft,
 } from "@/app/lib/note/research/types";
 import {
+  loadExperiences,
   loadPerformance,
+  loadResearchInbox,
   loadResearchSettings,
   loadSocialDrafts,
 } from "@/app/lib/note/research/store";
+import { loadBrand } from "@/app/lib/note/store";
 import { isBufferConfigured } from "@/app/lib/note/publishing/buffer";
 import { countToday } from "@/app/lib/note/publishing/queue";
+import { runXDraftQa, summarizeReport } from "@/app/lib/qa/runner";
+import type { QaReport } from "@/app/lib/qa/types";
 import type { DataFreshness } from "@/app/lib/freshness";
+
+/**
+ * 承認フィードの1件（要件2の表示単位）。
+ * qa は自動テスト（要件9）の結果で、qa.passed が false のものは
+ * 自動承認（要件10）の対象外になる。
+ */
+export type ApprovalQueueEntry = {
+  draftId: string;
+  reason: string;
+  updatedAt: string;
+  text: string;
+  /** 自動テストの結果。実行できなかった場合は null */
+  qa: QaReport | null;
+  /** 承認画面に出す1行サマリー（「自動テスト通過」など） */
+  qaSummary: string | null;
+};
 
 export type AutomationBlocker = {
   /** 設定で直せるものか、環境変数で直すものか */
@@ -43,12 +64,7 @@ export type AutomationStatus = {
     slots: { draftId: string; scheduledAt: string; status: string; text: string }[];
   };
   /** 人の承認・確認を待っているもの */
-  approvalQueue: {
-    draftId: string;
-    reason: string;
-    updatedAt: string;
-    text: string;
-  }[];
+  approvalQueue: ApprovalQueueEntry[];
   /** 直近の実績（performance-syncが入れた値） */
   recent: {
     records: number;
@@ -110,12 +126,16 @@ function approvalReason(draft: SocialDraft, mode: SocialOperationMode): string |
 }
 
 export async function getAutomationStatus(): Promise<AutomationStatus> {
-  const [settings, drafts, performance, publishedToday] = await Promise.all([
-    loadResearchSettings(),
-    loadSocialDrafts(),
-    loadPerformance(),
-    countToday("x"),
-  ]);
+  const [settings, drafts, performance, publishedToday, brandFile, experiences, researchItems] =
+    await Promise.all([
+      loadResearchSettings(),
+      loadSocialDrafts(),
+      loadPerformance(),
+      countToday("x"),
+      loadBrand(),
+      loadExperiences(),
+      loadResearchInbox(),
+    ]);
 
   const mode =
     settings.flags.socialOperationMode ?? deriveSocialOperationMode(settings.flags);
@@ -134,17 +154,38 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       text: draft.text.slice(0, 120),
     }));
 
-  const approvalQueue = drafts
+  const pending = drafts
     .filter((draft) => !["published", "discarded"].includes(draft.status))
     .map((draft) => ({ draft, reason: approvalReason(draft, mode) }))
-    .filter((entry): entry is { draft: SocialDraft; reason: string } => entry.reason !== null)
-    .map(({ draft, reason }) => ({
-      draftId: draft.id,
-      reason,
-      updatedAt: draft.updatedAt ?? draft.createdAt ?? "",
-      text: draft.text.slice(0, 120),
-    }))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .filter((entry): entry is { draft: SocialDraft; reason: string } => entry.reason !== null);
+
+  // 自動テスト（要件9）を承認フィードに載せる。
+  // ここは表示用のGETなので、外部通信を伴うドライランは実行しない（includeDryRun: false）。
+  const approvalQueue: ApprovalQueueEntry[] = await Promise.all(
+    pending.map(async ({ draft, reason }) => {
+      let qa: QaReport | null = null;
+      try {
+        qa = await runXDraftQa({
+          draft,
+          brand: brandFile.brand,
+          experiences,
+          researchItems,
+        });
+      } catch (error) {
+        // QAが落ちても承認フィード自体は出す（「未検証」として人間に見せる）
+        console.error("[automation/status] QAゲートの実行に失敗:", error);
+      }
+      return {
+        draftId: draft.id,
+        reason,
+        updatedAt: draft.updatedAt ?? draft.createdAt ?? "",
+        text: draft.text.slice(0, 120),
+        qa,
+        qaSummary: qa ? summarizeReport(qa) : null,
+      };
+    })
+  );
+  approvalQueue.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   const lastMeasuredAt =
     performance.records
