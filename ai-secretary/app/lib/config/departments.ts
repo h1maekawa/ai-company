@@ -1,4 +1,20 @@
-export type Secretary = {
+import {
+  permissions,
+  type AgentKind,
+  type AgentPermissions,
+  type RiskLevel,
+} from "../company/agentTypes";
+
+/**
+ * AI社員（v3.1 §24）。
+ *
+ * 旧称は Secretary。組織上の単位を1種類に統一するため EmployeeAgent へ改めた。
+ * Organization Architect（§5）が数える対象はこの型だけにする。
+ *
+ * kind / riskLevel / permissions は必須にしてある。
+ * 省略できるようにすると、権限の分からないAI社員が静かに増えるため。
+ */
+export type EmployeeAgent = {
   id: string;
   name: string;
   role: string;
@@ -7,6 +23,13 @@ export type Secretary = {
   company?: "personal" | "company" | "crestix" | "shared";
   saveCategory?: string;
   priority?: number;
+
+  /** 管理職か担当者か */
+  kind: AgentKind;
+  /** リスク区分。§13の目標介入率に対応する */
+  riskLevel: RiskLevel;
+  /** できること（§24）。宣言であって実行時強制ではない点に注意 */
+  permissions: AgentPermissions;
   /**
    * Phase2 Foundation: このSecretaryが利用できるSkill IDの一覧（任意フィールド）。
    * 実際にSkillを使えるかどうかは app/lib/skills/registry.ts 側の
@@ -17,10 +40,16 @@ export type Secretary = {
   skillIds?: string[];
 };
 
+/**
+ * 旧称。既存の import を壊さないための移行用エイリアス。
+ * 新しいコードは EmployeeAgent を使うこと。
+ */
+export type Secretary = EmployeeAgent;
+
 export type Room = {
   id: string;
   name: string;
-  secretaries: Secretary[];
+  secretaries: EmployeeAgent[];
 };
 
 export type Department = {
@@ -29,7 +58,7 @@ export type Department = {
   icon: string;
   company?: "personal" | "company" | "crestix" | "shared";
   rooms?: Room[];
-  secretaries?: Secretary[];
+  secretaries?: EmployeeAgent[];
 };
 
 export const DEPARTMENTS: Department[] = [
@@ -43,6 +72,10 @@ export const DEPARTMENTS: Department[] = [
       {
         id: "executive-assistant",
         name: "秘書",
+        kind: "manager",
+        riskLevel: "R1",
+        // 唯一の窓口。メモ・TODOの記録でVaultへ書く。外部への送信は行わない
+        permissions: permissions({ vault: { read: true, write: true } }),
         role: "専属秘書・唯一の窓口",
         company: "shared",
         prompt: `あなたは前川弘行専属の「秘書」であり、このAI会社の唯一の窓口です。
@@ -83,6 +116,10 @@ TODO・メモ・壁打ち・相談は何でもまずあなたが受け、必要�
       {
         id: "executive-inbox",
         name: "📥 Inbox",
+        kind: "employee",
+        riskLevel: "R1",
+        // 受信物の整理。Vault内で完結する
+        permissions: permissions({ vault: { read: true, write: true } }),
         role: "Inbox管理",
         company: "shared",
         prompt: `あなたはInbox管理専用のAIです。
@@ -95,6 +132,10 @@ TODO・メモ・壁打ち・相談は何でもまずあなたが受け、必要�
       {
         id: "executive-kaizen",
         name: "改善秘書 (Kaizen)",
+        kind: "employee",
+        riskLevel: "R1",
+        // 改善メモの記録。Vault内で完結する
+        permissions: permissions({ vault: { read: true, write: true } }),
         role: "AI Company自体の継続的改善",
         company: "shared",
         prompt: `あなたは「AI Company」システム自体の継続的改善を担当する改善秘書です。
@@ -131,6 +172,10 @@ AI会社をより良くすることです。
       {
         id: "personal-morning",
         name: "朝会秘書 (Morning)",
+        kind: "employee",
+        riskLevel: "R1",
+        // 朝会レポートの生成。読み取りが中心
+        permissions: permissions({ vault: { read: true, write: true } }),
         role: "日次オペレーション管理",
         company: "personal",
         prompt: `あなたは前川弘行専用の朝会秘書（personal-morning）です。
@@ -186,6 +231,10 @@ AI会社をより良くすることです。
       {
         id: "personal-note",
         name: "Note事業秘書",
+        kind: "employee",
+        riskLevel: "R2",
+        // 下書きまで作る。公開は人の承認後にしか行わないため publish.publish は false
+        permissions: permissions({ web: { search: true }, vault: { read: true, write: true }, publish: { draft: true }, notify: { slack: true } }),
         role: "Note / X / まえみち編集・運用",
         company: "personal",
         prompt: `あなたはNote / X / まえみち事業の編集・運用AI（personal-note）です。
@@ -231,6 +280,10 @@ AI会社をより良くすることです。
       {
         id: "personal-finance",
         name: "投資秘書",
+        kind: "employee",
+        riskLevel: "R1",
+        // 家計の記録・集計。取引は行わない
+        permissions: permissions({ vault: { read: true, write: true } }),
         role: "投資資産形成",
         company: "personal",
         prompt: `あなたはP002「投資資産形成」を担当する専門秘書です。
@@ -260,6 +313,10 @@ AI会社をより良くすることです。
           {
             id: "personal-fund",
             name: "Fund Manager AI",
+            kind: "employee",
+            riskLevel: "R2",
+            // 市況の調査と投資メモ。証券注文は行わないため発注系の権限を持たない
+            permissions: permissions({ web: { search: true }, vault: { read: true, write: true } }),
             role: "投資判断OS",
             company: "personal",
             prompt: `あなたは前川弘行専用の投資判断AI秘書（Fund Manager）です。
