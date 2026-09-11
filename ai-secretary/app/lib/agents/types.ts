@@ -64,6 +64,14 @@ export function requiresApprovalBeforeRun(role: AgentRole): boolean {
 
 export type AgentTaskStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
+/**
+ * このタスクがどこから生まれたか。
+ *   chat       … 本人がチャットで指示した（要件1）
+ *   automation … 自動パイプラインの各ステップ（要件3）
+ * 同じ一覧に混ぜるが、由来が違うと読み方が変わるので区別する。
+ */
+export type AgentTaskOrigin = "chat" | "automation";
+
 export type AgentTask = {
   id: string;
   role: AgentRole;
@@ -73,6 +81,9 @@ export type AgentTask = {
   /** Routerが解釈した意図 */
   intent: string;
   status: AgentTaskStatus;
+  origin: AgentTaskOrigin;
+  /** 自動パイプライン由来の場合、対応するステップのID（PIPELINE_STEPS） */
+  stepId?: string;
   /** どのチャットから生まれたか。タスクログとして辿れるようにする */
   sourceChat?: { secretaryId: string; message: string; at: string };
   /** 実行結果の要約。まだ実行していなければ null */
@@ -86,6 +97,11 @@ export function createAgentTask(input: {
   role: AgentRole;
   instruction: string;
   intent: string;
+  origin?: AgentTaskOrigin;
+  stepId?: string;
+  status?: AgentTaskStatus;
+  result?: string | null;
+  failureReason?: string;
   sourceChat?: AgentTask["sourceChat"];
   now?: Date;
 }): AgentTask {
@@ -96,9 +112,12 @@ export function createAgentTask(input: {
     phase: phaseOfRole(input.role),
     instruction: input.instruction,
     intent: input.intent,
-    status: "queued",
+    status: input.status ?? "queued",
+    origin: input.origin ?? "chat",
+    stepId: input.stepId,
     sourceChat: input.sourceChat,
-    result: null,
+    result: input.result ?? null,
+    failureReason: input.failureReason,
     createdAt: now,
     updatedAt: now,
   };
