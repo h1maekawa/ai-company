@@ -21,6 +21,8 @@ import {
   type ReviewPhase,
 } from "@/app/lib/review/types";
 import { relativeAge } from "@/app/lib/freshness";
+// 滞留の閾値は pipeline.ts に集約する。画面ごとに違う基準を持たせない（要件7）
+import { isStale } from "@/app/lib/review/pipelineTypes";
 import { Skeleton } from "@/components/ui/primitives";
 
 type Feed = {
@@ -30,15 +32,6 @@ type Feed = {
   loadedAt: string;
   error?: string;
 };
-
-/** 承認待ちが長いものを強調する閾値（要件7の停滞表示と同じ基準） */
-const STALE_HOURS = 48;
-
-function isStale(updatedAt: string): boolean {
-  if (!updatedAt) return false;
-  const ms = Date.now() - new Date(updatedAt).getTime();
-  return Number.isFinite(ms) && ms > STALE_HOURS * 3_600_000;
-}
 
 export function ReviewFeed() {
   const [feed, setFeed] = useState<Feed | null>(null);
