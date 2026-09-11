@@ -29,6 +29,7 @@ import {
   saveViewpoints,
 } from "@/app/lib/note/research/store";
 import { appendReviewFeedback } from "./feedbackStore";
+import { observe } from "@/app/lib/company/observer";
 import { ReviewDecision, ReviewFeedback, ReviewItemKind, parseReviewItemId, phaseOf } from "./types";
 
 export type DecideInput = {
@@ -231,6 +232,24 @@ export async function decideReviewItem(input: DecideInput): Promise<DecideResult
     decidedAt: new Date().toISOString(),
   };
   await appendReviewFeedback(feedback);
+
+  /*
+   * CEO介入率（v3.1 §13）の分子はここで決まる。
+   * 承認そのものは介入に数えない。承認は設計上の関門であって手戻りではないため。
+   * 手戻り＝差し戻し／編集して承認の2つだけを介入として数える。
+   */
+  await observe({
+    kind: "review.decision",
+    department: "note",
+    actor: input.decidedBy ?? "human",
+    action: `${kind} を ${input.decision}`,
+    outcome: "success",
+    signature: `review:${kind}:${input.decision}`,
+    humanIntervention:
+      (input.decidedBy ?? "human") === "human" &&
+      (input.decision === "reject" || input.decision === "edit_approve"),
+    detail: input.reason,
+  });
 
   return { ok: true, itemId: input.itemId, decision: input.decision };
 }

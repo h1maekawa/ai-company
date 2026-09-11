@@ -21,6 +21,7 @@ import { captureKnowledgeCandidate } from "@/app/lib/knowledge/captureService";
 import { dispatchFromChat } from "@/app/lib/agents/dispatch";
 import { appendAgentTask } from "@/app/lib/agents/store";
 import { AGENT_ROLE_LABELS } from "@/app/lib/agents/types";
+import { observe } from "@/app/lib/company/observer";
 
 const ROLE_DEFAULT_TEMPLATE = `# 現在の役割
 
@@ -67,6 +68,8 @@ function resolveCompanyContext(mode: string | undefined | null) {
 }
 
 export async function POST(req: NextRequest) {
+  // 処理時間は Proposal Score の Time Saving の元データになる（v3.1 §8）
+  const requestStartedAt = Date.now();
   try {
     const { message, provider, mode, history, secretaryId } = (await req.json()) as {
       message?: string;
@@ -244,6 +247,21 @@ export async function POST(req: NextRequest) {
     } catch (dispatchErr) {
       console.error("Failed to dispatch agent task (non-fatal):", dispatchErr);
     }
+
+    /*
+     * 11. 会社の活動として記録する（v3.1 §25）。
+     *     Pattern Analyzer が「同じ依頼が何回来たか」を数える材料になるため、
+     *     signature は指示本文から作る（返答ではなく依頼側が仕事の種類を表す）。
+     */
+    await observe({
+      kind: "chat.request",
+      department: secretaryEntry.config.company ?? "unassigned",
+      actor: targetSecretaryId,
+      action: message.slice(0, 120),
+      outcome: "success",
+      signature: message,
+      latencyMs: Date.now() - requestStartedAt,
+    });
 
     return NextResponse.json({
       reply: replyForUser,

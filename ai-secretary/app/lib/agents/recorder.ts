@@ -11,6 +11,8 @@
 import { appendAgentTask, loadAgentTasks, saveAgentTasks } from "./store";
 import { findPipelineStep } from "./pipelineRoles";
 import { createAgentTask, type AgentTaskStatus } from "./types";
+import { observeMany } from "@/app/lib/company/observer";
+import type { CreateEventInput } from "@/app/lib/company/events";
 
 export type RecordStepInput = {
   /** PIPELINE_STEPS のID */
@@ -85,4 +87,18 @@ export async function recordPipelineSteps(inputs: RecordStepInput[]): Promise<vo
   } catch (error) {
     console.error("[agents/recorder] まとめ記録に失敗:", error);
   }
+
+  // 横断ログにも流す（v3.1 §25）。タスクログは運用者向け、こちらは分析用
+  await observeMany(
+    valid.map(({ input, step }): CreateEventInput => ({
+      kind: "pipeline.step",
+      department: "note",
+      actor: step.role,
+      action: step.label,
+      outcome: input.status === "done" ? "success" : "failure",
+      // ステップIDを signature にする。実行のたびに揺れない
+      signature: `pipeline:${step.id}`,
+      detail: input.failureReason ?? input.result,
+    }))
+  );
 }
