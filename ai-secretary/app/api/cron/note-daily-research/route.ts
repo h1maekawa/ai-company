@@ -10,6 +10,7 @@ import {
 } from "@/app/lib/note/research/store";
 import { runMarketIntake, type MarketIntakeResult } from "@/app/lib/agents/market";
 import { recordPipelineSteps, type RecordStepInput } from "@/app/lib/agents/recorder";
+import { startTrace } from "@/app/lib/company/trace";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -65,7 +66,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       status: "done",
       result: `新規${result.newItems}件・候補${result.topCandidates.length}件`,
     });
-    await recordPipelineSteps(stepLog);
+    // 市況取り込み → リサーチ を1つのトレースにまとめる（Phase 4 §5）
+    await recordPipelineSteps(
+      stepLog,
+      startTrace({ departmentId: "note", workflowId: "daily-research" })
+    );
 
     const [items, experiences] = await Promise.all([loadResearchInbox(), loadExperiences()]);
     const itemById = new Map(items.map((i) => [i.id, i]));

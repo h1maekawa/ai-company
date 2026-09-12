@@ -84,11 +84,32 @@ export type CompanyEvent = {
   tools?: string[];
   /** 再試行回数。Retry率の算出に使う */
   retries?: number;
+  /** 何回目の試行か（初回は1）。retries と対で記録する（Phase 4 §8） */
+  attempt?: number;
+  retryReason?: string;
+
+  /** 処理の開始・終了（Phase 4 §9）。latencyMs と併せて記録する */
+  startedAt?: string;
+  completedAt?: string;
+
+  /** コストの内訳（Phase 4 §7）。costUsd が確定できた場合のみ併記する */
+  cost?: {
+    provider?: string;
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+  };
+  /** コストを確定できなかった理由。costUsd が undefined のとき入る */
+  costUnknownReason?: string;
   /**
    * 同じ一連の仕事をまとめるID。
    * Workflow（Skill/Agentの実行順序）を復元するのに使う。
    */
   traceId?: string;
+  /** 入れ子の親トレース（Phase 4 §5） */
+  parentTraceId?: string;
+  /** 実行したSkill / Workflow（Phase 4 §5） */
+  workflowId?: string;
 };
 
 /**
