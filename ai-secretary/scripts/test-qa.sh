@@ -48,7 +48,16 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/evolution/bottleneckAnalyzer.ts",
     "$PWD/app/lib/company/evolution/proposalEngine.ts",
     "$PWD/app/lib/company/evolution/proposalScore.ts",
-    "$PWD/app/lib/company/evolution/fixtures.ts"
+    "$PWD/app/lib/company/evolution/fixtures.ts",
+    "$PWD/app/lib/company/personalCompany.ts",
+    "$PWD/app/lib/company/trace.ts",
+    "$PWD/app/lib/company/cost.ts",
+    "$PWD/app/lib/company/personalMetrics.ts",
+    "$PWD/app/lib/company/revenue.ts",
+    "$PWD/app/lib/company/health.ts",
+    "$PWD/app/lib/company/achievements.ts",
+    "$PWD/app/lib/company/missions.ts",
+    "$PWD/app/lib/company/departmentGoals.ts"
   ]
 }
 TSCONFIG
