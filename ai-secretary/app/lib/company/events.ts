@@ -22,7 +22,19 @@ export type CompanyEventKind =
   | "pipeline.step"
   | "review.decision"
   | "cron.run"
-  | "error";
+  | "error"
+  /* ─── Phase 3 で分析対象にする種別（追加のみ・既存は変更しない） ─── */
+  | "agent.called"
+  | "skill.called"
+  | "workflow.started"
+  | "workflow.completed"
+  | "tool.called"
+  | "approval.requested"
+  | "approval.approved"
+  | "approval.rejected"
+  | "human.corrected"
+  | "decision.created"
+  | "security.blocked";
 
 export type CompanyEventOutcome = "success" | "failure" | "skipped";
 
@@ -64,6 +76,19 @@ export type CompanyEvent = {
 
   /** 失敗理由・補足 */
   detail?: string;
+
+  /**
+   * 使ったツール（Phase 3 の Workflow Candidate 検出で使う）。
+   * 記録できない経路では undefined のままにする（空配列で「使わなかった」と誤解させない）。
+   */
+  tools?: string[];
+  /** 再試行回数。Retry率の算出に使う */
+  retries?: number;
+  /**
+   * 同じ一連の仕事をまとめるID。
+   * Workflow（Skill/Agentの実行順序）を復元するのに使う。
+   */
+  traceId?: string;
 };
 
 /**
