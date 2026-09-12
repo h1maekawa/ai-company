@@ -57,7 +57,15 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/health.ts",
     "$PWD/app/lib/company/achievements.ts",
     "$PWD/app/lib/company/missions.ts",
-    "$PWD/app/lib/company/departmentGoals.ts"
+    "$PWD/app/lib/company/departmentGoals.ts",
+    "$PWD/app/lib/company/revenueStore.ts",
+    "$PWD/app/lib/company/revenueMode.ts",
+    "$PWD/app/lib/company/financialSettings.ts",
+    "$PWD/app/lib/company/personalImpact.ts",
+    "$PWD/app/lib/company/opportunity/types.ts",
+    "$PWD/app/lib/company/opportunity/score.ts",
+    "$PWD/app/lib/company/opportunity/engine.ts",
+    "$PWD/app/lib/company/opportunity/moneyQuest.ts"
   ]
 }
 TSCONFIG

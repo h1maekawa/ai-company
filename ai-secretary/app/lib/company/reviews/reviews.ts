@@ -19,6 +19,10 @@ import { evaluateAchievements, type Achievement } from "../achievements";
 import { firstRevenueMission, type PersonalMission } from "../missions";
 import { collectPersonalMetrics } from "./metricsSource";
 import type { RevenueAttribution } from "../revenue";
+import { loadFinancialSettings } from "../financialSettings";
+import { effectiveEntries, loadRevenueEntries } from "../revenueStore";
+import { summarizeRevenue } from "../revenue";
+import { resolveRevenueMode, type RevenueMode } from "../revenueMode";
 
 export type ReviewOptions = {
   revenue?: RevenueAttribution[];
@@ -37,6 +41,8 @@ export type ReviewBase = {
   fire: FireResult;
   level: LevelResult;
   achievements: Achievement[];
+  /** 最初の1円モードか成長モードか（Phase 5 §26 §27） */
+  revenueMode: RevenueMode;
   generatedAt: string;
 };
 
@@ -53,9 +59,13 @@ async function buildBase(
   const now = options.now ?? new Date();
   const metrics = await collectPersonalMetrics({ revenue: options.revenue, windowDays, now });
 
+  // FIRE設定は保存済みの値を既定にし、呼び出し側の指定があれば優先する（Phase 5 §36）
+  const saved = await loadFinancialSettings().catch(() => null);
+
   const fire = computeFireProgress({
-    annualLivingCostYen: options.fire?.annualLivingCostYen ?? null,
-    targetAssetYen: options.fire?.targetAssetYen ?? null,
+    annualLivingCostYen:
+      options.fire?.annualLivingCostYen ?? saved?.annualLivingCostYen ?? null,
+    targetAssetYen: options.fire?.targetAssetYen ?? saved?.targetAssetAmountYen ?? null,
     currentNetWorthYen: isAvailable(metrics.financial.netWorthYen)
       ? metrics.financial.netWorthYen.value
       : null,
@@ -89,6 +99,7 @@ async function buildBase(
       unlocked: options.unlockedAchievements,
       now,
     }),
+    revenueMode: resolveRevenueMode(aiRevenue),
     generatedAt: now.toISOString(),
   };
 }
@@ -102,6 +113,9 @@ export type DailyReview = ReviewBase & {
   newProposals: number;
   mission: PersonalMission;
   firstRevenueProgress: { currentYen: number | null; targetYen: number };
+  /** Phase 5 §47 追加分 */
+  newRevenueYen: number;
+  revenueBySource: Record<string, number>;
 };
 
 export async function runDailyPersonalCompanyReview(
@@ -132,6 +146,24 @@ export async function runDailyPersonalCompanyReview(
       currentYen: aiRevenue,
       targetYen: PERSONAL_COMPANY.firstRevenueTargetYen,
     },
+    ...(await dailyRevenueSummary(now)),
+  };
+}
+
+/** その日に記録された収益の内訳（Phase 5 §47） */
+async function dailyRevenueSummary(now: Date) {
+  const entries = effectiveEntries(await loadRevenueEntries().catch(() => []));
+  const since = new Date(now.getTime() - 86_400_000).toISOString();
+  const today = entries.filter(
+    (e) => e.occurredAt >= since && e.confirmedByHuman && e.sourceType !== "investment"
+  );
+
+  return {
+    newRevenueYen: today.reduce((sum, e) => sum + e.amountYen, 0),
+    revenueBySource: today.reduce<Record<string, number>>((acc, e) => {
+      acc[e.sourceType] = (acc[e.sourceType] ?? 0) + e.amountYen;
+      return acc;
+    }, {}),
   };
 }
 
@@ -143,6 +175,10 @@ export type WeeklyReview = ReviewBase & {
   workflowCandidates: number;
   proposals: number;
   nextPriority: string[];
+  /** Phase 5 §48 追加分 */
+  weeklyAiRevenueYen: number;
+  revenueByMission: Record<string, number>;
+  bestCategory: string | null;
 };
 
 export async function runWeeklyPersonalCompanyReview(
@@ -189,8 +225,26 @@ export async function runWeeklyPersonalCompanyReview(
     nextPriority.push("詰まっているAI社員の原因を1つ潰す");
   }
 
+  const ledger = effectiveEntries(await loadRevenueEntries().catch(() => []));
+  const weekSince = new Date(now.getTime() - 7 * 86_400_000).toISOString();
+  const weekly = summarizeRevenue(ledger, { since: weekSince });
+  const weekEntries = ledger.filter(
+    (e) => e.occurredAt >= weekSince && e.confirmedByHuman && e.sourceType !== "investment"
+  );
+  const byCategory = weekEntries.reduce<Record<string, number>>((acc, e) => {
+    acc[e.sourceType] = (acc[e.sourceType] ?? 0) + e.amountYen;
+    return acc;
+  }, {});
+
   return {
     ...base,
+    weeklyAiRevenueYen: weekly.aiGeneratedYen,
+    revenueByMission: weekEntries.reduce<Record<string, number>>((acc, e) => {
+      if (e.missionId) acc[e.missionId] = (acc[e.missionId] ?? 0) + e.amountYen;
+      return acc;
+    }, {}),
+    bestCategory:
+      Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
     departmentHealth,
     bottleneckFlags: bottlenecks.agents
       .filter((a) => a.flags.length > 0)
@@ -215,6 +269,9 @@ export type MonthlyReview = ReviewBase & {
   };
   organizationProposals: number;
   strategyNotes: string[];
+  /** Phase 5 §49 追加分 */
+  revenueSources: Record<string, number>;
+  repeatableRevenueYen: number;
 };
 
 export async function runMonthlyPersonalCompanyReview(
@@ -225,8 +282,24 @@ export async function runMonthlyPersonalCompanyReview(
   const proposals = await loadProposals().catch(() => []);
 
   const since = new Date(now.getTime() - 30 * 86_400_000).toISOString();
-  const { summarizeRevenue } = await import("../revenue");
-  const revenue = options.revenue ? summarizeRevenue(options.revenue, { since }) : null;
+  const ledger = options.revenue ?? effectiveEntries(await loadRevenueEntries().catch(() => []));
+  const revenue = ledger.length > 0 ? summarizeRevenue(ledger, { since }) : null;
+
+  const monthEntries = ledger.filter(
+    (e) => e.occurredAt >= since && e.confirmedByHuman && e.sourceType !== "investment"
+  );
+  const revenueSources = monthEntries.reduce<Record<string, number>>((acc, e) => {
+    acc[e.sourceType] = (acc[e.sourceType] ?? 0) + e.amountYen;
+    return acc;
+  }, {});
+  // 同じ収益源で2回以上発生しているものを「繰り返せた収益」とみなす
+  const counts = monthEntries.reduce<Record<string, number>>((acc, e) => {
+    acc[e.sourceType] = (acc[e.sourceType] ?? 0) + 1;
+    return acc;
+  }, {});
+  const repeatableRevenueYen = Object.entries(revenueSources)
+    .filter(([source]) => (counts[source] ?? 0) >= 2)
+    .reduce((sum, [, amount]) => sum + amount, 0);
 
   const strategyNotes: string[] = [];
   if (base.fire.status === "NOT_CONFIGURED") {
@@ -255,5 +328,7 @@ export async function runMonthlyPersonalCompanyReview(
     },
     organizationProposals: proposals.length,
     strategyNotes,
+    revenueSources,
+    repeatableRevenueYen,
   };
 }

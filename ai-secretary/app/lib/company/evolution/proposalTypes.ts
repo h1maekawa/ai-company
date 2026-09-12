@@ -114,6 +114,24 @@ export const SCORE_WEIGHTS: ScoreBreakdown = {
   strategicValue: 10,
 };
 
+/**
+ * Personal Company から見た影響 — Phase 5 §32 / §33 / §35
+ *
+ * すべて optional。Phase 3 の Proposal Schema を壊さない。
+ * §35 のとおり、推定根拠が無ければ入れない（数字を捏造しない）。
+ * 値が無いこと自体が「まだ測れていない」という情報になる。
+ */
+export type PersonalImpact = {
+  expectedRevenueImpactYen?: number;
+  expectedSavingsImpactYen?: number;
+  expectedAssetImpactYen?: number;
+  expectedTimeSavedMinutes?: number;
+  /** 0〜1。根拠が薄ければ低くする */
+  confidence?: number;
+  /** 見積もれなかった項目の理由。UNKNOWN を明示するため */
+  unknownReasons?: string[];
+};
+
 export type ExpectedImpact = {
   /** 期待できること。数値が出せないものは説明のみ */
   description: string;
@@ -150,6 +168,8 @@ export type OrganizationProposal = {
   recommendationRank: number;
 
   expectedImpact: ExpectedImpact;
+  /** Personal Company としての影響（Phase 5 §32）。Optional */
+  personalImpact?: PersonalImpact;
   /** 実施した場合のリスク。空にしない */
   risks: string[];
 

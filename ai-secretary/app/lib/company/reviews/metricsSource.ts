@@ -10,6 +10,13 @@ import { computeMetrics } from "../metrics";
 import { loadPortfolio } from "../../investing/portfolio";
 import { computeSavingsRate, emptyPersonalMetrics, available, unavailable, type PersonalCompanyMetrics } from "../personalMetrics";
 import { summarizeRevenue, type RevenueAttribution } from "../revenue";
+import { effectiveEntries, loadRevenueEntries } from "../revenueStore";
+import { loadFinancialSettings, manualProvider } from "../financialSettings";
+
+/** Metric が値を持っているか（0は値として扱う） */
+function isAvailableValue(metric: { availability: string; value: number | null }): boolean {
+  return metric.availability === "AVAILABLE" && metric.value !== null;
+}
 
 export type MetricsSourceOptions = {
   /** 収益の記録。まだ収益が無ければ空配列 */
@@ -72,14 +79,33 @@ export async function collectPersonalMetrics(
     // ポートフォリオが読めなくてもレビュー全体は続ける
   }
 
-  /* ─── 収益（収益記録から） ─── */
-  const since = new Date(now.getTime() - windowDays * 86_400_000).toISOString();
-  const revenue = summarizeRevenue(options.revenue ?? [], { since });
+  /* ─── 手動入力の財務値（家計簿が繋がるまでの経路・§42） ─── */
+  const settings = await loadFinancialSettings().catch(() => null);
+  if (settings) {
+    const provider = manualProvider(settings);
+    const [income, expense, cash] = await Promise.all([
+      provider.getMonthlyIncome(),
+      provider.getMonthlyExpense(),
+      provider.getCashBalance(),
+    ]);
+    if (income !== null) metrics.financial.monthlyIncomeYen = available(income);
+    if (expense !== null) metrics.financial.monthlyExpenseYen = available(expense);
+    // 現金は投資側から取れていなければ手動値で埋める
+    if (cash !== null && !isAvailableValue(metrics.financial.cashBalanceYen)) {
+      metrics.financial.cashBalanceYen = available(cash);
+    }
+  }
 
-  metrics.financial.aiGeneratedRevenueYen = options.revenue
+  /* ─── 収益（収益台帳から・Phase 5） ─── */
+  const since = new Date(now.getTime() - windowDays * 86_400_000).toISOString();
+  const ledger = options.revenue ?? effectiveEntries(await loadRevenueEntries().catch(() => []));
+  const hasLedger = ledger.length > 0 || options.revenue !== undefined;
+  const revenue = summarizeRevenue(ledger, { since });
+
+  metrics.financial.aiGeneratedRevenueYen = hasLedger
     ? available(revenue.aiGeneratedYen)
     : unavailable("NO_DATA", "収益の記録がまだありません");
-  metrics.financial.sideIncomeYen = options.revenue
+  metrics.financial.sideIncomeYen = hasLedger
     ? available(revenue.aiGeneratedYen + revenue.otherBusinessYen)
     : unavailable("NO_DATA", "収益の記録がまだありません");
 

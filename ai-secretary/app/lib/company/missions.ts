@@ -8,7 +8,19 @@ import { PERSONAL_COMPANY } from "./personalCompany";
 
 export type MissionCategory = "money" | "asset" | "business" | "automation" | "organization";
 
-export type MissionStatus = "open" | "in_progress" | "done" | "skipped";
+/**
+ * §52 / §53 の状態遷移。
+ * 既存の open / in_progress / done / skipped は互換のため残し、
+ * Money Quest 用の PLANNED / ACTIVE / COMPLETED を追加する（Additive）。
+ */
+export type MissionStatus =
+  | "open"
+  | "in_progress"
+  | "done"
+  | "skipped"
+  | "PLANNED"
+  | "ACTIVE"
+  | "COMPLETED";
 
 export type PersonalMission = {
   id: string;
@@ -23,6 +35,12 @@ export type PersonalMission = {
 
   /** どの実行から生まれたミッションか（自動生成時に入る） */
   sourceTraceId?: string;
+  /** どの収益機会から生まれたか（Phase 5 §28）。Additive */
+  opportunityId?: string;
+  /** 今日のMoney Questとしての優先度。大きいほど先に勧める */
+  priorityScore?: number;
+  /** 最初の1円までの近さ（分）。FIRST_REVENUE_MODE で重視する（§25） */
+  estimatedMinutesToRevenue?: number;
 
   createdAt: string;
 };
