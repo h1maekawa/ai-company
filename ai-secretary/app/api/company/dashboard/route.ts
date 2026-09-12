@@ -51,6 +51,12 @@ export async function GET(): Promise<NextResponse> {
         organizationStatus: review.organizationStatus,
       },
       mission: review.mission,
+      revenueMode: review.revenueMode,
+      revenue: {
+        aiGeneratedYen: review.firstRevenueProgress.currentYen,
+        newTodayYen: review.newRevenueYen,
+        bySource: review.revenueBySource,
+      },
       proposals: {
         total: proposals.length,
         visible: visibleProposals.length,
