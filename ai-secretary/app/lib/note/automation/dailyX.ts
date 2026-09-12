@@ -27,6 +27,7 @@ import {
   scheduledAtInTokyo,
 } from "@/app/lib/note/operations";
 import type { SocialDraft } from "@/app/lib/note/research/types";
+import { recordPipelineSteps, type RecordStepInput } from "@/app/lib/agents/recorder";
 
 export type DailyXResult = {
   skipped?: boolean;
@@ -90,6 +91,15 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     };
   }
 
+  // 役割ごとの実行記録（要件3）。処理そのものは変えず、誰が何をやったかだけ残す
+  const stepLog: RecordStepInput[] = [
+    {
+      stepId: "research.select",
+      status: "done",
+      result: `候補「${cluster.title}」を選定（score ${cluster.totalScore}）`,
+    },
+  ];
+
   const genreId = cluster.genreIds[0] ?? DEFAULT_GENRES[0].id;
   const genre =
     ideaFile.genres.find((candidate) => candidate.id === genreId) ??
@@ -142,7 +152,18 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     if (candidate) generated.push(candidate);
     if (result.warning) warnings.push(result.warning);
   }
-  if (generated.length === 0) throw new Error(warnings[0] ?? "X投稿案を生成できませんでした");
+  if (generated.length === 0) {
+    await recordPipelineSteps([
+      ...stepLog,
+      { stepId: "writer.generate", status: "failed", failureReason: warnings[0] ?? "生成できませんでした" },
+    ]);
+    throw new Error(warnings[0] ?? "X投稿案を生成できませんでした");
+  }
+  stepLog.push({
+    stepId: "writer.generate",
+    status: "done",
+    result: `投稿案を${generated.length}件生成`,
+  });
 
   const gated = [];
   for (const draft of generated) {
@@ -156,6 +177,16 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
   const prepared = gated.map(({ draft, gate }) =>
     gate.safe ? draft : { ...draft, failureReason: gate.reasons.join(" / ") }
   );
+  const gateBlockedCount = prepared.filter((draft) => Boolean(draft.failureReason)).length;
+  stepLog.push({
+    stepId: "fact_check.gate",
+    status: "done",
+    result:
+      gateBlockedCount > 0
+        ? `${prepared.length}件を検査し、${gateBlockedCount}件が要確認`
+        : `${prepared.length}件すべて通過`,
+  });
+
   let drafts = [...prepared, ...existingDrafts];
   await saveSocialDrafts(drafts);
   await saveClusters(
@@ -237,6 +268,21 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
   // Human Escalation（要件P1.6）: 通常成功時は毎回通知しない。異常時のみSlackへ送る。
   // 通常の実行結果はWeekly CEO Reportへ集約する。
   const safetyBlocked = prepared.filter((draft) => Boolean(draft.failureReason)).length;
+  stepLog.push(
+    scheduledDraftIds.length > 0
+      ? {
+          stepId: "publisher.schedule",
+          status: "done",
+          result: `${scheduledDraftIds.length}件をBufferへ予約`,
+        }
+      : {
+          stepId: "publisher.schedule",
+          status: "failed",
+          failureReason: scheduleMessages.join(" / ") || "予約しませんでした",
+        }
+  );
+  await recordPipelineSteps(stepLog);
+
   const bufferFailureCount = scheduleMessages.filter((m) => m.startsWith("予約失敗")).length;
   const bufferAuthOrConfigError = scheduleMessages.some(
     (m) => m.includes("未設定です") || m.includes("認証")

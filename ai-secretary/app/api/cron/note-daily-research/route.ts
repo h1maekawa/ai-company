@@ -9,6 +9,7 @@ import {
   loadResearchSettings,
 } from "@/app/lib/note/research/store";
 import { runMarketIntake, type MarketIntakeResult } from "@/app/lib/agents/market";
+import { recordPipelineSteps, type RecordStepInput } from "@/app/lib/agents/recorder";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -48,6 +49,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (!result) {
       return NextResponse.json({ skipped: true, reason: "既に実行中のためスキップしました" });
     }
+
+    // 役割ごとの実行記録（要件3）
+    const stepLog: RecordStepInput[] = [];
+    if (marketIntake) {
+      stepLog.push({
+        stepId: "market.intake",
+        status: marketIntakeError ? "failed" : "done",
+        result: marketIntake.added > 0 ? `市況メモを${marketIntake.added}件取り込み` : marketIntake.reason,
+        failureReason: marketIntakeError,
+      });
+    }
+    stepLog.push({
+      stepId: "research.collect",
+      status: "done",
+      result: `新規${result.newItems}件・候補${result.topCandidates.length}件`,
+    });
+    await recordPipelineSteps(stepLog);
 
     const [items, experiences] = await Promise.all([loadResearchInbox(), loadExperiences()]);
     const itemById = new Map(items.map((i) => [i.id, i]));

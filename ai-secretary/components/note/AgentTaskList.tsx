@@ -61,6 +61,7 @@ export function AgentTaskList({ limit = 8 }: { limit?: number }) {
         <p className="mt-3 text-xs leading-relaxed text-sub">
           チャットで「note記事を書いて」「A8案件を調べて」のように指示すると、
           担当ごとのタスクとしてここに記録されます。
+          自動パイプラインの各ステップも同じ一覧に「自動」として残ります。
         </p>
       ) : (
         <ul className="mt-3 space-y-2">
@@ -76,9 +77,16 @@ export function AgentTaskList({ limit = 8 }: { limit?: number }) {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-white">{task.instruction}</span>
                 <span className="mt-0.5 block text-[10px] text-sub">
+                  {/* 由来を出す。チャット指示と自動実行では読み方が変わる（要件1 / 要件3） */}
+                  {task.origin === "automation" ? "自動" : "指示"}・
                   {AGENT_ROLE_LABELS[task.role]}・{REVIEW_PHASE_LABELS[task.phase]}
                   {task.createdAt ? ` ・ ${relativeAge(task.createdAt)}` : ""}
                 </span>
+                {task.result && (
+                  <span className="mt-0.5 block truncate text-[10px] text-sub">
+                    {task.result}
+                  </span>
+                )}
               </span>
             </li>
           ))}

@@ -36,7 +36,8 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/agents/dispatch.ts",
     "$PWD/app/lib/agents/marketMapping.ts",
     "$PWD/app/lib/note/styleProfile.ts",
-    "$PWD/app/lib/review/pipelineTypes.ts"
+    "$PWD/app/lib/review/pipelineTypes.ts",
+    "$PWD/app/lib/agents/pipelineRoles.ts"
   ]
 }
 TSCONFIG
