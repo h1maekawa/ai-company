@@ -28,6 +28,7 @@ import {
 } from "@/app/lib/note/operations";
 import type { SocialDraft } from "@/app/lib/note/research/types";
 import { recordPipelineSteps, type RecordStepInput } from "@/app/lib/agents/recorder";
+import { startTrace } from "@/app/lib/company/trace";
 
 export type DailyXResult = {
   skipped?: boolean;
@@ -91,7 +92,13 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     };
   }
 
-  // 役割ごとの実行記録（要件3）。処理そのものは変えず、誰が何をやったかだけ残す
+  /*
+   * 役割ごとの実行記録（要件3）。処理そのものは変えず、誰が何をやったかだけ残す。
+   * この実行全体を1つのトレースにまとめる（Phase 4 §5）。
+   * 候補選定 → 生成 → ゲート → 予約 が同じ traceId になることで、
+   * Workflow Candidate が手順として検出できるようになる。
+   */
+  const trace = startTrace({ departmentId: "note", workflowId: "daily-x-automation" });
   const stepLog: RecordStepInput[] = [
     {
       stepId: "research.select",
@@ -153,10 +160,13 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     if (result.warning) warnings.push(result.warning);
   }
   if (generated.length === 0) {
-    await recordPipelineSteps([
-      ...stepLog,
-      { stepId: "writer.generate", status: "failed", failureReason: warnings[0] ?? "生成できませんでした" },
-    ]);
+    await recordPipelineSteps(
+      [
+        ...stepLog,
+        { stepId: "writer.generate", status: "failed", failureReason: warnings[0] ?? "生成できませんでした" },
+      ],
+      trace
+    );
     throw new Error(warnings[0] ?? "X投稿案を生成できませんでした");
   }
   stepLog.push({
@@ -281,7 +291,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
           failureReason: scheduleMessages.join(" / ") || "予約しませんでした",
         }
   );
-  await recordPipelineSteps(stepLog);
+  await recordPipelineSteps(stepLog, trace);
 
   const bufferFailureCount = scheduleMessages.filter((m) => m.startsWith("予約失敗")).length;
   const bufferAuthOrConfigError = scheduleMessages.some(

@@ -11,6 +11,9 @@
 import { appendAgentTask, loadAgentTasks, saveAgentTasks } from "./store";
 import { findPipelineStep } from "./pipelineRoles";
 import { createAgentTask, type AgentTaskStatus } from "./types";
+import { observeMany } from "@/app/lib/company/observer";
+import type { CreateEventInput } from "@/app/lib/company/events";
+import type { ExecutionContext } from "@/app/lib/company/trace";
 
 export type RecordStepInput = {
   /** PIPELINE_STEPS のID */
@@ -56,7 +59,15 @@ export async function recordPipelineStep(input: RecordStepInput): Promise<void> 
  * 同じ実行内の複数ステップをまとめて記録する。
  * 1件ずつ append するとVaultへの書き込みが増えるため、まとめて1回で保存する。
  */
-export async function recordPipelineSteps(inputs: RecordStepInput[]): Promise<void> {
+export async function recordPipelineSteps(
+  inputs: RecordStepInput[],
+  /**
+   * 一連の実行を束ねるトレース（Phase 4 §5）。
+   * 省略可。渡すと同じ traceId で記録され、
+   * Workflow Candidate が手順として復元できるようになる。
+   */
+  context?: ExecutionContext
+): Promise<void> {
   const valid = inputs
     .map((input) => ({ input, step: findPipelineStep(input.stepId) }))
     .filter((entry): entry is { input: RecordStepInput; step: NonNullable<ReturnType<typeof findPipelineStep>> } =>
@@ -85,4 +96,20 @@ export async function recordPipelineSteps(inputs: RecordStepInput[]): Promise<vo
   } catch (error) {
     console.error("[agents/recorder] まとめ記録に失敗:", error);
   }
+
+  // 横断ログにも流す（v3.1 §25）。タスクログは運用者向け、こちらは分析用
+  await observeMany(
+    valid.map(({ input, step }): CreateEventInput => ({
+      kind: "pipeline.step",
+      department: "note",
+      actor: step.role,
+      action: step.label,
+      outcome: input.status === "done" ? "success" : "failure",
+      // ステップIDを signature にする。実行のたびに揺れない
+      signature: `pipeline:${step.id}`,
+      detail: input.failureReason ?? input.result,
+      // 同じ実行のステップは同じ traceId を持つ。ここで振り直すと手順が復元できない
+      ...(context ? { traceId: context.traceId, workflowId: context.workflowId } : {}),
+    }))
+  );
 }
