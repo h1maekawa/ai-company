@@ -26,6 +26,8 @@ export function MissionExecutionPanel({ agentId }: { agentId?: string }) {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualDescription, setManualDescription] = useState("");
   const load = useCallback(async () => {
     try {
       const response = await fetch("/api/company/execution");
@@ -43,13 +45,40 @@ export function MissionExecutionPanel({ agentId }: { agentId?: string }) {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(url, { method: "POST" });
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "idempotency-key": crypto.randomUUID() },
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       await load();
       window.dispatchEvent(new Event("company-execution-updated"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "実行失敗");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const createManual = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/company/missions/manual", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ title: manualTitle, description: manualDescription }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setManualTitle("");
+      setManualDescription("");
+      await load();
+      window.dispatchEvent(new Event("company-execution-updated"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Mission作成失敗");
     } finally {
       setBusy(false);
     }
@@ -73,6 +102,49 @@ export function MissionExecutionPanel({ agentId }: { agentId?: string }) {
       <p className="text-xs text-sub">
         Runで許可された内部作業を進めます。承認が必要な場合は停止します。外部への送信・公開は行いません。
       </p>
+      {!agentId && (
+        <form
+          className="space-y-3 rounded-xl border border-hairline p-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createManual();
+          }}
+        >
+          <div>
+            <h3 className="text-sm font-semibold text-white">CEO Manual Mission</h3>
+            <p className="mt-1 text-xs text-sub">
+              CEOが内部作業を登録します。作成だけではAIを実行しません。
+            </p>
+          </div>
+          <label className="block text-xs text-sub">
+            Mission title
+            <input
+              className="mt-1 w-full rounded border border-hairline bg-ink-base px-3 py-2 text-white"
+              maxLength={120}
+              required
+              value={manualTitle}
+              onChange={(event) => setManualTitle(event.target.value)}
+            />
+          </label>
+          <label className="block text-xs text-sub">
+            Objective / Description
+            <textarea
+              className="mt-1 min-h-24 w-full rounded border border-hairline bg-ink-base px-3 py-2 text-white"
+              maxLength={2000}
+              required
+              value={manualDescription}
+              onChange={(event) => setManualDescription(event.target.value)}
+            />
+          </label>
+          <button
+            className={button}
+            disabled={busy || !manualTitle.trim() || !manualDescription.trim()}
+            type="submit"
+          >
+            {busy ? "処理中…" : "Missionを作成"}
+          </button>
+        </form>
+      )}
       {snapshot?.runtime && (
         <div className="grid grid-cols-2 gap-2 rounded-lg border border-hairline p-3 text-xs text-sub md:grid-cols-4">
           <span>Production: Vercel / Cloudflare Secondary</span>

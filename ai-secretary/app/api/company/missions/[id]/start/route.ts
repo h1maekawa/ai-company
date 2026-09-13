@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { startMission } from "@/app/lib/company/execution/service";
+import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtection";
 
 export const dynamic = "force-dynamic";
 
@@ -8,9 +9,10 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ): Promise<NextResponse> {
+  if (!isSameOriginMutation(req))
+    return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
   try {
-    const body = await req.json().catch(() => ({}));
-    const result = await startMission({ missionId: params.id, mission: body.mission });
+    const result = await startMission({ missionId: params.id });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
     return NextResponse.json({ ok: true, mission: result.data.mission });
   } catch (error) {

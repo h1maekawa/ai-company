@@ -54,6 +54,14 @@ test("未認証の /api/fund/* は 401 を返す", async () => {
   }
 });
 
+test("未認証のManual Mission Create / Start / Runは401を返す", async () => {
+  process.env.SESSION_SECRET = SECRET;
+  for (const path of ["/api/company/missions/manual", "/api/company/missions/m1/start", "/api/company/missions/m1/run"]) {
+    const res = await middleware(makeRequest(path));
+    assert.equal(res.status, 401, `${path} should be 401`);
+  }
+});
+
 test("未認証の /fund 画面は /login へリダイレクトされる", async () => {
   process.env.SESSION_SECRET = SECRET;
   const res = await middleware(makeRequest("/fund"));

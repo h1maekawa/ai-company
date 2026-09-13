@@ -117,5 +117,9 @@ export function planProgress(plan: ExecutionPlan): number {
 
 /** Phase 7 creates an internal draft artifact; no publishing step is implied. */
 export function internalPlanSteps(objective: string): Omit<ExecutionStep, "id" | "status">[] {
-  return defaultPlanSteps(objective).map(step => step.actionType === "PUBLISH_DRAFT" ? { ...step, actionType: "INTERNAL_REPORT_CREATE" } : step);
+  return defaultPlanSteps(objective).map(step =>
+    step.actionType === "PUBLISH_DRAFT"
+      ? { ...step, title: "内部レポートとして保存する", actionType: "INTERNAL_REPORT_CREATE" }
+      : step,
+  );
 }

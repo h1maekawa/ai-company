@@ -25,11 +25,13 @@ import {
 import { applyExpiry, createApprovalRequest, decideApproval } from "./approval";
 import { reviewActionRequest } from "./actionGateway";
 import {
+  getExecutionStore,
   loadExecutionState,
   saveExecutionState,
   type ExecutionState,
 } from "./store";
 import type { PersonalMission } from "../missions";
+import { createManualMissionRecord, validateManualMissionInput } from "./manualMission";
 
 export type ServiceResult<T> =
   { ok: true; data: T } | { ok: false; error: string; status: number };
@@ -39,6 +41,30 @@ const fail = (status: number, error: string) => ({
   error,
   status,
 });
+
+export async function createManualMission(input: {
+  title?: unknown;
+  description?: unknown;
+  idempotencyKey?: string;
+}) {
+  const validated = validateManualMissionInput(input);
+  if (!validated.ok) return fail(400, validated.error);
+  const key = input.idempotencyKey?.trim();
+  if (!key || key.length > 128) return fail(400, "IDEMPOTENCY_KEY_REQUIRED");
+  const store = getExecutionStore();
+  const prior = await store.getIdempotencyResult<{ mission: ExecutionMission }>("manual-mission-create", key);
+  if (prior?.mission) return { ok: true as const, data: prior };
+  if (!(await store.claimIdempotency("manual-mission-create", key)))
+    return fail(409, "DUPLICATE_REQUEST_IN_PROGRESS");
+  return executionTransaction(async () => {
+    const mission = createManualMissionRecord(validated);
+    const state = await loadExecutionState();
+    await saveExecutionState({ ...state, missions: [...state.missions, mission] });
+    const data = { mission };
+    await store.completeIdempotency("manual-mission-create", key, data);
+    return { ok: true as const, data };
+  });
+}
 
 /** Money Quest を実行対象として取り込む（まだ無ければ作る） */
 export function ensureMission(
