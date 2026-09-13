@@ -54,6 +54,8 @@ Redisは環境ごとに `dev:`、`preview:<branch>:`、`prod:` の名前空間�
 
 Productionのkill switchは `AUTONOMOUS_RUNTIME_ENABLED`、`REAL_MODEL_CANARY_ENABLED`、`OPPORTUNITY_AUTO_REFRESH_ENABLED`、`ORGANIZATION_REVIEW_ENABLED` です。すべて既定値はfalseです。公開状態は `/api/company/runtime/health` で確認でき、認証Cookieを使った完全な確認は次で実行します。
 
+Phase 10-AではProductionの `REAL_MODEL_CANARY_ENABLED=true` だけを有効にし、`AUTONOMOUS_RUNTIME_ENABLED=false` を維持します。Canaryは専用Redis名前空間へ結果だけを保存し、Mission、Revenue、Opportunity、Action Requestを変更しません。
+
 ```bash
 APP_BASE_URL=https://ai-company-ilqd.vercel.app \
 SMOKE_SESSION_COOKIE='session=...' npm run smoke:production

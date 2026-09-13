@@ -48,7 +48,8 @@ test("cron uses one global lease and bounded execution", () => {
 
 test("canary results have a separate namespace and escalation threshold", () => {
   assert.match(canary, /:canary:execution:v1:results/);
-  assert.match(cycle, /consecutiveFailures >= 3/);
+  assert.match(health, /CANARY_CONSECUTIVE_FAILURES/);
+  assert.match(health, /canaries\.slice\(0, 3\)\.every/);
 });
 
 test("health endpoint is public and returns secret-free smoke status", () => {

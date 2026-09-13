@@ -19,6 +19,12 @@ for (const key of ["redisConnectivity", "missionRead", "approvalRead", "revenueR
   if (payload.smokeTest?.[key] !== "ok") throw new Error(`SMOKE_${key}_${payload.smokeTest?.[key] ?? "missing"}`);
 }
 if (payload.authority !== "vercel" || payload.deployment?.environment !== "production") throw new Error("PRODUCTION_AUTHORITY_INVALID");
+if (payload.canary === "enabled") {
+  if (payload.latestCanary?.status !== "PASS") throw new Error(`CANARY_${payload.latestCanary?.status ?? "missing"}`);
+  if (!payload.latestCanary.schemaValidated || !payload.latestCanary.redisPersisted) throw new Error("CANARY_VALIDATION_INCOMPLETE");
+  if (payload.latestCanary.reviewVerdict !== "PASS" || payload.latestCanary.security?.status !== "PASS") throw new Error("CANARY_REVIEW_OR_SECURITY_FAILED");
+  if (payload.latestCanary.externalActionCount !== 0) throw new Error("CANARY_EXTERNAL_ACTION_DETECTED");
+}
 
 for (const path of ["/api/company/execution", "/api/company/approvals", "/api/company/revenue"]) {
   const result = await get(path, true);
