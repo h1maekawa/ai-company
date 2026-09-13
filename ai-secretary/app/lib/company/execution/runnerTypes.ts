@@ -49,6 +49,39 @@ export type RunnerState = {
   executions: ActionExecution[];
   artifacts: InternalArtifact[];
   learning: LearningEvent[];
+  attention?: AttentionItem[];
+  learningQueue?: LearningQueueItem[];
+  canaries?: CanaryResult[];
+};
+export type CanaryResult = {
+  id: string;
+  status: "PASS" | "FAIL";
+  startedAt: string;
+  completedAt: string;
+  latencyMs: number;
+  outputLength?: number;
+  reviewVerdict?: "PASS" | "WARN" | "FAIL";
+  error?: string;
+};
+export type AttentionItem = {
+  id: string;
+  fingerprint: string;
+  missionId?: string;
+  type: "APPROVAL_REQUIRED" | "MISSION_BLOCKED" | "SECURITY_ALERT" | "FIRST_REVENUE" | "SYSTEM_FAILURE";
+  priority: "low" | "medium" | "high" | "critical";
+  title: string;
+  summary: string;
+  targetId?: string;
+  createdAt: string;
+  resolvedAt?: string;
+};
+export type LearningQueueItem = {
+  id: string;
+  kind: "revenue" | "mission";
+  payload: unknown;
+  attempts: number;
+  nextAttemptAt: string;
+  createdAt: string;
 };
 export type RunnerLimits = {
   maxSteps: number;

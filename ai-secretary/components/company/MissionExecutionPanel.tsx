@@ -9,6 +9,15 @@ type Snapshot = {
   opportunities: RevenueOpportunity[];
   revenue: RevenueEntry[];
   performance: ReturnType<typeof agentPerformance>;
+  runtime: {
+    store: string;
+    storeVersion: number;
+    activeMissions: number;
+    activeLeases: number;
+    pendingApprovals: number;
+    attention: Array<{ id: string; priority: string; title: string; summary: string }>;
+    recentFailures: Array<{ id: string; type: string; detail?: string }>;
+  };
 };
 export function MissionExecutionPanel({ agentId }: { agentId?: string }) {
   const [snapshot, setSnapshot] = useState<Snapshot>();
@@ -61,6 +70,20 @@ export function MissionExecutionPanel({ agentId }: { agentId?: string }) {
       <p className="text-xs text-sub">
         Runで許可された内部作業を進めます。承認が必要な場合は停止します。外部への送信・公開は行いません。
       </p>
+      {snapshot?.runtime && (
+        <div className="grid grid-cols-2 gap-2 rounded-lg border border-hairline p-3 text-xs text-sub md:grid-cols-5">
+          <span>Store: {snapshot.runtime.store} v{snapshot.runtime.storeVersion}</span>
+          <span>Active: {snapshot.runtime.activeMissions}</span>
+          <span>Leases: {snapshot.runtime.activeLeases}</span>
+          <span>Approvals: {snapshot.runtime.pendingApprovals}</span>
+          <span>Attention: {snapshot.runtime.attention.length}</span>
+        </div>
+      )}
+      {snapshot?.runtime.attention.map((item) => (
+        <p key={item.id} className="rounded border border-loss/40 p-2 text-xs text-loss">
+          {item.priority.toUpperCase()}: {item.title} — {item.summary}
+        </p>
+      ))}
       {error && (
         <p role="alert" className="text-xs text-loss">
           {error}

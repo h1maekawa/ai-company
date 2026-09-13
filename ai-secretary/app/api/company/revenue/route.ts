@@ -11,6 +11,8 @@ import {
 } from "@/app/lib/company/revenueStore";
 import { summarizeRevenue } from "@/app/lib/company/revenue";
 import { evaluateAchievements } from "@/app/lib/company/achievements";
+import { createHash } from "node:crypto";
+import { getExecutionStore } from "@/app/lib/company/execution/store";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +54,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!validation.ok) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
+    const store = getExecutionStore();
+    const idempotencyKey = req.headers.get("idempotency-key") ??
+      createHash("sha256").update(JSON.stringify(body)).digest("hex");
+    const prior = await store.getIdempotencyResult<Record<string, unknown>>("revenue", idempotencyKey);
+    if (prior) return NextResponse.json(prior);
+    if (!(await store.claimIdempotency("revenue", idempotencyKey)))
+      return NextResponse.json({ error: "DUPLICATE_REQUEST_IN_PROGRESS" }, { status: 409 });
 
     const entry = createRevenueEntry({
       amountYen: body.amountYen as number,
@@ -72,16 +81,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const entries = await appendRevenueEntry(entry);
     let learningPending = false;
-    try { await executionTransaction(() => syncRevenueLearning(entries)); } catch { learningPending = true; }
+    try {
+      await executionTransaction(() => syncRevenueLearning(entries));
+    } catch {
+      learningPending = true;
+      const snapshot = await store.load();
+      snapshot.state.runtime ??= { runs: {}, executions: [], artifacts: [], learning: [] };
+      snapshot.state.runtime.learningQueue ??= [];
+      if (!snapshot.state.runtime.learningQueue.some((item) => item.id === entry.id)) {
+        snapshot.state.runtime.learningQueue.push({
+          id: entry.id,
+          kind: "revenue",
+          payload: entry,
+          attempts: 0,
+          nextAttemptAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+        });
+        await store.save(snapshot.state, { expectedVersion: snapshot.version });
+      }
+    }
     const allTime = summarizeRevenue(effectiveEntries(entries));
 
-    return NextResponse.json({
+    const response = {
       ok: true,
       learningPending,
       entry,
       allTime,
       achievements: evaluateAchievements({ aiGeneratedRevenueYen: allTime.aiGeneratedYen }),
-    });
+    };
+    await store.completeIdempotency("revenue", idempotencyKey, response);
+    return NextResponse.json(response);
   } catch (error) {
     console.error("[api/company/revenue] POST失敗:", error);
     return NextResponse.json({ error: "収益の記録に失敗しました" }, { status: 500 });

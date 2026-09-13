@@ -1,6 +1,5 @@
 import { completionBlocker } from "./completion";
-import { runAgent } from "./agentRunner";
-import { internalStepWorker } from "./stepWorker";
+import { runProductionMission } from "../runtime/productionRunner";
 import { recordLearning } from "./learning";
 import { selectOpportunity, startOpportunity } from "../opportunity/lifecycle";
 import { loadOpportunities, saveOpportunities } from "../opportunity/store";
@@ -404,35 +403,14 @@ export const decideApprovalRequest = (
   input: Parameters<typeof decideApprovalRequestOperation>[0],
 ) => executionTransaction(() => decideApprovalRequestOperation(input));
 
-export async function runMission(missionId: string) {
+export async function runMission(missionId: string, idempotencyKey?: string) {
   assertLocalRunnerStorage();
-  return executionTransaction(async () => {
-    const state = await loadExecutionState();
-    const mission = state.missions.find((m) => m.id === missionId);
-    if (!mission) return fail(404, "MISSION_NOT_FOUND");
-    const agent =
-      buildOrganizationSnapshot().agents.find(
-        (a) => a.id === mission.assignedAgentId,
-      ) ?? null;
-    await runAgent(
-      state,
-      missionId,
-      agent,
-      internalStepWorker,
-      {},
-      async (snapshot) => {
-        await saveExecutionState(snapshot);
-      },
-    );
-    await saveExecutionState(state);
-    return {
-      ok: true as const,
-      data: {
-        mission: state.missions.find((m) => m.id === missionId),
-        runtime: state.runtime,
-      },
-    };
-  });
+  try {
+    return { ok: true as const, data: await runProductionMission({ missionId, idempotencyKey }) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "MISSION_RUN_FAILED";
+    return fail(message === "MISSION_NOT_FOUND" ? 404 : 409, message);
+  }
 }
 export async function selectOpportunityMission(id: string) {
   return executionTransaction(async () => {

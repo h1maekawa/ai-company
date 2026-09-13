@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { VAULT_ROOT } from "../../runtime/paths";
+import { getRedisClient } from "../../utils/redis";
 let busy = false;
 export async function executionTransaction<T>(
   operation: () => Promise<T>,
@@ -28,13 +29,7 @@ export async function executionTransaction<T>(
     }
   }
 }
-/** Remote Vault writes and worker execution are outside Phase 7. */
+/** Runner requires local storage in development or durable Redis in production. */
 export function assertLocalRunnerStorage() {
-  if (
-    !VAULT_ROOT ||
-    process.env.GITHUB_OWNER ||
-    process.env.GITHUB_REPO ||
-    process.env.VERCEL
-  )
-    throw new Error("LOCAL_RUNNER_STORAGE_REQUIRED");
+  if (!VAULT_ROOT && !getRedisClient()) throw new Error("DURABLE_EXECUTION_STORE_REQUIRED");
 }

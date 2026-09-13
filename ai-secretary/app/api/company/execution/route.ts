@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { loadExecutionState } from "@/app/lib/company/execution/store";
+import { getExecutionStore, loadExecutionState } from "@/app/lib/company/execution/store";
+import { runtimeHealth } from "@/app/lib/company/runtime/operations";
 import {
   agentPerformance,
   safeRevenueContributions,
@@ -9,10 +10,11 @@ import { loadOpportunities } from "@/app/lib/company/opportunity/store";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
-    const [state, revenue, opportunities] = await Promise.all([
+    const [state, revenue, opportunities, runtime] = await Promise.all([
       loadExecutionState(),
       loadRevenueEntries(),
       loadOpportunities(),
+      runtimeHealth(getExecutionStore()),
     ]);
     return NextResponse.json({
       state,
@@ -20,6 +22,7 @@ export async function GET() {
       opportunities,
       performance: agentPerformance(state, revenue),
       contributions: safeRevenueContributions(revenue, state),
+      runtime,
     });
   } catch {
     return NextResponse.json(
