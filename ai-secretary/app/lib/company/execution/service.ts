@@ -140,7 +140,13 @@ async function startMissionOperation(input: {
         ? { ...step, requiredSkillId: opportunity.requiredSkills[0] }
         : step,
     ),
-    expectedOutputs: ["下書き"],
+    expectedOutputs: ["internal report"],
+    expectedArtifacts: ["internal report"],
+    acceptanceCriteria: [
+      { id: "substantive", description: "内容のある内部レポート", kind: "min_length", value: 40 },
+      { id: "structured", description: "見出しを含む構造化レポート", kind: "has_heading" },
+    ],
+    constraints: ["外部公開しない", "外部Actionを実行しない"],
     now,
   });
 

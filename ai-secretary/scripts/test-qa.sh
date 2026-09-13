@@ -77,6 +77,15 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/execution/xp.ts",
     "$PWD/app/lib/company/execution/agentStatus.ts",
     "$PWD/app/lib/company/execution/agentRunner.ts",
+    "$PWD/app/lib/skills/types.ts",
+    "$PWD/app/lib/skills/registry.ts",
+    "$PWD/app/lib/skills/missionRuntime.ts",
+    "$PWD/app/lib/skills/implementations/dateUtil.ts",
+    "$PWD/app/lib/skills/implementations/personalCapture.ts",
+    "$PWD/app/lib/skills/implementations/personalTodoAdd.ts",
+    "$PWD/app/lib/skills/implementations/personalTodayShow.ts",
+    "$PWD/app/lib/skills/implementations/noteDraftFormat.ts",
+    "$PWD/app/lib/skills/implementations/fundLogFormat.ts",
     "$PWD/app/lib/company/execution/performance.ts",
     "$PWD/app/lib/company/opportunity/lifecycle.ts"
   ]

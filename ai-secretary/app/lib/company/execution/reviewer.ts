@@ -43,14 +43,50 @@ const finding = (id: string, verdict: ReviewVerdict, message: string): ReviewFin
 export type QualityInput = {
   objective: string;
   output: string;
+  /** Legacy artifact labels. These describe deliverables; they are not literal text assertions. */
   expectedOutputs: string[];
+  expectedArtifacts?: string[];
+  acceptanceCriteria?: QualityCriterion[];
   now?: Date;
 };
+
+export type QualityCriterion =
+  | { id: string; description: string; kind: "min_length"; value: number }
+  | { id: string; description: string; kind: "contains_all"; values: string[] }
+  | { id: string; description: string; kind: "contains_any"; values: string[] }
+  | { id: string; description: string; kind: "has_heading" };
+
+const normalize = (value: string) => value.normalize("NFKC").toLowerCase();
+
+/** Deterministic Japanese/English keyword extraction; no external model or tokenizer. */
+export function alignmentTerms(value: string): string[] {
+  const normalized = normalize(value);
+  const terms = normalized.match(/[a-z0-9][a-z0-9_-]+|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]+/gu) ?? [];
+  const expanded = terms.flatMap((term) => {
+    if (!/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]+$/u.test(term)) return [term];
+    if (term.length <= 2) return [term];
+    return Array.from({ length: term.length - 1 }, (_, index) => term.slice(index, index + 2));
+  });
+  return [...new Set(expanded.filter((term) => term.length >= 2))];
+}
+
+function criterionFinding(criterion: QualityCriterion, output: string): ReviewFinding {
+  const normalized = normalize(output);
+  let passed = false;
+  if (criterion.kind === "min_length") passed = output.length >= criterion.value;
+  else if (criterion.kind === "has_heading") passed = /^#{1,6}\s+\S+/m.test(output);
+  else if (criterion.kind === "contains_all") passed = criterion.values.every((value) => normalized.includes(normalize(value)));
+  else passed = criterion.values.some((value) => normalized.includes(normalize(value)));
+  return passed
+    ? finding(`quality.criterion.${criterion.id}`, "PASS", criterion.description)
+    : finding(`quality.criterion.${criterion.id}`, "WARN", `未充足: ${criterion.description}`);
+}
 
 export function runQualityReview(input: QualityInput): ReviewResult {
   const now = input.now ?? new Date();
   const output = (input.output ?? "").trim();
   const findings: ReviewFinding[] = [];
+  const expectedArtifacts = input.expectedArtifacts ?? input.expectedOutputs;
 
   findings.push(
     output
@@ -58,22 +94,19 @@ export function runQualityReview(input: QualityInput): ReviewResult {
       : finding("quality.present", "FAIL", "成果物が空です")
   );
 
-  // 期待した成果物が揃っているか
-  const missing = input.expectedOutputs.filter(
-    (expected) => !output.toLowerCase().includes(expected.toLowerCase())
-  );
+  // expectedOutputs は成果物のラベルであり、本文中の literal 文字列ではない。
   findings.push(
-    missing.length === 0
-      ? finding("quality.outputs", "PASS", "期待した項目が揃っています")
-      : finding("quality.outputs", "WARN", `見当たらない項目: ${missing.join(" / ")}`)
+    expectedArtifacts.length === 0 || output
+      ? finding("quality.outputs", "PASS", "期待成果物を評価できる内容があります")
+      : finding("quality.outputs", "FAIL", `成果物がありません: ${expectedArtifacts.join(" / ")}`)
   );
 
+  findings.push(...(input.acceptanceCriteria ?? []).map((criterion) => criterionFinding(criterion, output)));
+
   // 目的から大きく外れていないか（語の重なりで粗く見る）
-  const objectiveWords = input.objective
-    .split(/\s+|、|。/)
-    .map((w) => w.trim())
-    .filter((w) => w.length >= 2);
-  const overlap = objectiveWords.filter((w) => output.includes(w)).length;
+  const objectiveWords = alignmentTerms(input.objective);
+  const normalizedOutput = normalize(output);
+  const overlap = objectiveWords.filter((word) => normalizedOutput.includes(word)).length;
   findings.push(
     objectiveWords.length === 0 || overlap > 0
       ? finding("quality.alignment", "PASS", "目的との対応が見られます")

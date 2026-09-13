@@ -12,7 +12,7 @@ export function completionBlocker(
   )
     return "REQUIRED_STEPS_INCOMPLETE";
   const run = state.runtime?.runs[missionId];
-  if (run?.review?.verdict !== "PASS") return "REQUIRED_REVIEW_NOT_PASSED";
+  if (!run?.review?.canProceed) return "REQUIRED_REVIEW_NOT_PASSED";
   for (const step of plan.steps.filter((s) => s.type === "action")) {
     const h = [...run.history]
       .reverse()

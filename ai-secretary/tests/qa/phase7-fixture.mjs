@@ -14,6 +14,9 @@ export const performance = await import(
 export const lifecycle = await import(
   path.join(base, "opportunity/lifecycle.js")
 );
+export const skillRuntime = await import(
+  path.join(process.env.QA_DIST, "out/app/lib/skills/missionRuntime.js")
+);
 export const agent = {
   id: "a",
   granted: ["vault.write", "publish.publish", "gmail.send"],

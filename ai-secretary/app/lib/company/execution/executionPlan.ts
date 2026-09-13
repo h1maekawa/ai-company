@@ -33,6 +33,10 @@ export type ExecutionPlan = {
   objective: string;
   steps: ExecutionStep[];
   expectedOutputs: string[];
+  /** Additive contract for deterministic Mission completion checks. */
+  acceptanceCriteria?: import("./reviewer").QualityCriterion[];
+  expectedArtifacts?: string[];
+  constraints?: string[];
   /** 計画に含まれるActionのうち最も高いリスク */
   riskLevel: RiskLevel;
   createdAt: string;
@@ -56,6 +60,9 @@ export function createExecutionPlan(input: {
   objective: string;
   steps: Omit<ExecutionStep, "id" | "status">[];
   expectedOutputs: string[];
+  acceptanceCriteria?: import("./reviewer").QualityCriterion[];
+  expectedArtifacts?: string[];
+  constraints?: string[];
   now?: Date;
 }): ExecutionPlan {
   const now = input.now ?? new Date();
@@ -73,6 +80,9 @@ export function createExecutionPlan(input: {
     objective: input.objective,
     steps,
     expectedOutputs: input.expectedOutputs,
+    acceptanceCriteria: input.acceptanceCriteria,
+    expectedArtifacts: input.expectedArtifacts,
+    constraints: input.constraints,
     riskLevel: planRiskLevel(steps),
     createdAt: now.toISOString(),
   };
