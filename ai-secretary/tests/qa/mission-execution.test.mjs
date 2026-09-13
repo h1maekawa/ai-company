@@ -240,6 +240,29 @@ test("空の成果物は品質レビューで落ちる", () => {
   assert.equal(result.verdict, "FAIL");
 });
 
+test("正しい日本語成果物は『下書き』のliteralを含まなくてもPASSする", () => {
+  const result = reviewer.runQualityReview({
+    objective: "AI副業についての記事を書く",
+    output: "# AIを使った副業アイデア\n\n小さく検証できる案と実行手順を整理します。",
+    expectedOutputs: ["下書き"],
+  });
+  assert.equal(result.verdict, "PASS");
+  assert.equal(result.findings.find((f) => f.id === "quality.alignment").verdict, "PASS");
+});
+
+test("acceptanceCriteriaはliteral成果物名とは独立して判定できる", () => {
+  const result = reviewer.runQualityReview({
+    objective: "副業案を整理する",
+    output: "# 副業案\n\n検証手順を整理した内部レポートです。",
+    expectedOutputs: ["internal report"],
+    acceptanceCriteria: [
+      { id: "heading", description: "見出しがある", kind: "has_heading" },
+      { id: "length", description: "短すぎない", kind: "min_length", value: 10 },
+    ],
+  });
+  assert.equal(result.verdict, "PASS");
+});
+
 test("【重要】認証情報が混ざっていればセキュリティレビューで落ちる", () => {
   const result = reviewer.runSecurityReview({ output: "api_key = sk_live_abcd1234efgh" });
   assert.equal(result.verdict, "FAIL");

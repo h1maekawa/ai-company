@@ -61,3 +61,11 @@ test("run API has bounded execution, same-origin check and uses authenticated AP
   );
   assert.match(read(execution + "service.ts"), /assertLocalRunnerStorage\(\)/);
 });
+test("Mission Skill Runtime is internal-only and default-deny", () => {
+  const source = read("app/lib/skills/missionRuntime.ts");
+  assert.match(source, /definition\.status !== "implemented"/);
+  assert.match(source, /allowedSecretaries\.includes/);
+  assert.match(source, /agentSkillIds\.includes/);
+  assert.match(source, /UNKNOWN_SKILL/);
+  assert.doesNotMatch(source, /fetch\(|process\.env|writeFile|saveVaultFile|captureKnowledge/i);
+});

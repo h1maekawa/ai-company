@@ -12,6 +12,7 @@ import { submitAction, executeStoredAction } from "./executeAction";
 import { recordLearning } from "./learning";
 import { runReviewPipeline, runSecurityReview } from "./reviewer";
 import { completionBlocker } from "./completion";
+import { executeMissionSkill } from "../../skills/missionRuntime";
 
 export type StepWorker = (input: {
   objective: string;
@@ -148,10 +149,6 @@ export async function runAgent(
         stop("MISSING_SKILL", "BLOCKED");
         break;
       }
-      if (step.requiredSkillId) {
-        stop("SKILL_EXECUTOR_NOT_IMPLEMENTED", "BLOCKED");
-        break;
-      }
       const old = [...run.history]
         .reverse()
         .find(
@@ -188,7 +185,23 @@ export async function runAgent(
         .join("\n")
         .slice(-30000);
       try {
-        if (step.type === "action") {
+        if (step.requiredSkillId) {
+          const skill = await bounded(executeMissionSkill({
+            skillId: step.requiredSkillId,
+            agentId: agent.id,
+            agentSkillIds: agent.skillIds,
+            objective: plan.objective,
+            context,
+          }));
+          if (!skill.ok || !skill.markdown) {
+            history.status = "BLOCKED";
+            history.reason = skill.error ?? "SKILL_EXECUTION_FAILED";
+            step.status = "FAILED";
+            stop(history.reason, "BLOCKED");
+            break;
+          }
+          history.output = skill.markdown;
+        } else if (step.type === "action") {
           if (!step.actionType) throw new Error("MISSING_ACTION_TYPE");
           const payload = step.payload ?? {
             reportType: "Mission Report" as const,
@@ -244,11 +257,13 @@ export async function runAgent(
               objective: plan.objective,
               output: context,
               expectedOutputs: plan.expectedOutputs,
+              expectedArtifacts: plan.expectedArtifacts,
+              acceptanceCriteria: plan.acceptanceCriteria,
             },
             security: { output: context, externalContent: context },
           });
           (run.reviewHistory ??= []).push(run.review);
-          if (run.review.verdict !== "PASS") {
+          if (!run.review.canProceed) {
             recordLearning(
               state,
               "REVIEW_FAILED",
