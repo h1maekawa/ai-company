@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runMission } from "@/app/lib/company/execution/service";
+import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtection";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -7,8 +8,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const origin = req.headers.get("origin");
-  if (origin && origin !== req.nextUrl.origin)
+  if (!isSameOriginMutation(req))
     return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
   try {
     const result = await runMission(params.id, req.headers.get("idempotency-key") ?? undefined);

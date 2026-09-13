@@ -43,6 +43,10 @@ export type PersonalMission = {
   estimatedMinutesToRevenue?: number;
 
   createdAt: string;
+  /** Human-operated entry metadata. Additive for auditability. */
+  source?: "CEO_MANUAL";
+  origin?: "human";
+  createdBy?: "ceo";
 };
 
 export const FIRST_MISSION_ID = "mission-001-first-revenue";
