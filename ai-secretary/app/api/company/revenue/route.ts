@@ -1,3 +1,5 @@
+import { executionTransaction } from "@/app/lib/company/execution/transaction";
+import { syncRevenueLearning } from "@/app/lib/company/execution/revenueLearning";
 import { NextRequest, NextResponse } from "next/server";
 import {
   appendRevenueEntry,
@@ -69,10 +71,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
 
     const entries = await appendRevenueEntry(entry);
+    let learningPending = false;
+    try { await executionTransaction(() => syncRevenueLearning(entries)); } catch { learningPending = true; }
     const allTime = summarizeRevenue(effectiveEntries(entries));
 
     return NextResponse.json({
       ok: true,
+      learningPending,
       entry,
       allTime,
       achievements: evaluateAchievements({ aiGeneratedRevenueYen: allTime.aiGeneratedYen }),

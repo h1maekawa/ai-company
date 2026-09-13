@@ -9,7 +9,8 @@ export async function callOllama(
   message: string,
   systemPrompt: string,
   history: ChatMessage[] = [],
-  responseFormat: AIResponseFormat = "text"
+  responseFormat: AIResponseFormat = "text",
+  signal?: AbortSignal
 ): Promise<string> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
@@ -24,7 +25,7 @@ export async function callOllama(
     const res = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       body: JSON.stringify({
         model: OLLAMA_MODEL,
         messages,

@@ -1,3 +1,11 @@
+import { completionBlocker } from "./completion";
+import { runAgent } from "./agentRunner";
+import { internalStepWorker } from "./stepWorker";
+import { recordLearning } from "./learning";
+import { selectOpportunity, startOpportunity } from "../opportunity/lifecycle";
+import { loadOpportunities, saveOpportunities } from "../opportunity/store";
+import { generateMoneyQuests } from "../opportunity/moneyQuest";
+import { executionTransaction, assertLocalRunnerStorage } from "./transaction";
 /**
  * 実行サービス — Phase 6 §3 〜 §8
  *
@@ -8,22 +16,36 @@
 import { buildOrganizationSnapshot } from "../organization";
 import { startTrace } from "../trace";
 import { assignAgent, computeWorkloads } from "./assignment";
-import { createExecutionPlan, defaultPlanSteps } from "./executionPlan";
-import { canComplete, toExecutionMission, transition, type ExecutionMission } from "./mission";
+import { createExecutionPlan, internalPlanSteps } from "./executionPlan";
+import {
+  canComplete,
+  toExecutionMission,
+  transition,
+  type ExecutionMission,
+} from "./mission";
 import { applyExpiry, createApprovalRequest, decideApproval } from "./approval";
 import { reviewActionRequest } from "./actionGateway";
-import { loadExecutionState, saveExecutionState, type ExecutionState } from "./store";
+import {
+  loadExecutionState,
+  saveExecutionState,
+  type ExecutionState,
+} from "./store";
 import type { PersonalMission } from "../missions";
 
-export type ServiceResult<T> = { ok: true; data: T } | { ok: false; error: string; status: number };
+export type ServiceResult<T> =
+  { ok: true; data: T } | { ok: false; error: string; status: number };
 
-const fail = (status: number, error: string) => ({ ok: false as const, error, status });
+const fail = (status: number, error: string) => ({
+  ok: false as const,
+  error,
+  status,
+});
 
 /** Money Quest を実行対象として取り込む（まだ無ければ作る） */
 export function ensureMission(
   state: ExecutionState,
   missionId: string,
-  fallback?: PersonalMission
+  fallback?: PersonalMission,
 ): ExecutionMission | null {
   const existing = state.missions.find((m) => m.id === missionId);
   if (existing) return existing;
@@ -32,21 +54,41 @@ export function ensureMission(
 
 /* ─── §3 Start ──────────────────────────────────── */
 
-export async function startMission(input: {
+async function startMissionOperation(input: {
   missionId: string;
   mission?: PersonalMission;
   now?: Date;
-}): Promise<ServiceResult<{ mission: ExecutionMission; state: ExecutionState }>> {
+}): Promise<
+  ServiceResult<{ mission: ExecutionMission; state: ExecutionState }>
+> {
   const now = input.now ?? new Date();
   const state = await loadExecutionState();
   const mission = ensureMission(state, input.missionId, input.mission);
   if (!mission) return fail(404, "そのミッションが見つかりません");
 
+  const opportunities = await loadOpportunities();
+  const opportunity = opportunities.find((o) => o.id === mission.opportunityId);
+  if (
+    mission.opportunityId &&
+    (!opportunity ||
+      !["SELECTED", "RUNNING", "VALIDATED"].includes(opportunity.status))
+  )
+    return fail(409, "OPPORTUNITY_NOT_SELECTED");
   const organization = buildOrganizationSnapshot(now);
   const assignment = assignAgent({
-    organization,
+    organization: {
+      ...organization,
+      agents: organization.agents.filter(
+        (a) =>
+          a.riskLevel !== "R4" &&
+          (opportunity?.requiredSkills ?? []).every((skill) =>
+            a.skillIds.includes(skill),
+          ),
+      ),
+    },
     workloads: computeWorkloads(state.missions),
-    requiredAgents: input.mission?.opportunityId ? [] : [],
+    requiredAgents: opportunity?.requiredAgents ?? [],
+    requiredSkills: opportunity?.requiredSkills ?? [],
     departmentId: "personal",
     routerAgentId: "executive-assistant",
   });
@@ -60,12 +102,22 @@ export async function startMission(input: {
     });
     if (blockedResult.ok) {
       const next = upsertMission(state, blockedResult.mission);
+      recordLearning(
+        next,
+        "MISSION_BLOCKED",
+        `${mission.id}:assignment`,
+        { missionId: mission.id, reason: "NO_SUITABLE_AGENT" },
+        now,
+      );
       await saveExecutionState(next);
     }
     return fail(409, `NO_SUITABLE_AGENT: ${assignment.detail}`);
   }
 
-  const trace = startTrace({ departmentId: "personal", agentId: assignment.agentId }, now);
+  const trace = startTrace(
+    { departmentId: "personal", agentId: assignment.agentId },
+    now,
+  );
   const result = transition(mission, "ACTIVE", {
     actor: "ceo",
     reason: "CEOが開始",
@@ -84,24 +136,33 @@ export async function startMission(input: {
     traceId: trace.traceId,
     agentId: assignment.agentId,
     objective: mission.title,
-    steps: defaultPlanSteps(mission.title),
+    steps: internalPlanSteps(mission.title).map((step, index) =>
+      index === 0 && opportunity?.requiredSkills.length
+        ? { ...step, requiredSkillId: opportunity.requiredSkills[0] }
+        : step,
+    ),
     expectedOutputs: ["下書き"],
     now,
   });
 
-  const withPlan: ExecutionMission = { ...result.mission, executionPlanId: plan.id };
+  const withPlan: ExecutionMission = {
+    ...result.mission,
+    executionPlanId: plan.id,
+  };
   const next: ExecutionState = {
     ...upsertMission(state, withPlan),
     plans: [...state.plans, plan],
   };
   await saveExecutionState(next);
+  if (opportunity)
+    await saveOpportunities([startOpportunity(opportunity, now)]);
 
   return { ok: true, data: { mission: withPlan, state: next } };
 }
 
 /* ─── §4 Complete ───────────────────────────────── */
 
-export async function completeMission(input: {
+async function completeMissionOperation(input: {
   missionId: string;
   now?: Date;
 }): Promise<ServiceResult<{ mission: ExecutionMission }>> {
@@ -111,6 +172,8 @@ export async function completeMission(input: {
   if (!mission) return fail(404, "そのミッションが見つかりません");
 
   // 承認待ちが残っていれば完了させない（§4 / §69）
+  const blocker = completionBlocker(state, mission.id);
+  if (blocker) return fail(409, blocker);
   const check = canComplete(mission, state.approvals);
   if (!check.ok) return fail(409, check.reason ?? "完了できません");
 
@@ -122,13 +185,21 @@ export async function completeMission(input: {
   });
   if (!result.ok) return fail(409, result.error);
 
-  await saveExecutionState(upsertMission(state, result.mission));
+  const next = upsertMission(state, result.mission);
+  recordLearning(
+    next,
+    "MISSION_SUCCEEDED",
+    mission.id,
+    { missionId: mission.id },
+    now,
+  );
+  await saveExecutionState(next);
   return { ok: true, data: { mission: result.mission } };
 }
 
 /* ─── §5 Cancel ─────────────────────────────────── */
 
-export async function cancelMission(input: {
+async function cancelMissionOperation(input: {
   missionId: string;
   reason: string;
   now?: Date;
@@ -154,21 +225,24 @@ export async function cancelMission(input: {
 
 /* ─── Action の依頼（Gateway経由） ──────────────── */
 
-export async function requestAction(input: {
+async function requestActionOperation(input: {
   missionId: string;
   actionType: string;
   payloadSummary: string;
   target?: string;
   origin?: "agent" | "human" | "external_content";
   now?: Date;
-}): Promise<ServiceResult<{ decision: ReturnType<typeof reviewActionRequest> }>> {
+}): Promise<
+  ServiceResult<{ decision: ReturnType<typeof reviewActionRequest> }>
+> {
   const now = input.now ?? new Date();
   const state = await loadExecutionState();
   const mission = state.missions.find((m) => m.id === input.missionId);
   if (!mission) return fail(404, "そのミッションが見つかりません");
 
   const organization = buildOrganizationSnapshot(now);
-  const agent = organization.agents.find((a) => a.id === mission.assignedAgentId) ?? null;
+  const agent =
+    organization.agents.find((a) => a.id === mission.assignedAgentId) ?? null;
 
   const decision = reviewActionRequest({
     missionId: mission.id,
@@ -213,7 +287,7 @@ export async function requestAction(input: {
 
 /* ─── §27 承認 ──────────────────────────────────── */
 
-export async function decideApprovalRequest(input: {
+async function decideApprovalRequestOperation(input: {
   approvalId: string;
   decision: "APPROVED" | "REJECTED";
   reason?: string;
@@ -221,24 +295,35 @@ export async function decideApprovalRequest(input: {
 }): Promise<ServiceResult<{ state: ExecutionState }>> {
   const now = input.now ?? new Date();
   const loaded = await loadExecutionState();
-  const state: ExecutionState = { ...loaded, approvals: applyExpiry(loaded.approvals, now) };
+  const state: ExecutionState = {
+    ...loaded,
+    approvals: applyExpiry(loaded.approvals, now),
+  };
 
   const approval = state.approvals.find((a) => a.id === input.approvalId);
   if (!approval) return fail(404, "その承認が見つかりません");
 
-  const result = decideApproval(approval, input.decision, { reason: input.reason, now });
+  const result = decideApproval(approval, input.decision, {
+    reason: input.reason,
+    now,
+  });
   if (!result.ok) return fail(409, result.error);
 
-  const approvals = state.approvals.map((a) => (a.id === approval.id ? result.approval : a));
+  const approvals = state.approvals.map((a) =>
+    a.id === approval.id ? result.approval : a,
+  );
   const actionRequests = state.actionRequests.map((request) =>
     request.id === approval.actionRequestId
       ? {
           ...request,
-          status: input.decision === "APPROVED" ? ("APPROVED" as const) : ("REJECTED" as const),
+          status:
+            input.decision === "APPROVED"
+              ? ("APPROVED" as const)
+              : ("REJECTED" as const),
           reason: input.reason,
           updatedAt: now.toISOString(),
         }
-      : request
+      : request,
   );
 
   /*
@@ -254,16 +339,42 @@ export async function decideApprovalRequest(input: {
         reason: input.reason ?? "却下",
         now,
       });
-      if (moved.ok) missions = missions.map((m) => (m.id === mission.id ? moved.mission : m));
+      if (moved.ok)
+        missions = missions.map((m) =>
+          m.id === mission.id ? moved.mission : m,
+        );
     }
   }
 
-  const next: ExecutionState = { ...state, approvals, actionRequests, missions };
+  const next: ExecutionState = {
+    ...state,
+    approvals,
+    actionRequests,
+    missions,
+  };
+  const original = state.actionRequests.find(
+    (a) => a.id === approval.actionRequestId,
+  );
+  recordLearning(
+    next,
+    input.decision === "APPROVED" ? "APPROVAL_APPROVED" : "APPROVAL_REJECTED",
+    approval.id,
+    {
+      missionId: approval.missionId,
+      actionType: original?.actionType,
+      originalProposal: original?.payloadSummary,
+      reason: input.reason,
+    },
+    now,
+  );
   await saveExecutionState(next);
   return { ok: true, data: { state: next } };
 }
 
-function upsertMission(state: ExecutionState, mission: ExecutionMission): ExecutionState {
+function upsertMission(
+  state: ExecutionState,
+  mission: ExecutionMission,
+): ExecutionState {
   const exists = state.missions.some((m) => m.id === mission.id);
   return {
     ...state,
@@ -271,4 +382,84 @@ function upsertMission(state: ExecutionState, mission: ExecutionMission): Execut
       ? state.missions.map((m) => (m.id === mission.id ? mission : m))
       : [...state.missions, mission],
   };
+}
+
+export const startMission = (
+  input: Parameters<typeof startMissionOperation>[0],
+) => executionTransaction(() => startMissionOperation(input));
+
+export const completeMission = (
+  input: Parameters<typeof completeMissionOperation>[0],
+) => executionTransaction(() => completeMissionOperation(input));
+
+export const cancelMission = (
+  input: Parameters<typeof cancelMissionOperation>[0],
+) => executionTransaction(() => cancelMissionOperation(input));
+
+export const requestAction = (
+  input: Parameters<typeof requestActionOperation>[0],
+) => executionTransaction(() => requestActionOperation(input));
+
+export const decideApprovalRequest = (
+  input: Parameters<typeof decideApprovalRequestOperation>[0],
+) => executionTransaction(() => decideApprovalRequestOperation(input));
+
+export async function runMission(missionId: string) {
+  assertLocalRunnerStorage();
+  return executionTransaction(async () => {
+    const state = await loadExecutionState();
+    const mission = state.missions.find((m) => m.id === missionId);
+    if (!mission) return fail(404, "MISSION_NOT_FOUND");
+    const agent =
+      buildOrganizationSnapshot().agents.find(
+        (a) => a.id === mission.assignedAgentId,
+      ) ?? null;
+    await runAgent(
+      state,
+      missionId,
+      agent,
+      internalStepWorker,
+      {},
+      async (snapshot) => {
+        await saveExecutionState(snapshot);
+      },
+    );
+    await saveExecutionState(state);
+    return {
+      ok: true as const,
+      data: {
+        mission: state.missions.find((m) => m.id === missionId),
+        runtime: state.runtime,
+      },
+    };
+  });
+}
+export async function selectOpportunityMission(id: string) {
+  return executionTransaction(async () => {
+    const opportunities = await loadOpportunities();
+    const opportunity = opportunities.find((o) => o.id === id);
+    if (!opportunity) return fail(404, "OPPORTUNITY_NOT_FOUND");
+    let selected;
+    try {
+      selected = selectOpportunity(opportunity);
+    } catch {
+      return fail(409, "OPPORTUNITY_NOT_RECOMMENDED");
+    }
+    const state = await loadExecutionState();
+    let mission = state.missions.find(
+      (m) =>
+        m.opportunityId === id && !["CANCELLED", "FAILED"].includes(m.status),
+    );
+    if (!mission) {
+      const quest = generateMoneyQuests({
+        opportunities: [selected],
+        aiGeneratedRevenueYen: null,
+      }).quests[0];
+      mission = toExecutionMission(quest);
+      state.missions.push(mission);
+      await saveExecutionState(state);
+    }
+    await saveOpportunities([selected]);
+    return { ok: true as const, data: { opportunity: selected, mission } };
+  });
 }

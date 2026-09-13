@@ -237,7 +237,7 @@ export function generateOpportunities(options: GenerateOptions): OpportunityGene
     // モードに応じた優先度で status を決める
     const priority = categoryPriority(seed.category, mode);
     const status =
-      previous?.status === "VALIDATED" || previous?.status === "DISMISSED"
+      previous && ["SELECTED", "RUNNING", "VALIDATED", "DISMISSED", "FAILED"].includes(previous.status)
         ? previous.status
         : scored.coveragePct < 50
           ? "WATCHING"

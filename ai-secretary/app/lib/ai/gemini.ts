@@ -9,7 +9,8 @@ export async function callGemini(
   message: string,
   systemPrompt: string,
   history: ChatMessage[] = [],
-  responseFormat: AIResponseFormat = "text"
+  responseFormat: AIResponseFormat = "text",
+  signal?: AbortSignal
 ): Promise<string> {
   if (!GEMINI_API_KEY) {
     throw new Error("GeminiのAPIキーが未設定です。GEMINI_API_KEY を .env.local または Vercel Environment Variables に設定してください。");
@@ -27,6 +28,7 @@ export async function callGemini(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: "POST",
+      signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },

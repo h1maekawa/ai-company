@@ -14,6 +14,7 @@ export async function callAI(
   systemPrompt: string,
   options: {
     history?: ChatMessage[];
+    signal?: AbortSignal;
     provider?: AIProvider;
     responseFormat?: AIResponseFormat;
   } = {}
@@ -25,19 +26,19 @@ export async function callAI(
   const hasGroq = !!process.env.GROQ_API_KEY;
 
   if (provider === "gemini" && hasGemini) {
-    return callGemini(message, systemPrompt, history, responseFormat);
+    return callGemini(message, systemPrompt, history, responseFormat, options.signal);
   }
   if (provider === "gemini" && !hasGemini) {
     throw new Error("GeminiのAPIキーが未設定です。GEMINI_API_KEY を .env.local または Vercel Environment Variables に設定してください。");
   }
   if (provider === "groq" && hasGroq) {
-    return callGroq(message, systemPrompt, history, responseFormat);
+    return callGroq(message, systemPrompt, history, responseFormat, options.signal);
   }
   if (provider === "groq" && !hasGroq) {
     throw new Error("Groqの設定に問題があります。GROQ_API_KEY が設定されているか確認してください。");
   }
   if (provider === "ollama" && !isVercel) {
-    return callOllama(message, systemPrompt, history, responseFormat);
+    return callOllama(message, systemPrompt, history, responseFormat, options.signal);
   }
   if (provider === "ollama" && isVercel) {
     throw new Error("VercelではOllamaを使用できません。DEFAULT_PROVIDER=gemini を設定してください。");
@@ -45,14 +46,14 @@ export async function callAI(
 
   // auto: Geminiを最優先。明示providerでは他プロバイダーへ自動fallbackしない。
   if (hasGemini) {
-    return callGemini(message, systemPrompt, history, responseFormat);
+    return callGemini(message, systemPrompt, history, responseFormat, options.signal);
   }
   if (hasGroq) {
-    return callGroq(message, systemPrompt, history, responseFormat);
+    return callGroq(message, systemPrompt, history, responseFormat, options.signal);
   }
   if (!isVercel) {
     console.warn("[callAI] Groq/Gemini未設定。auto指定のためOllamaにフォールバック（ローカルのみ）。");
-    return callOllama(message, systemPrompt, history, responseFormat);
+    return callOllama(message, systemPrompt, history, responseFormat, options.signal);
   }
 
   throw new Error(

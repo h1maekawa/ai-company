@@ -24,23 +24,39 @@ type Dashboard = {
     organization: Record<string, Metric>;
   };
   fire: { status: string; progress: Metric };
-  companyHealth: { score: number; coveragePct: number; status: string; risks: string[] };
-  today: { tasks: { total: number; success: number; failure: number }; ceoInterventions: number };
+  companyHealth: {
+    score: number;
+    coveragePct: number;
+    status: string;
+    risks: string[];
+  };
+  today: {
+    tasks: { total: number; success: number; failure: number };
+    ceoInterventions: number;
+  };
   mission: { title: string; description: string; status: string };
   proposals: { visible: number; byType: Record<string, number> };
-  achievements: { id: string; title: string; unlocked: boolean; progress?: number; target?: number }[];
+  achievements: {
+    id: string;
+    title: string;
+    unlocked: boolean;
+    progress?: number;
+    target?: number;
+  }[];
   error?: string;
 };
 
 /** 未設定は「—」ではなく明示的に「未設定」と出す */
 function yen(metric: Metric | undefined): string {
   if (!metric) return "未設定";
-  if (metric.availability !== "AVAILABLE" || metric.value === null) return "未設定";
+  if (metric.availability !== "AVAILABLE" || metric.value === null)
+    return "未設定";
   return `¥${Math.round(metric.value).toLocaleString("ja-JP")}`;
 }
 
 function percent(metric: Metric | undefined, scale = 1): string {
-  if (!metric || metric.availability !== "AVAILABLE" || metric.value === null) return "未設定";
+  if (!metric || metric.availability !== "AVAILABLE" || metric.value === null)
+    return "未設定";
   return `${Math.round(metric.value * scale * 10) / 10}%`;
 }
 
@@ -87,7 +103,9 @@ export function PersonalDashboard() {
             <p className="text-[10px] font-semibold tracking-[0.2em] text-gain">
               PERSONAL AI COMPANY
             </p>
-            <h1 className="mt-1 text-xl font-bold text-white">{data.company.name}</h1>
+            <h1 className="mt-1 text-xl font-bold text-white">
+              {data.company.name}
+            </h1>
             <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-sub">
               {data.company.mission}
             </p>
@@ -112,7 +130,10 @@ export function PersonalDashboard() {
         {data.companyHealth.risks.length > 0 && (
           <ul className="mt-3 space-y-1">
             {data.companyHealth.risks.map((risk) => (
-              <li key={risk} className="rounded-lg bg-loss/10 px-3 py-2 text-[11px] text-loss">
+              <li
+                key={risk}
+                className="rounded-lg bg-loss/10 px-3 py-2 text-[11px] text-loss"
+              >
                 {risk}
               </li>
             ))}
@@ -125,12 +146,16 @@ export function PersonalDashboard() {
         <p className="text-xs text-sub">いまの目標</p>
         <p className="mt-1 text-lg font-bold text-white">{goal.title}</p>
         <p className="mt-1 text-2xl font-bold tabular-nums text-brand">
-          {goal.currentYen === null ? "未計測" : `¥${goal.currentYen.toLocaleString("ja-JP")}`}
+          {goal.currentYen === null
+            ? "未計測"
+            : `¥${goal.currentYen.toLocaleString("ja-JP")}`}
           <span className="ml-1 text-sm font-normal text-sub">
             / ¥{goal.targetYen.toLocaleString("ja-JP")}
           </span>
         </p>
-        <p className="mt-2 text-[11px] leading-relaxed text-sub">{data.mission.description}</p>
+        <p className="mt-2 text-[11px] leading-relaxed text-sub">
+          {data.mission.description}
+        </p>
         {first?.unlocked && (
           <p className="mt-2 inline-block rounded-full border border-gain/30 bg-gain/10 px-2.5 py-0.5 text-[11px] font-medium text-gain">
             達成済み
@@ -138,60 +163,93 @@ export function PersonalDashboard() {
         )}
       </section>
 
-      {/* ─── お金の指標 ─── */}
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="AI経由の収益" value={yen(data.metrics.financial.aiGeneratedRevenueYen)} />
-        <Stat label="月間収入" value={yen(data.metrics.financial.monthlyIncomeYen)} />
-        <Stat label="純資産" value={yen(data.metrics.financial.netWorthYen)} />
-        <Stat label="投資資産" value={yen(data.metrics.financial.investmentAssetsYen)} />
-        <Stat label="貯蓄率" value={percent(data.metrics.financial.savingsRate, 100)} />
-        <Stat label="不労所得" value={yen(data.metrics.financial.passiveIncomeYen)} />
-        <Stat
-          label="FIRE進捗"
-          value={
-            data.fire.status === "NOT_CONFIGURED"
-              ? "未設定"
-              : percent(data.fire.progress, 100)
-          }
-        />
-        <Stat label="自動化率" value={percent(data.metrics.productivity.automationRate)} />
-      </section>
+      <details className="space-y-3">
+        <summary className="cursor-pointer text-xs text-sub">
+          財務・生産性・組織の詳細
+        </summary>
+        {/* ─── お金の指標 ─── */}
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Stat
+            label="AI経由の収益"
+            value={yen(data.metrics.financial.aiGeneratedRevenueYen)}
+          />
+          <Stat
+            label="月間収入"
+            value={yen(data.metrics.financial.monthlyIncomeYen)}
+          />
+          <Stat
+            label="純資産"
+            value={yen(data.metrics.financial.netWorthYen)}
+          />
+          <Stat
+            label="投資資産"
+            value={yen(data.metrics.financial.investmentAssetsYen)}
+          />
+          <Stat
+            label="貯蓄率"
+            value={percent(data.metrics.financial.savingsRate, 100)}
+          />
+          <Stat
+            label="不労所得"
+            value={yen(data.metrics.financial.passiveIncomeYen)}
+          />
+          <Stat
+            label="FIRE進捗"
+            value={
+              data.fire.status === "NOT_CONFIGURED"
+                ? "未設定"
+                : percent(data.fire.progress, 100)
+            }
+          />
+          <Stat
+            label="自動化率"
+            value={percent(data.metrics.productivity.automationRate)}
+          />
+        </section>
 
-      {/* ─── 今日 / 提案 ─── */}
-      <section className="grid gap-3 lg:grid-cols-2">
-        <div className="rounded-2xl border border-hairline bg-ink-card p-5">
-          <p className="text-sm font-semibold text-white">今日のタスク</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-white">
-            {data.today.tasks.success}
-            <span className="text-sm font-normal text-sub"> / {data.today.tasks.total}</span>
-          </p>
-          <p className="mt-1 text-[11px] text-sub">
-            失敗 {data.today.tasks.failure}件・CEOの手直し {data.today.ceoInterventions}件
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-hairline bg-ink-card p-5">
-          <div className="flex items-baseline justify-between">
-            <p className="text-sm font-semibold text-white">組織の提案</p>
-            <Link href="/company/organization" className="text-[11px] text-brand hover:underline">
-              詳しく見る
-            </Link>
-          </div>
-          {data.proposals.visible === 0 ? (
-            <p className="mt-2 text-[11px] text-sub">
-              いまCEOへ上げる提案はありません。データが溜まると出始めます。
+        {/* ─── 今日 / 提案 ─── */}
+        <section className="grid gap-3 lg:grid-cols-2">
+          <div className="rounded-2xl border border-hairline bg-ink-card p-5">
+            <p className="text-sm font-semibold text-white">今日のタスク</p>
+            <p className="mt-2 text-2xl font-bold tabular-nums text-white">
+              {data.today.tasks.success}
+              <span className="text-sm font-normal text-sub">
+                {" "}
+                / {data.today.tasks.total}
+              </span>
             </p>
-          ) : (
-            <ul className="mt-2 space-y-1 text-[11px] text-sub">
-              {Object.entries(data.proposals.byType).map(([type, count]) => (
-                <li key={type}>
-                  {type}: {count}件
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
+            <p className="mt-1 text-[11px] text-sub">
+              失敗 {data.today.tasks.failure}件・CEOの手直し{" "}
+              {data.today.ceoInterventions}件
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-hairline bg-ink-card p-5">
+            <div className="flex items-baseline justify-between">
+              <p className="text-sm font-semibold text-white">組織の提案</p>
+              <Link
+                href="/company/organization"
+                className="text-[11px] text-brand hover:underline"
+              >
+                詳しく見る
+              </Link>
+            </div>
+            {data.proposals.visible === 0 ? (
+              <p className="mt-2 text-[11px] text-sub">
+                いまCEOへ上げる提案はありません。データが溜まると出始めます。
+              </p>
+            ) : (
+              <ul className="mt-2 space-y-1 text-[11px] text-sub">
+                {Object.entries(data.proposals.byType).map(([type, count]) => (
+                  <li key={type}>
+                    {type}: {count}件
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+      </details>
     </div>
   );
 }

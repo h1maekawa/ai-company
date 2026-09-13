@@ -23,7 +23,8 @@ export async function callGroq(
   message: string,
   systemPrompt: string,
   history: ChatMessage[] = [],
-  responseFormat: AIResponseFormat = "text"
+  responseFormat: AIResponseFormat = "text",
+  signal?: AbortSignal
 ): Promise<string> {
   if (!GROQ_API_KEY) {
     throw new Error("Groqの設定に問題があります。GROQ_API_KEY が設定されているか確認してください。");
@@ -37,6 +38,7 @@ export async function callGroq(
 
   const res = await fetch(GROQ_URL, {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${GROQ_API_KEY}`,

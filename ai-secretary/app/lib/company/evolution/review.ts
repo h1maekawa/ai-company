@@ -1,3 +1,8 @@
+import { loadExecutionState } from "../execution/store";
+import {
+  learningToCompanyEvents,
+  learningEvidencePatterns,
+} from "./learningAdapter";
 /**
  * 組織レビューの実行 — v3.1 Phase 3
  *
@@ -9,7 +14,10 @@
 
 import { loadCompanyEvents } from "../eventStore";
 import { buildOrganizationSnapshot } from "../organization";
-import { analyzeBottlenecks, type BottleneckReport } from "./bottleneckAnalyzer";
+import {
+  analyzeBottlenecks,
+  type BottleneckReport,
+} from "./bottleneckAnalyzer";
 import { analyzePatterns, type PatternAnalysis } from "./patternAnalyzer";
 import { buildProposals } from "./proposalEngine";
 import { loadProposals, savePatternAnalysis, saveProposals } from "./store";
@@ -30,15 +38,28 @@ export type OrganizationReviewResult = {
 };
 
 export async function runOrganizationReview(
-  options: { persist?: boolean; now?: Date } = {}
+  options: { persist?: boolean; now?: Date } = {},
 ): Promise<OrganizationReviewResult> {
   const now = options.now ?? new Date();
   const thresholds = defaultThresholds();
   const organization = buildOrganizationSnapshot(now);
 
-  const events = await loadCompanyEvents();
+  const baseEvents = await loadCompanyEvents();
+  const execution = await loadExecutionState();
+  const events = [
+    ...baseEvents,
+    ...learningToCompanyEvents(execution.runtime?.learning ?? []),
+  ];
   const analysis = analyzePatterns(events, { thresholds, organization, now });
-  const bottlenecks = analyzeBottlenecks(events, { thresholds, organization, now });
+  if (analysis.status === "OK")
+    analysis.patterns.push(
+      ...learningEvidencePatterns(execution.runtime?.learning ?? [], now),
+    );
+  const bottlenecks = analyzeBottlenecks(events, {
+    thresholds,
+    organization,
+    now,
+  });
 
   // データ不足のときは提案を作らない（§1 Shadow Mode）
   if (analysis.status === "INSUFFICIENT_DATA") {

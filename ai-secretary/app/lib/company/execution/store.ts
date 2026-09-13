@@ -1,3 +1,4 @@
+import { usesLocalExecutionStorage, readLocalExecution, writeLocalExecution } from "./localStore";
 /**
  * 実行まわりの保存 — Phase 6 §57 / §58 / §59
  *
@@ -16,7 +17,10 @@ import type { ExecutionPlan } from "./executionPlan";
 
 const PATH = "memory/personal/company/execution.md";
 
+import type { RunnerState } from "./runnerTypes";
+
 export type ExecutionState = {
+  runtime?: RunnerState;
   missions: ExecutionMission[];
   actionRequests: ActionRequest[];
   approvals: ApprovalRequest[];
@@ -29,36 +33,38 @@ export function emptyExecutionState(): ExecutionState {
 
 function extractJson(markdown: string): ExecutionState {
   const match = markdown.match(/```json\s*\n([\s\S]*?)\n```/);
-  if (!match) return emptyExecutionState();
+  if (!match) {
+    if (markdown.trim()) throw new Error("INVALID_EXECUTION_STATE");
+    return emptyExecutionState();
+  }
   try {
     const parsed = JSON.parse(match[1]) as Partial<ExecutionState>;
     return {
+      runtime: parsed.runtime,
       missions: parsed.missions ?? [],
       actionRequests: parsed.actionRequests ?? [],
       approvals: parsed.approvals ?? [],
       plans: parsed.plans ?? [],
     };
   } catch {
-    return emptyExecutionState();
+    throw new Error("INVALID_EXECUTION_STATE");
   }
 }
 
 export async function loadExecutionState(): Promise<ExecutionState> {
-  try {
-    const file = await getVaultFile(PATH);
-    return extractJson(file.content || "");
-  } catch {
-    return emptyExecutionState();
-  }
+  const content = usesLocalExecutionStorage() ? await readLocalExecution() : (await getVaultFile(PATH)).content;
+  return extractJson(content || "");
 }
 
 export async function saveExecutionState(state: ExecutionState): Promise<ExecutionState> {
-  let sha: string | undefined;
-  try {
-    sha = (await getVaultFile(PATH)).sha;
-  } catch {
-    // 初回作成
-  }
+  const existing = usesLocalExecutionStorage() ? { content: await readLocalExecution(), sha: undefined } : await getVaultFile(PATH);
+  const sha = existing.sha;
+  const previous = extractJson(existing.content || "");
+  const oldEvents = previous.runtime?.learning ?? [];
+  const nextEvents = state.runtime?.learning ?? [];
+  if (oldEvents.some((event, index) => JSON.stringify(event) !== JSON.stringify(nextEvents[index]))) throw new Error("LEARNING_APPEND_ONLY");
+  const oldArtifacts = previous.runtime?.artifacts ?? [];
+  if (oldArtifacts.some((artifact, index) => JSON.stringify(artifact) !== JSON.stringify(state.runtime?.artifacts[index]))) throw new Error("ARTIFACT_APPEND_ONLY");
 
   const pending = state.approvals.filter((a) => a.status === "PENDING");
   const blocked = state.actionRequests.filter((a) => a.status === "BLOCKED");
@@ -103,6 +109,7 @@ ${JSON.stringify(state, null, 2)}
 \`\`\`
 `;
 
-  await saveVaultFile(PATH, markdown, sha);
+  if (usesLocalExecutionStorage()) await writeLocalExecution(markdown, nextEvents);
+  else await saveVaultFile(PATH, markdown, sha);
   return state;
 }

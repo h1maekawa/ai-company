@@ -21,6 +21,7 @@ export type ExecutionStep = {
   requiredSkillId?: string;
   /** action ステップのみ。Gatewayへ出すAction */
   actionType?: ActionType;
+  payload?: import("./executorTypes").InternalActionPayload;
   status: ExecutionStepStatus;
 };
 
@@ -102,4 +103,9 @@ export function planProgress(plan: ExecutionPlan): number {
   if (plan.steps.length === 0) return 0;
   const done = plan.steps.filter((s) => s.status === "COMPLETE").length;
   return Math.round((done / plan.steps.length) * 100);
+}
+
+/** Phase 7 creates an internal draft artifact; no publishing step is implied. */
+export function internalPlanSteps(objective: string): Omit<ExecutionStep, "id" | "status">[] {
+  return defaultPlanSteps(objective).map(step => step.actionType === "PUBLISH_DRAFT" ? { ...step, actionType: "INTERNAL_REPORT_CREATE" } : step);
 }
