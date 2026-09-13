@@ -65,7 +65,17 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/opportunity/types.ts",
     "$PWD/app/lib/company/opportunity/score.ts",
     "$PWD/app/lib/company/opportunity/engine.ts",
-    "$PWD/app/lib/company/opportunity/moneyQuest.ts"
+    "$PWD/app/lib/company/opportunity/moneyQuest.ts",
+    "$PWD/app/lib/company/execution/actionTypes.ts",
+    "$PWD/app/lib/company/execution/actionGateway.ts",
+    "$PWD/app/lib/company/execution/mission.ts",
+    "$PWD/app/lib/company/execution/approval.ts",
+    "$PWD/app/lib/company/execution/assignment.ts",
+    "$PWD/app/lib/company/execution/executionPlan.ts",
+    "$PWD/app/lib/company/execution/reviewer.ts",
+    "$PWD/app/lib/company/execution/contribution.ts",
+    "$PWD/app/lib/company/execution/xp.ts",
+    "$PWD/app/lib/company/execution/agentStatus.ts"
   ]
 }
 TSCONFIG
