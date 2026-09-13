@@ -23,8 +23,9 @@ test("runtime data is isolated by environment", () => {
   assert.match(durable, /namespace \+ ":company:execution:v1"/);
 });
 
-test("preview and secondary runtimes cannot mutate production state", () => {
-  assert.match(environment, /stage !== "preview"/);
+test("preview writes stay isolated while secondary runtimes remain read-only", () => {
+  assert.match(environment, /mutationAllowed: authority === "vercel"/);
+  assert.match(environment, /stage === "preview" \? "preview:"/);
   assert.match(durable, /assertProductionMutationAllowed/);
 });
 

@@ -30,7 +30,9 @@ export function runtimeEnvironment(): RuntimeEnvironment {
     realModelCanaryEnabled: productionAuthority && enabled("REAL_MODEL_CANARY_ENABLED"),
     opportunityAutoRefreshEnabled: productionAuthority && enabled("OPPORTUNITY_AUTO_REFRESH_ENABLED"),
     organizationReviewEnabled: productionAuthority && enabled("ORGANIZATION_REVIEW_ENABLED"),
-    mutationAllowed: stage !== "preview" && authority === "vercel",
+    // Preview writes only to its branch/deployment-scoped namespace. Secondary
+    // runtimes remain read-only and can never reach the production namespace.
+    mutationAllowed: authority === "vercel",
   };
 }
 
