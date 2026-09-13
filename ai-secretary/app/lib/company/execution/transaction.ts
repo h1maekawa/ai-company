@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { VAULT_ROOT } from "../../runtime/paths";
 import { getRedisClient } from "../../utils/redis";
+import { assertProductionMutationAllowed } from "../runtime/environment";
 let busy = false;
 export async function executionTransaction<T>(
   operation: () => Promise<T>,
@@ -31,5 +32,6 @@ export async function executionTransaction<T>(
 }
 /** Runner requires local storage in development or durable Redis in production. */
 export function assertLocalRunnerStorage() {
+  assertProductionMutationAllowed();
   if (!VAULT_ROOT && !getRedisClient()) throw new Error("DURABLE_EXECUTION_STORE_REQUIRED");
 }

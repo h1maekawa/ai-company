@@ -31,6 +31,7 @@ export async function runAgent(
   const limits = runnerLimits(options);
   const runtime = (state.runtime ??= emptyRunnerState());
   const run = (runtime.runs[missionId] ??= emptyMissionRun());
+  run.modelCalls ??= 0;
   let mission = state.missions.find((m) => m.id === missionId);
   if (!mission) throw new Error("MISSION_NOT_FOUND");
   if (["COMPLETED", "CANCELLED", "FAILED", "BLOCKED"].includes(mission.status))
@@ -257,6 +258,10 @@ export async function runAgent(
             throw new Error("REVIEW_FAILED");
           }
         } else {
+          if (run.modelCalls >= limits.maxModelCalls) {
+            stop("MAX_MODEL_CALLS");
+            break;
+          }
           const safety = runSecurityReview({
             output: `${mission.title} ${mission.description ?? ""} ${context}`,
             externalContent: context,
@@ -265,6 +270,7 @@ export async function runAgent(
             stop("security.injection_or_sensitive", "BLOCKED");
             break;
           }
+          run.modelCalls++;
           const output = await bounded(
             worker({
               objective: plan.objective,

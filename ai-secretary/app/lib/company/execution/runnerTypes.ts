@@ -34,6 +34,7 @@ export type StepHistory = {
 };
 export type MissionRun = {
   steps: number;
+  modelCalls: number;
   retries: number;
   replans: number;
   elapsedMs: number;
@@ -85,6 +86,7 @@ export type LearningQueueItem = {
 };
 export type RunnerLimits = {
   maxSteps: number;
+  maxModelCalls: number;
   maxRetries: number;
   maxReplans: number;
   maxExecutionTime: number;

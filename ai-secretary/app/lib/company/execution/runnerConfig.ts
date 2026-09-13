@@ -3,6 +3,7 @@ export const RUNNER_DEFAULTS: Readonly<RunnerLimits> = Object.freeze({
   maxSteps: 10,
   maxRetries: 2,
   maxReplans: 2,
+  maxModelCalls: 10,
   maxExecutionTime: 30000,
 });
 export function runnerLimits(input: Partial<RunnerLimits> = {}): RunnerLimits {
@@ -28,6 +29,7 @@ export const emptyRunnerState = (): RunnerState => ({
 });
 export const emptyMissionRun = (): MissionRun => ({
   steps: 0,
+  modelCalls: 0,
   retries: 0,
   replans: 0,
   elapsedMs: 0,

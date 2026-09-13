@@ -45,3 +45,16 @@ npm run dev
 - 「新NISAでタイトル案を5つ出して」
 - 「今月の投稿計画を立てて」
 - 「X用の投稿文を作って」
+
+## Personal AI Company Production
+
+正式なProductionはVercelの `ai-company-ilqd.vercel.app` です。CloudflareはDNS/CDNおよび旧PagesのためのSecondary経路であり、Personal AI Companyのschedulerやmission runtimeを実行しません。
+
+Redisは環境ごとに `dev:`、`preview:<branch>:`、`prod:` の名前空間を使用します。Previewではscheduler、mission mutation、実売上更新、外部actionを停止します。ProductionではUpstash Redisが利用できない場合にローカル保存へfallbackせず、runtime healthを503として返します。
+
+Productionのkill switchは `AUTONOMOUS_RUNTIME_ENABLED`、`REAL_MODEL_CANARY_ENABLED`、`OPPORTUNITY_AUTO_REFRESH_ENABLED`、`ORGANIZATION_REVIEW_ENABLED` です。すべて既定値はfalseです。公開状態は `/api/company/runtime/health` で確認でき、認証Cookieを使った完全な確認は次で実行します。
+
+```bash
+APP_BASE_URL=https://ai-company-ilqd.vercel.app \
+SMOKE_SESSION_COOKIE='session=...' npm run smoke:production
+```

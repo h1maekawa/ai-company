@@ -7,6 +7,7 @@ import type { ExecutionMission } from "./mission";
 import type { RunnerState } from "./runnerTypes";
 import { LocalExecutionStore } from "../runtime/localExecutionStore";
 import type { ExecutionSnapshot, ExecutionStore, StoreSaveOptions } from "../runtime/runtimeTypes";
+import { assertProductionMutationAllowed, runtimeEnvironment } from "../runtime/environment";
 
 export type ExecutionState = {
   runtime?: RunnerState;
@@ -24,7 +25,7 @@ let singleton: ExecutionStore | undefined;
 
 export function getExecutionStore(): ExecutionStore {
   if (singleton) return singleton;
-  const production = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+  const production = runtimeEnvironment().stage !== "development";
   try {
     const { DurableExecutionStore } = require("../runtime/durableExecutionStore") as typeof import("../runtime/durableExecutionStore");
     singleton = new DurableExecutionStore();
@@ -46,6 +47,7 @@ export async function loadExecutionState(): Promise<ExecutionState> {
 }
 
 export async function saveExecutionState(state: ExecutionState, options?: Partial<StoreSaveOptions>): Promise<ExecutionState> {
+  assertProductionMutationAllowed();
   const store = getExecutionStore();
   const expectedVersion = options?.expectedVersion ?? (await store.load()).version;
   return (await store.save(state, { expectedVersion, lease: options?.lease })).state;

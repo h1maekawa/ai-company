@@ -10,6 +10,9 @@ type Snapshot = {
   revenue: RevenueEntry[];
   performance: ReturnType<typeof agentPerformance>;
   runtime: {
+    schemaVersion: string;
+    deployment: { commitSha?: string; environment: string; authority: string; runtimeVersion: string };
+    environment: { realModelCanaryEnabled: boolean };
     store: string;
     storeVersion: number;
     activeMissions: number;
@@ -71,12 +74,17 @@ export function MissionExecutionPanel({ agentId }: { agentId?: string }) {
         Runで許可された内部作業を進めます。承認が必要な場合は停止します。外部への送信・公開は行いません。
       </p>
       {snapshot?.runtime && (
-        <div className="grid grid-cols-2 gap-2 rounded-lg border border-hairline p-3 text-xs text-sub md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 rounded-lg border border-hairline p-3 text-xs text-sub md:grid-cols-4">
+          <span>Production: Vercel / Cloudflare Secondary</span>
+          <span>Environment: {snapshot.runtime.deployment.environment}</span>
+          <span>Commit: {snapshot.runtime.deployment.commitSha?.slice(0, 7) ?? "local"}</span>
+          <span>Runtime: {snapshot.runtime.deployment.runtimeVersion} / {snapshot.runtime.schemaVersion}</span>
           <span>Store: {snapshot.runtime.store} v{snapshot.runtime.storeVersion}</span>
           <span>Active: {snapshot.runtime.activeMissions}</span>
           <span>Leases: {snapshot.runtime.activeLeases}</span>
           <span>Approvals: {snapshot.runtime.pendingApprovals}</span>
           <span>Attention: {snapshot.runtime.attention.length}</span>
+          <span>Canary: {snapshot.runtime.environment.realModelCanaryEnabled ? "enabled" : "disabled"}</span>
         </div>
       )}
       {snapshot?.runtime.attention.map((item) => (

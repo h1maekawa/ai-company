@@ -14,6 +14,8 @@ import { runRealModelCanary } from "./modelCanary";
 import { startMission } from "../execution/service";
 import { runDailyPersonalCompanyReview, runMonthlyPersonalCompanyReview, runWeeklyPersonalCompanyReview } from "../reviews/reviews";
 import { saveReview } from "../reviews/store";
+import { runtimeEnvironment } from "./environment";
+import { runtimeLog } from "./runtimeLog";
 
 const GLOBAL_LEASE = "__autonomous_cycle__";
 const cycleEvent = (type: "CYCLE_STARTED" | "CYCLE_COMPLETED" | "CYCLE_FAILED", cycleId: string, detail?: string) => {
@@ -23,6 +25,9 @@ const cycleEvent = (type: "CYCLE_STARTED" | "CYCLE_COMPLETED" | "CYCLE_FAILED", 
 
 export async function runAutonomousCycle(options: { store?: ExecutionStore; maxMissions?: number; maxRuntimeMs?: number } = {}) {
   const store = options.store ?? getExecutionStore();
+  const environment = runtimeEnvironment();
+  if (!environment.autonomousRuntimeEnabled && environment.stage !== "development")
+    return { cycleId: "disabled", status: "SKIPPED" as const, reason: "AUTONOMOUS_RUNTIME_DISABLED", processed: [] };
   const cycleId = randomUUID();
   const startedAt = Date.now();
   const maxMissions = Math.min(options.maxMissions ?? RUNTIME_DEFAULTS.maxMissionsPerCycle, RUNTIME_DEFAULTS.maxMissionsPerCycle);
@@ -33,7 +38,7 @@ export async function runAutonomousCycle(options: { store?: ExecutionStore; maxM
   const processed: Array<{ missionId: string; status: string }> = [];
   try {
     const dayKey = new Date().toISOString().slice(0, 10);
-    if (await store.claimIdempotency("opportunity-refresh", dayKey)) {
+    if (environment.opportunityAutoRefreshEnabled && await store.claimIdempotency("opportunity-refresh", dayKey)) {
       const [entries, existing] = await Promise.all([loadRevenueEntries().catch(() => []), loadOpportunities().catch(() => [])]);
       const generated = generateOpportunities({ organization: buildOrganizationSnapshot(), revenueEntries: entries, existing });
       await saveOpportunities(applyRevenueToOpportunities(generated.opportunities, entries));
@@ -94,9 +99,11 @@ export async function runAutonomousCycle(options: { store?: ExecutionStore; maxM
           if (!started.ok) throw new Error(started.error);
         }
         await runProductionMission({ missionId: mission.id, idempotencyKey: cycleId + ":" + mission.id, store });
+        runtimeLog({ traceId: mission.traceId, missionId: mission.id, cycleId, event: "mission.run", result: "success" });
         processed.push({ missionId: mission.id, status: "OK" });
       } catch (error) {
         const reason = error instanceof Error ? error.message : "MISSION_RUN_FAILED";
+        runtimeLog({ traceId: mission.traceId, missionId: mission.id, cycleId, event: "mission.run", result: "failure", error });
         processed.push({ missionId: mission.id, status: reason });
         const snapshot = await store.load();
         addAttention(snapshot.state, {
@@ -111,11 +118,11 @@ export async function runAutonomousCycle(options: { store?: ExecutionStore; maxM
         await store.save(snapshot.state, { expectedVersion: snapshot.version });
       }
     }
-    for (const [scope, runReview] of [
+    for (const [scope, runReview] of (environment.organizationReviewEnabled ? [
       ["daily", runDailyPersonalCompanyReview],
       ["weekly", runWeeklyPersonalCompanyReview],
       ["monthly", runMonthlyPersonalCompanyReview],
-    ] as const) {
+    ] as const : [])) {
       const periodKey = scope === "daily" ? dayKey : scope === "weekly"
         ? dayKey.slice(0, 8) + String(Math.ceil(Number(dayKey.slice(8)) / 7))
         : dayKey.slice(0, 7);
@@ -125,8 +132,19 @@ export async function runAutonomousCycle(options: { store?: ExecutionStore; maxM
         await store.completeIdempotency("organization-review:" + scope, periodKey, { date: review.date });
       }
     }
-    if (process.env.ENABLE_REAL_MODEL_CANARY === "true" && await store.claimIdempotency("model-canary", dayKey)) {
-      const canary = await runRealModelCanary(store);
+    if (environment.realModelCanaryEnabled && await store.claimIdempotency("model-canary", dayKey)) {
+      const canary = await runRealModelCanary();
+      if (canary.status === "FAIL" && canary.consecutiveFailures >= 3) {
+        const snapshot = await store.load();
+        addAttention(snapshot.state, {
+          fingerprint: "canary:consecutive-failures",
+          type: "SYSTEM_FAILURE",
+          priority: "critical",
+          title: "Real model canary repeatedly failed",
+          summary: canary.error ?? "CANARY_FAILED",
+        });
+        await store.save(snapshot.state, { expectedVersion: snapshot.version });
+      }
       await store.completeIdempotency("model-canary", dayKey, canary);
     }
     await store.appendEvent(cycleEvent("CYCLE_COMPLETED", cycleId, JSON.stringify(processed)));

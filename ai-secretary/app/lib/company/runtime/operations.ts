@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { ExecutionState } from "../execution/store";
 import type { AttentionItem } from "../execution/runnerTypes";
 import type { ExecutionStore } from "./runtimeTypes";
+import { deploymentMetadata } from "./deploymentMetadata";
+import { runtimeEnvironment } from "./environment";
 
 export function addAttention(state: ExecutionState, item: Omit<AttentionItem, "id" | "createdAt">, now = new Date()) {
   const runtime = (state.runtime ??= { runs: {}, executions: [], artifacts: [], learning: [], attention: [], learningQueue: [] });
@@ -22,7 +24,14 @@ export async function runtimeHealth(store: ExecutionStore) {
   );
   const leases = (await Promise.all(active.map((mission) => store.getLease(mission.id)))).filter(Boolean);
   const failures = events.filter((entry) => ["CYCLE_FAILED", "LEASE_FAILED", "LEASE_EXPIRED"].includes(entry.type));
+  const lastCycleEnd = events.find((entry) => entry.type === "CYCLE_COMPLETED" || entry.type === "CYCLE_FAILED");
+  const lastCycleStart = lastCycleEnd
+    ? events.find((entry) => entry.type === "CYCLE_STARTED" && entry.cycleId === lastCycleEnd.cycleId)
+    : events.find((entry) => entry.type === "CYCLE_STARTED");
   return {
+    schemaVersion: snapshot.schemaVersion,
+    deployment: deploymentMetadata(),
+    environment: runtimeEnvironment(),
     store: store.kind,
     storeVersion: snapshot.version,
     updatedAt: snapshot.updatedAt,
@@ -40,6 +49,10 @@ export async function runtimeHealth(store: ExecutionStore) {
     learningPending: snapshot.state.runtime?.learningQueue?.length ?? 0,
     storeLatencyMs,
     lastAutonomousCycle: events.find((entry) => entry.type === "CYCLE_COMPLETED" || entry.type === "CYCLE_FAILED") ?? null,
+    lastCycleStartedAt: lastCycleStart?.createdAt ?? null,
+    lastCycleCompletedAt: lastCycleEnd?.createdAt ?? null,
+    lastCycleStatus: lastCycleEnd?.type === "CYCLE_COMPLETED" ? "success" : lastCycleEnd ? "failure" : "never",
+    lastCycleDuration: lastCycleStart && lastCycleEnd ? Math.max(0, Date.parse(lastCycleEnd.createdAt) - Date.parse(lastCycleStart.createdAt)) : null,
     nextScheduledRun: "daily 21:15 UTC",
   };
 }

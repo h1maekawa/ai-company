@@ -13,6 +13,7 @@ import { summarizeRevenue } from "@/app/lib/company/revenue";
 import { evaluateAchievements } from "@/app/lib/company/achievements";
 import { createHash } from "node:crypto";
 import { getExecutionStore } from "@/app/lib/company/execution/store";
+import { assertProductionMutationAllowed } from "@/app/lib/company/runtime/environment";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ export async function GET(): Promise<NextResponse> {
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
+    assertProductionMutationAllowed();
     const body = (await req.json()) as Partial<RevenueEntry>;
 
     const validation = validateRevenueInput(body);

@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { internalStepWorker } from "../execution/stepWorker";
-import { getExecutionStore } from "../execution/store";
-import type { ExecutionStore } from "./runtimeTypes";
 import { runReviewPipeline } from "../execution/reviewer";
+import { CanaryResultStore } from "./canaryStore";
 
-export async function runRealModelCanary(store: ExecutionStore = getExecutionStore()) {
+export async function runRealModelCanary(store = new CanaryResultStore()) {
   const id = "canary:" + randomUUID();
   const startedAt = new Date();
   const controller = new AbortController();
@@ -35,15 +34,7 @@ export async function runRealModelCanary(store: ExecutionStore = getExecutionSto
   }
   const completedAt = new Date();
   const result = { id, status, startedAt: startedAt.toISOString(), completedAt: completedAt.toISOString(), latencyMs: completedAt.getTime() - startedAt.getTime(), outputLength, reviewVerdict, error };
-  const snapshot = await store.load();
-  snapshot.state.runtime ??= { runs: {}, executions: [], artifacts: [], learning: [] };
-  snapshot.state.runtime.canaries = [...(snapshot.state.runtime.canaries ?? []).slice(-29), result];
-  await store.save(snapshot.state, { expectedVersion: snapshot.version });
-  await store.appendEvent({
-    id: randomUUID(), type: status === "PASS" ? "CANARY_COMPLETED" : "CANARY_FAILED", detail: error,
-    createdAt: completedAt.toISOString(), at: completedAt.toISOString(), kind: "runtime.canary",
-    department: "personal", actor: "system", action: "real-model-canary",
-    outcome: status === "PASS" ? "success" : "failure", signature: "real-model-canary", humanIntervention: false,
-  });
-  return result;
+  await store.save(result);
+  const recent = await store.recent(3);
+  return { ...result, consecutiveFailures: recent.findIndex((item) => item.status === "PASS") < 0 ? recent.length : recent.findIndex((item) => item.status === "PASS") };
 }
