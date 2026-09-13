@@ -4,7 +4,7 @@ import type { CanaryResult } from "../execution/runnerTypes";
 import { runtimeEnvironment } from "./environment";
 import { StoreUnavailableError } from "./runtimeTypes";
 
-type CanaryRedis = Pick<Redis, "lpush" | "lrange" | "ltrim">;
+type CanaryRedis = Pick<Redis, "lpush" | "lrange" | "ltrim" | "set">;
 
 export class CanaryResultStore {
   private readonly key: string;
@@ -26,6 +26,14 @@ export class CanaryResultStore {
     try {
       const rows = await this.redis.lrange<string>(this.key, 0, Math.max(0, limit - 1));
       return rows.map((row) => typeof row === "string" ? JSON.parse(row) as CanaryResult : row as CanaryResult);
+    } catch {
+      throw new StoreUnavailableError("CANARY_STORE_ERROR");
+    }
+  }
+
+  async claim(period: string) {
+    try {
+      return (await this.redis.set(this.key + ":run:" + period, "PROCESSING", { nx: true, ex: 172800 })) === "OK";
     } catch {
       throw new StoreUnavailableError("CANARY_STORE_ERROR");
     }

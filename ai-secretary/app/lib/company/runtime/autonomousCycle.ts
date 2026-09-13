@@ -10,7 +10,6 @@ import { generateOpportunities, applyRevenueToOpportunities } from "../opportuni
 import { loadOpportunities, saveOpportunities } from "../opportunity/store";
 import { syncRevenueLearning } from "../execution/revenueLearning";
 import type { RevenueEntry } from "../revenueStore";
-import { runRealModelCanary } from "./modelCanary";
 import { startMission } from "../execution/service";
 import { runDailyPersonalCompanyReview, runMonthlyPersonalCompanyReview, runWeeklyPersonalCompanyReview } from "../reviews/reviews";
 import { saveReview } from "../reviews/store";
@@ -131,21 +130,6 @@ export async function runAutonomousCycle(options: { store?: ExecutionStore; maxM
         await saveReview(review);
         await store.completeIdempotency("organization-review:" + scope, periodKey, { date: review.date });
       }
-    }
-    if (environment.realModelCanaryEnabled && await store.claimIdempotency("model-canary", dayKey)) {
-      const canary = await runRealModelCanary();
-      if (canary.status === "FAIL" && canary.consecutiveFailures >= 3) {
-        const snapshot = await store.load();
-        addAttention(snapshot.state, {
-          fingerprint: "canary:consecutive-failures",
-          type: "SYSTEM_FAILURE",
-          priority: "critical",
-          title: "Real model canary repeatedly failed",
-          summary: canary.error ?? "CANARY_FAILED",
-        });
-        await store.save(snapshot.state, { expectedVersion: snapshot.version });
-      }
-      await store.completeIdempotency("model-canary", dayKey, canary);
     }
     await store.appendEvent(cycleEvent("CYCLE_COMPLETED", cycleId, JSON.stringify(processed)));
     return { cycleId, status: "COMPLETED" as const, processed };

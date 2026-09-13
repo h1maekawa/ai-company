@@ -63,6 +63,12 @@ export type CanaryResult = {
   outputLength?: number;
   reviewVerdict?: "PASS" | "WARN" | "FAIL";
   error?: string;
+  schemaValidated: boolean;
+  redisPersisted: boolean;
+  cancellationConfigured: boolean;
+  cost: { status: "reported" | "unknown"; usd?: number; reason?: string };
+  security: { status: "PASS" | "ALERT"; alert?: string };
+  externalActionCount: 0;
 };
 export type AttentionItem = {
   id: string;
