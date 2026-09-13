@@ -84,6 +84,7 @@ export function computeAgentStatuses(input: {
   actionRequests?: ActionRequest[];
   approvals?: ApprovalRequest[];
   revenueByAgent?: Record<string, number>;
+  reviewPassRateByAgent?: Record<string, number | null>;
 }): AgentLiveStatus[] {
   return input.agents.map((agent) => {
     const mine = input.missions.filter((m) => m.assignedAgentId === agent.id);
@@ -91,12 +92,12 @@ export function computeAgentStatuses(input: {
       .filter((m) => m.status in ACTIVE_ORDER)
       .sort((a, b) => ACTIVE_ORDER[a.status] - ACTIVE_ORDER[b.status]);
     const completed = mine.filter((m) => m.status === "COMPLETED");
-    const failed = mine.filter((m) => m.status === "FAILED");
+    const failed = mine.filter((m) => m.status === "FAILED" || m.status === "BLOCKED");
 
     const current = active[0];
     const status: AgentActivityStatus = current
       ? statusFromMission(current)
-      : failed.length > 0 && completed.length === 0
+      : failed.length > 0
         ? "ERROR"
         : "IDLE";
 
@@ -117,7 +118,7 @@ export function computeAgentStatuses(input: {
       level: computeAgentLevel({
         completedMissions: completed.length,
         successRate: mine.length > 0 ? completed.length / mine.length : 0,
-        reviewPassRate: decided.length > 0 ? 1 - rejected.length / decided.length : 0,
+        reviewPassRate: input.reviewPassRateByAgent?.[agent.id] ?? (decided.length > 0 ? 1 - rejected.length / decided.length : 0),
         ceoRejectionRate: decided.length > 0 ? rejected.length / decided.length : 0,
       }),
       activeMissions: active.length,

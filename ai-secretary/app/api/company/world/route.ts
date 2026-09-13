@@ -1,3 +1,4 @@
+import { safeRevenueContributions, agentPerformance } from "@/app/lib/company/execution/performance";
 import { NextResponse } from "next/server";
 import { buildOrganizationSnapshot } from "@/app/lib/company/organization";
 import { loadExecutionState } from "@/app/lib/company/execution/store";
@@ -30,7 +31,8 @@ export async function GET(): Promise<NextResponse> {
     const confirmed = effectiveEntries(revenue).filter(
       (e) => e.confirmedByHuman && e.sourceType !== "investment"
     );
-    const contributions = summarizeContributions(confirmed);
+    const legacyContributions = summarizeContributions(confirmed);
+    const contributions = { ...legacyContributions, ...safeRevenueContributions(confirmed, state) };
 
     const agents = computeAgentStatuses({
       agents: organization.agents,
@@ -38,6 +40,7 @@ export async function GET(): Promise<NextResponse> {
       actionRequests: state.actionRequests,
       approvals,
       revenueByAgent: contributions.byAgent,
+      reviewPassRateByAgent: Object.fromEntries(agentPerformance(state, revenue).map(p => [p.agentId, p.reviewPassRate])),
     });
 
     /* Company XP（Game Layer。Healthには入れない・§66） */
@@ -73,10 +76,14 @@ export async function GET(): Promise<NextResponse> {
 
     return NextResponse.json({
       agents,
+      performance: agentPerformance(state, revenue),
       buildings,
       boardRoom: { pendingApprovals },
       securityCenter: {
         blockedActions,
+        noExecutor: state.runtime?.executions.filter(e => ["DRY_RUN", "NO_EXECUTOR"].includes(e.status)) ?? [],
+        injectionAlerts: blockedActions.filter(a => a.reason?.includes("injection")),
+        protectedCoreAttempts: blockedActions.filter(a => a.actionType === "PROTECTED_CORE_MUTATION" || a.reason?.includes("protected_core")),
         r4Requests: state.actionRequests.filter((a) => a.riskLevel === "R4"),
         permissionViolations: blockedActions.filter((a) => a.reason?.includes("権限")),
       },

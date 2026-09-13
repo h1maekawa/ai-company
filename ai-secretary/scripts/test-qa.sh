@@ -75,7 +75,10 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/execution/reviewer.ts",
     "$PWD/app/lib/company/execution/contribution.ts",
     "$PWD/app/lib/company/execution/xp.ts",
-    "$PWD/app/lib/company/execution/agentStatus.ts"
+    "$PWD/app/lib/company/execution/agentStatus.ts",
+    "$PWD/app/lib/company/execution/agentRunner.ts",
+    "$PWD/app/lib/company/execution/performance.ts",
+    "$PWD/app/lib/company/opportunity/lifecycle.ts"
   ]
 }
 TSCONFIG

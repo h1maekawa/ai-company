@@ -1,0 +1,358 @@
+import type { AgentSummary } from "../organization";
+import type { ExecutionState } from "./store";
+import type { ExecutionStep } from "./executionPlan";
+import { transition, type FullMissionStatus } from "./mission";
+import {
+  emptyMissionRun,
+  emptyRunnerState,
+  runnerLimits,
+} from "./runnerConfig";
+import type { RunnerLimits } from "./runnerTypes";
+import { submitAction, executeStoredAction } from "./executeAction";
+import { recordLearning } from "./learning";
+import { runReviewPipeline, runSecurityReview } from "./reviewer";
+import { completionBlocker } from "./completion";
+
+export type StepWorker = (input: {
+  objective: string;
+  context: string;
+  step: ExecutionStep;
+  rejectionReason?: string;
+  signal: AbortSignal;
+}) => Promise<string>;
+export async function runAgent(
+  state: ExecutionState,
+  missionId: string,
+  agent: AgentSummary | null,
+  worker: StepWorker,
+  options: Partial<RunnerLimits> = {},
+  checkpoint?: (state: ExecutionState) => Promise<void>,
+) {
+  const limits = runnerLimits(options);
+  const runtime = (state.runtime ??= emptyRunnerState());
+  const run = (runtime.runs[missionId] ??= emptyMissionRun());
+  let mission = state.missions.find((m) => m.id === missionId);
+  if (!mission) throw new Error("MISSION_NOT_FOUND");
+  if (["COMPLETED", "CANCELLED", "FAILED", "BLOCKED"].includes(mission.status))
+    return state;
+  const move = (status: FullMissionStatus, reason?: string) => {
+    const moved = transition(mission!, status, {
+      actor: agent?.id ?? "system",
+      reason,
+    });
+    if (!moved.ok) throw new Error(moved.error);
+    mission = moved.mission;
+    state.missions = state.missions.map((m) =>
+      m.id === missionId ? mission! : m,
+    );
+  };
+  const stop = (reason: string, status: "BLOCKED" | "FAILED" = "FAILED") => {
+    run.stopReason = reason;
+    move(status, reason);
+    recordLearning(
+      state,
+      status === "BLOCKED" ? "MISSION_BLOCKED" : "MISSION_FAILED",
+      `${missionId}:${run.replans}`,
+      { missionId, reason },
+    );
+  };
+  if (!agent || mission.assignedAgentId !== agent.id) {
+    stop("NO_SUITABLE_AGENT", "BLOCKED");
+    return state;
+  }
+  let plan = state.plans.find((p) => p.id === mission!.executionPlanId);
+  if (
+    !plan ||
+    plan.agentId !== agent.id ||
+    plan.missionId !== missionId ||
+    !plan.steps.length
+  ) {
+    stop("INVALID_EXECUTION_PLAN");
+    return state;
+  }
+  if (mission.status === "REPLAN_REQUIRED") {
+    if (run.replans >= limits.maxReplans) {
+      stop("MAX_REPLANS");
+      return state;
+    }
+    run.replans++;
+    const rejected = state.actionRequests.filter(
+      (a) => a.missionId === missionId && a.status === "REJECTED",
+    );
+    run.rejectionReason =
+      rejected
+        .map((a) => a.reason)
+        .filter(Boolean)
+        .join("; ") || run.stopReason;
+    run.rejectedProposals = [
+      ...new Set([
+        ...run.rejectedProposals,
+        ...rejected.map((a) => a.payloadSummary),
+      ]),
+    ];
+    plan = {
+      ...plan,
+      id: `${plan.id}_replan${run.replans}`,
+      steps: plan.steps.map((s) => ({
+        ...s,
+        status: "PENDING",
+      })),
+    };
+    state.plans.push(plan);
+    mission.executionPlanId = plan.id;
+    run.review = undefined;
+    move("EXECUTING", run.rejectionReason);
+  } else if (mission.status === "ACTIVE") move("EXECUTING");
+  else if (
+    !["EXECUTING", "REVIEWING", "WAITING_APPROVAL"].includes(mission.status)
+  ) {
+    run.stopReason = "MISSION_NOT_ACTIVE";
+    return state;
+  }
+  const started = Date.now();
+  const controller = new AbortController();
+  const remaining = limits.maxExecutionTime - run.elapsedMs;
+  if (remaining <= 0) {
+    stop("MAX_EXECUTION_TIME");
+    return state;
+  }
+  const timer = setTimeout(() => controller.abort(), remaining);
+  const bounded = <T>(promise: Promise<T>): Promise<T> =>
+    new Promise((resolve, reject) => {
+      const abort = () => reject(new Error("MAX_EXECUTION_TIME"));
+      if (controller.signal.aborted) {
+        abort();
+        return;
+      }
+      controller.signal.addEventListener("abort", abort, { once: true });
+      promise
+        .then(resolve, reject)
+        .finally(() => controller.signal.removeEventListener("abort", abort));
+    });
+  try {
+    for (const step of [...plan.steps].sort((a, b) => a.order - b.order)) {
+      if (step.status === "COMPLETE") continue;
+      if (run.steps >= limits.maxSteps) {
+        stop("MAX_STEPS");
+        break;
+      }
+      if (controller.signal.aborted) {
+        stop("MAX_EXECUTION_TIME");
+        break;
+      }
+      if (
+        step.requiredSkillId &&
+        !agent.skillIds.includes(step.requiredSkillId)
+      ) {
+        stop("MISSING_SKILL", "BLOCKED");
+        break;
+      }
+      if (step.requiredSkillId) {
+        stop("SKILL_EXECUTOR_NOT_IMPLEMENTED", "BLOCKED");
+        break;
+      }
+      const old = [...run.history]
+        .reverse()
+        .find(
+          (h) =>
+            h.planId === plan!.id && h.stepId === step.id && h.actionRequestId,
+        );
+      if (mission.status === "WAITING_APPROVAL" && !old) break;
+      if (
+        old &&
+        state.approvals.some(
+          (a) =>
+            a.actionRequestId === old.actionRequestId &&
+            a.status === "PENDING" &&
+            (!a.expiresAt || Date.parse(a.expiresAt) > Date.now()),
+        )
+      )
+        break;
+      run.steps++;
+      step.status = "RUNNING";
+      const history = {
+        planId: plan.id,
+        stepId: step.id,
+        at: new Date().toISOString(),
+        status: "RUNNING",
+        output: undefined as string | undefined,
+        reason: undefined as string | undefined,
+        actionRequestId: old?.actionRequestId,
+      };
+      run.history.push(history);
+      if (checkpoint) await bounded(checkpoint(state));
+      const context = run.history
+        .filter((h) => h.planId === plan!.id && h.output)
+        .map((h) => h.output)
+        .join("\n")
+        .slice(-30000);
+      try {
+        if (step.type === "action") {
+          if (!step.actionType) throw new Error("MISSING_ACTION_TYPE");
+          const payload = step.payload ?? {
+            reportType: "Mission Report" as const,
+            content: context,
+          };
+          const proposal = JSON.stringify(payload);
+          if (!old && run.rejectedProposals.includes(proposal)) {
+            stop("REJECTED_PROPOSAL_UNCHANGED");
+            break;
+          }
+          const submitted = old
+            ? {
+                request: state.actionRequests.find(
+                  (a) => a.id === old.actionRequestId,
+                )!,
+                result: executeStoredAction(state, old.actionRequestId!, agent),
+              }
+            : submitAction(
+                state,
+                {
+                  missionId,
+                  traceId: mission.traceId ?? "unknown",
+                  agent,
+                  actionType: step.actionType,
+                  payloadSummary: proposal,
+                  origin: "agent",
+                  target: payload.path,
+                },
+                payload,
+              );
+          history.actionRequestId = submitted.request.id;
+          if (submitted.result.status === "WAITING_APPROVAL") {
+            history.status = "WAITING_APPROVAL";
+            step.status = "PENDING";
+            if (mission.status !== "WAITING_APPROVAL") move("WAITING_APPROVAL");
+            break;
+          }
+          if (submitted.result.status !== "EXECUTED") {
+            history.status = submitted.result.status;
+            history.reason = submitted.result.reason;
+            step.status = "FAILED";
+            stop(submitted.result.reason ?? submitted.result.status, "BLOCKED");
+            break;
+          }
+          // Status executors may replace the mission in the shared state.
+          mission = state.missions.find((m) => m.id === missionId)!;
+          if (mission.status === "WAITING_APPROVAL")
+            move("EXECUTING", "承認後に再開");
+        } else if (step.type === "review") {
+          if (mission.status === "EXECUTING") move("REVIEWING");
+          run.review = runReviewPipeline({
+            quality: {
+              objective: plan.objective,
+              output: context,
+              expectedOutputs: plan.expectedOutputs,
+            },
+            security: { output: context, externalContent: context },
+          });
+          (run.reviewHistory ??= []).push(run.review);
+          if (run.review.verdict !== "PASS") {
+            recordLearning(
+              state,
+              "REVIEW_FAILED",
+              `${missionId}:${run.replans}:${step.id}`,
+              { missionId, reason: run.review.verdict },
+            );
+            throw new Error("REVIEW_FAILED");
+          }
+        } else {
+          const safety = runSecurityReview({
+            output: `${mission.title} ${mission.description ?? ""} ${context}`,
+            externalContent: context,
+          });
+          if (safety.verdict !== "PASS") {
+            stop("security.injection_or_sensitive", "BLOCKED");
+            break;
+          }
+          const output = await bounded(
+            worker({
+              objective: plan.objective,
+              context: `${mission.description ?? ""}\n${context}`,
+              step: { ...step },
+              rejectionReason: run.rejectionReason,
+              signal: controller.signal,
+            }),
+          );
+          if (controller.signal.aborted) throw new Error("MAX_EXECUTION_TIME");
+          if (!output.trim() || output.length > 50000)
+            throw new Error("INVALID_STEP_OUTPUT");
+          if (
+            runSecurityReview({ output, externalContent: output }).verdict !==
+            "PASS"
+          ) {
+            stop("security.injection_or_sensitive", "BLOCKED");
+            break;
+          }
+          history.output = output;
+        }
+        step.status = "COMPLETE";
+        history.status = "COMPLETE";
+        if (checkpoint) await bounded(checkpoint(state));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "STEP_FAILED";
+        const reason = [
+          "MAX_EXECUTION_TIME",
+          "REVIEW_FAILED",
+          "INVALID_STEP_OUTPUT",
+          "MISSING_ACTION_TYPE",
+        ].includes(message)
+          ? message
+          : "STEP_FAILED";
+        history.status = "FAILED";
+        history.reason = reason;
+        step.status = "FAILED";
+        run.stopReason = reason;
+        if (reason === "MAX_EXECUTION_TIME") stop(reason);
+        else if (
+          run.retries < limits.maxRetries &&
+          run.replans < limits.maxReplans
+        ) {
+          run.retries++;
+          move("REPLAN_REQUIRED", reason);
+        } else stop("RETRY_OR_REPLAN_LIMIT");
+        break;
+      }
+    }
+    if (
+      plan.steps.every((s) => s.status === "COMPLETE") &&
+      !["BLOCKED", "FAILED", "COMPLETED"].includes(mission.status)
+    ) {
+      if (mission.status === "EXECUTING") move("REVIEWING");
+      const reason = completionBlocker(state, missionId);
+      if (reason) stop(reason);
+      else {
+        const { result } = submitAction(
+          state,
+          {
+            missionId,
+            traceId: mission.traceId ?? "unknown",
+            agent,
+            actionType: "MISSION_STATUS_UPDATE",
+            payloadSummary: "Mission completion",
+            origin: "agent",
+          },
+          { status: "COMPLETED" },
+        );
+        if (result.status !== "EXECUTED")
+          stop(result.reason ?? "COMPLETION_DENIED", "BLOCKED");
+        else {
+          mission = state.missions.find((m) => m.id === missionId)!;
+          mission.completedAt = new Date().toISOString();
+          recordLearning(state, "MISSION_SUCCEEDED", missionId, {
+            missionId,
+            latencyMs: run.elapsedMs + Date.now() - started,
+            reviewScore: 100,
+            costUnknownReason: "Provider usage not reported",
+            tools: plan.steps.map((s) => s.type),
+          });
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+    run.elapsedMs += Date.now() - started;
+  }
+  return state;
+}
