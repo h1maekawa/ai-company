@@ -4,6 +4,7 @@ import { runReviewPipeline } from "../execution/reviewer";
 import { CanaryResultStore } from "./canaryStore";
 import type { StepWorker } from "../execution/agentRunner";
 import { runtimeLog } from "./runtimeLog";
+import { CANARY_ACK, CANARY_EXPECTED_OUTPUTS, CANARY_EXTERNAL_CONTEXT, CANARY_OBJECTIVE } from "./canaryContract";
 
 export async function runRealModelCanary(store = new CanaryResultStore(), worker: StepWorker = internalStepWorker) {
   const id = "canary:" + randomUUID();
@@ -19,20 +20,20 @@ export async function runRealModelCanary(store = new CanaryResultStore(), worker
   try {
     const output = await worker({
       objective: "Runtime canary: return strict JSON with ack CANARY_OK and a short message.",
-      context: "Synthetic canary data. No external action is authorized.",
-      step: { id, order: 1, title: "Return {\"ack\":\"CANARY_OK\",\"message\":\"short sentence\"}", type: "generate", status: "PENDING" },
+      context: `${CANARY_EXTERNAL_CONTEXT} No external action is authorized.`,
+      step: { id, order: 1, title: `Return {"ack":"${CANARY_ACK}","message":"short sentence"}`, type: "generate", status: "PENDING" },
       signal: controller.signal,
     });
     outputLength = output.length;
     if (!output.trim() || output.length > 2_000) throw new Error("INVALID_CANARY_OUTPUT");
     const json = output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
     const parsed = JSON.parse(json) as unknown;
-    if (!parsed || typeof parsed !== "object" || (parsed as { ack?: unknown }).ack !== "CANARY_OK" || typeof (parsed as { message?: unknown }).message !== "string")
+    if (!parsed || typeof parsed !== "object" || (parsed as { ack?: unknown }).ack !== CANARY_ACK || typeof (parsed as { message?: unknown }).message !== "string")
       throw new Error("CANARY_SCHEMA_INVALID");
     schemaValidated = true;
     reviewVerdict = runReviewPipeline({
-      quality: { objective: "Runtime canary acknowledgement", output, expectedOutputs: ["short acknowledgement"] },
-      security: { output, externalContent: "Synthetic canary data." },
+      quality: { objective: CANARY_OBJECTIVE, output, expectedOutputs: CANARY_EXPECTED_OUTPUTS },
+      security: { output, externalContent: CANARY_EXTERNAL_CONTEXT },
     }).verdict;
     if (reviewVerdict !== "PASS") {
       security = { status: "ALERT", alert: "CANARY_REVIEW_FAILED" };
