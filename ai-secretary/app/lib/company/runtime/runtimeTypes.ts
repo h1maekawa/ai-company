@@ -35,6 +35,7 @@ export type MissionLease = {
 export type LeaseGuard = Pick<MissionLease, "missionId" | "holderId" | "fencingToken">;
 
 export type ExecutionSnapshot = {
+  schemaVersion: string;
   version: number;
   state: ExecutionState;
   updatedAt: string;

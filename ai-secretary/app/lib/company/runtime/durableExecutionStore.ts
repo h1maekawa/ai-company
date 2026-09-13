@@ -5,14 +5,12 @@ import type { ExecutionState } from "../execution/store";
 import { assertAppendOnly, normalizeExecutionState } from "./stateCodec";
 import type { ExecutionEvent, ExecutionSnapshot, ExecutionStore, LeaseGuard, MissionLease } from "./runtimeTypes";
 import { ExecutionConflictError, FencingTokenError, StoreUnavailableError } from "./runtimeTypes";
+import { assertProductionMutationAllowed, runtimeEnvironment } from "./environment";
+import { RUNTIME_SCHEMA_VERSION } from "./deploymentMetadata";
 
 type RuntimeRedis = Pick<Redis, "get" | "set" | "eval" | "lpush" | "lrange" | "ltrim">;
-const KEY = "company:execution:v8:snapshot";
-const VERSION = "company:execution:v8:version";
-const EVENTS = "company:execution:v8:events";
-const leaseKey = (missionId: string) => `company:execution:v8:lease:${missionId}`;
-const fenceKey = (missionId: string) => `company:execution:v8:fence:${missionId}`;
-const idemKey = (scope: string, key: string) => `company:execution:v8:idem:${scope}:${key}`;
+const LEGACY_KEY = "company:execution:v8:snapshot";
+const LEGACY_VERSION = "company:execution:v8:version";
 
 const SAVE_SCRIPT = `
 local current = tonumber(redis.call('GET', KEYS[2]) or '0')
@@ -25,7 +23,15 @@ end
 local next = current + 1
 redis.call('SET', KEYS[1], ARGV[2])
 redis.call('SET', KEYS[2], next)
+redis.call('SET', KEYS[4], ARGV[5])
 return {1, next}
+`;
+const MIGRATE_SCRIPT = `
+if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+redis.call('SET', KEYS[1], ARGV[1])
+redis.call('SET', KEYS[2], ARGV[2])
+redis.call('SET', KEYS[3], ARGV[3])
+return 1
 `;
 
 const ACQUIRE_SCRIPT = `
@@ -58,19 +64,41 @@ return redis.call('HMGET', KEYS[1], 'missionId', 'holderId', 'fencingToken', 'ac
 
 export class DurableExecutionStore implements ExecutionStore {
   readonly kind = "durable" as const;
-  constructor(private readonly redis: RuntimeRedis = requireRedis()) {}
+  private readonly prefix: string;
+  constructor(private readonly redis: RuntimeRedis = requireRedis(), namespace = runtimeEnvironment().redisNamespace) {
+    this.prefix = namespace + ":company:execution:v1";
+  }
+  private key(name: string) { return this.prefix + ":" + name; }
+  private leaseKey(missionId: string) { return this.key("lease:" + missionId); }
+  private fenceKey(missionId: string) { return this.key("fence:" + missionId); }
+  private idemKey(scope: string, key: string) { return this.key("idem:" + scope + ":" + key); }
 
   async load(): Promise<ExecutionSnapshot> {
     try {
-      const [stored, rawVersion] = await Promise.all([
-        this.redis.get<ExecutionState>(KEY),
-        this.redis.get<number>(VERSION),
+      const [stored, rawVersion, schema] = await Promise.all([
+        this.redis.get<ExecutionState>(this.key("snapshot")),
+        this.redis.get<number>(this.key("version")),
+        this.redis.get<string>(this.key("schema")),
       ]);
-      return { version: Number(rawVersion ?? 0), state: normalizeExecutionState(stored), updatedAt: new Date().toISOString() };
-    } catch { throw new StoreUnavailableError(); }
+      if (stored && schema !== RUNTIME_SCHEMA_VERSION) throw new StoreUnavailableError("EXECUTION_SCHEMA_MISMATCH");
+      if (!stored && this.prefix.startsWith("prod:")) {
+        const legacy = await this.redis.get<ExecutionState>(LEGACY_KEY);
+        if (legacy) {
+          if (process.env.EXECUTION_STORE_MIGRATION !== "legacy-v8-to-execution-v1") throw new StoreUnavailableError("EXECUTION_SCHEMA_MIGRATION_REQUIRED");
+          const legacyVersion = Number(await this.redis.get<number>(LEGACY_VERSION) ?? 0);
+          await this.redis.eval(MIGRATE_SCRIPT, [this.key("snapshot"), this.key("version"), this.key("schema")], [JSON.stringify(normalizeExecutionState(legacy)), String(legacyVersion), RUNTIME_SCHEMA_VERSION]);
+          return { schemaVersion: RUNTIME_SCHEMA_VERSION, version: legacyVersion, state: normalizeExecutionState(legacy), updatedAt: new Date().toISOString() };
+        }
+      }
+      return { schemaVersion: RUNTIME_SCHEMA_VERSION, version: Number(rawVersion ?? 0), state: normalizeExecutionState(stored), updatedAt: new Date().toISOString() };
+    } catch (error) {
+      if (error instanceof StoreUnavailableError) throw error;
+      throw new StoreUnavailableError();
+    }
   }
 
   async save(state: ExecutionState, options: { expectedVersion: number; lease?: LeaseGuard }) {
+    assertProductionMutationAllowed();
     const previous = await this.load();
     assertAppendOnly(previous.state, state);
     const normalized = normalizeExecutionState(state);
@@ -82,12 +110,12 @@ export class DurableExecutionStore implements ExecutionStore {
     const lease = options.lease;
     let result: unknown;
     try {
-      result = await this.redis.eval(SAVE_SCRIPT, [KEY, VERSION, lease ? leaseKey(lease.missionId) : ""], [String(options.expectedVersion), JSON.stringify(normalized), lease?.holderId ?? "", String(lease?.fencingToken ?? "")]);
+      result = await this.redis.eval(SAVE_SCRIPT, [this.key("snapshot"), this.key("version"), lease ? this.leaseKey(lease.missionId) : "", this.key("schema")], [String(options.expectedVersion), JSON.stringify(normalized), lease?.holderId ?? "", String(lease?.fencingToken ?? ""), RUNTIME_SCHEMA_VERSION]);
     } catch { throw new StoreUnavailableError(); }
     const [status, version] = result as [number, number];
     if (Number(status) === -1) throw new FencingTokenError();
     if (Number(status) !== 1) throw new ExecutionConflictError(Number(version));
-    return { version: Number(version), state: normalized, updatedAt: new Date().toISOString() };
+    return { schemaVersion: RUNTIME_SCHEMA_VERSION, version: Number(version), state: normalized, updatedAt: new Date().toISOString() };
   }
 
   async getMission(id: string) { return (await this.load()).state.missions.find((mission) => mission.id === id) ?? null; }
@@ -105,14 +133,14 @@ export class DurableExecutionStore implements ExecutionStore {
     const claimed = await this.claimIdempotency("event", event.id);
     if (!claimed) return;
     try {
-      await this.redis.lpush(EVENTS, JSON.stringify(event));
-      await this.redis.ltrim(EVENTS, 0, 999);
+      await this.redis.lpush(this.key("events"), JSON.stringify(event));
+      await this.redis.ltrim(this.key("events"), 0, 999);
       await this.completeIdempotency("event", event.id, { stored: true });
     } catch { throw new StoreUnavailableError(); }
   }
   async listEvents(limit = 100) {
     try {
-      const rows = await this.redis.lrange<string>(EVENTS, 0, Math.max(0, limit - 1));
+      const rows = await this.redis.lrange<string>(this.key("events"), 0, Math.max(0, limit - 1));
       return rows.map((row) => typeof row === "string" ? JSON.parse(row) as ExecutionEvent : row as ExecutionEvent);
     } catch { throw new StoreUnavailableError(); }
   }
@@ -124,40 +152,40 @@ export class DurableExecutionStore implements ExecutionStore {
   async acquireLease(missionId: string, holderId: string, ttlMs: number, now = new Date()) {
     const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
     let result: unknown;
-    try { result = await this.redis.eval(ACQUIRE_SCRIPT, [leaseKey(missionId), fenceKey(missionId)], [missionId, holderId, now.toISOString(), expiresAt, String(ttlMs)]); }
+    try { result = await this.redis.eval(ACQUIRE_SCRIPT, [this.leaseKey(missionId), this.fenceKey(missionId)], [missionId, holderId, now.toISOString(), expiresAt, String(ttlMs)]); }
     catch { throw new StoreUnavailableError(); }
     const [ok, token] = result as [number, number];
     return Number(ok) === 1 ? { missionId, holderId, fencingToken: Number(token), acquiredAt: now.toISOString(), heartbeatAt: now.toISOString(), expiresAt } : null;
   }
   async heartbeatLease(guard: LeaseGuard, ttlMs: number, now = new Date()) {
     const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
-    const ok = await this.redis.eval(HEARTBEAT_SCRIPT, [leaseKey(guard.missionId)], [guard.holderId, String(guard.fencingToken), now.toISOString(), expiresAt, String(ttlMs)]);
+    const ok = await this.redis.eval(HEARTBEAT_SCRIPT, [this.leaseKey(guard.missionId)], [guard.holderId, String(guard.fencingToken), now.toISOString(), expiresAt, String(ttlMs)]);
     if (Number(ok) !== 1) throw new FencingTokenError();
     const current = await this.getLease(guard.missionId);
     if (!current) throw new FencingTokenError();
     return current;
   }
   async releaseLease(guard: LeaseGuard) {
-    const ok = await this.redis.eval(RELEASE_SCRIPT, [leaseKey(guard.missionId)], [guard.holderId, String(guard.fencingToken)]);
+    const ok = await this.redis.eval(RELEASE_SCRIPT, [this.leaseKey(guard.missionId)], [guard.holderId, String(guard.fencingToken)]);
     if (Number(ok) !== 1) throw new FencingTokenError();
   }
   async getLease(missionId: string) {
-    const row = await this.redis.eval(READ_LEASE_SCRIPT, [leaseKey(missionId)], []);
+    const row = await this.redis.eval(READ_LEASE_SCRIPT, [this.leaseKey(missionId)], []);
     if (!row) return null;
     const [storedMissionId, holderId, token, acquiredAt, expiresAt, heartbeatAt] = row as string[];
     return { missionId: storedMissionId, holderId, fencingToken: Number(token), acquiredAt, expiresAt, heartbeatAt };
   }
   async claimIdempotency(scope: string, key: string, ttlSeconds = 604800) {
-    try { return (await this.redis.set(idemKey(scope, key), JSON.stringify({ status: "PROCESSING" }), { nx: true, ex: ttlSeconds })) === "OK"; }
+    try { return (await this.redis.set(this.idemKey(scope, key), JSON.stringify({ status: "PROCESSING" }), { nx: true, ex: ttlSeconds })) === "OK"; }
     catch { throw new StoreUnavailableError(); }
   }
   async completeIdempotency(scope: string, key: string, result: unknown, ttlSeconds = 604800) {
-    try { await this.redis.set(idemKey(scope, key), JSON.stringify({ status: "COMPLETE", result }), { ex: ttlSeconds }); }
+    try { await this.redis.set(this.idemKey(scope, key), JSON.stringify({ status: "COMPLETE", result }), { ex: ttlSeconds }); }
     catch { throw new StoreUnavailableError(); }
   }
   async getIdempotencyResult<T>(scope: string, key: string) {
     try {
-      const value = await this.redis.get<{ status: string; result?: T } | string>(idemKey(scope, key));
+      const value = await this.redis.get<{ status: string; result?: T } | string>(this.idemKey(scope, key));
       const parsed = typeof value === "string" ? JSON.parse(value) : value;
       return parsed?.status === "COMPLETE" ? parsed.result ?? null : null;
     } catch { throw new StoreUnavailableError(); }

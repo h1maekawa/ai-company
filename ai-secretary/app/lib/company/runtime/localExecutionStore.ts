@@ -4,6 +4,7 @@ import type { ExecutionState } from "../execution/store";
 import { assertAppendOnly, executionMarkdown, normalizeExecutionState, parseExecutionMarkdown } from "./stateCodec";
 import type { ExecutionEvent, ExecutionSnapshot, ExecutionStore, LeaseGuard, MissionLease } from "./runtimeTypes";
 import { ExecutionConflictError, FencingTokenError } from "./runtimeTypes";
+import { RUNTIME_SCHEMA_VERSION } from "./deploymentMetadata";
 
 export class LocalExecutionStore implements ExecutionStore {
   readonly kind = "local" as const;
@@ -16,7 +17,7 @@ export class LocalExecutionStore implements ExecutionStore {
   async load(): Promise<ExecutionSnapshot> {
     const state = parseExecutionMarkdown(await readLocalExecution());
     this.version = Math.max(this.version, ...state.missions.map((mission) => mission.version ?? 0), 0);
-    return { version: this.version, state, updatedAt: new Date().toISOString() };
+    return { schemaVersion: RUNTIME_SCHEMA_VERSION, version: this.version, state, updatedAt: new Date().toISOString() };
   }
 
   async save(state: ExecutionState, options: { expectedVersion: number; lease?: LeaseGuard }) {
@@ -34,7 +35,7 @@ export class LocalExecutionStore implements ExecutionStore {
     }));
     await writeLocalExecution(executionMarkdown(normalized), normalized.runtime?.learning ?? []);
     this.version = version;
-    return { version, state: normalized, updatedAt: new Date().toISOString() };
+    return { schemaVersion: RUNTIME_SCHEMA_VERSION, version, state: normalized, updatedAt: new Date().toISOString() };
   }
 
   async getMission(id: string) { return (await this.load()).state.missions.find((mission) => mission.id === id) ?? null; }
@@ -98,4 +99,3 @@ export class LocalExecutionStore implements ExecutionStore {
     }
   }
 }
-

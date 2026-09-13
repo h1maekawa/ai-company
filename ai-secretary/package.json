@@ -12,6 +12,7 @@
     "test:fund": "bash scripts/test-fund.sh",
     "test:maemichi": "bash scripts/test-maemichi.sh",
     "test:architecture": "bash scripts/test-architecture.sh",
+    "smoke:production": "node scripts/smoke-personal-company-production.mjs",
     "test:content": "bash scripts/test-content.sh",
     "test:knowledge": "bash scripts/test-knowledge.sh",
     "test:grill": "bash scripts/test-grill.sh",

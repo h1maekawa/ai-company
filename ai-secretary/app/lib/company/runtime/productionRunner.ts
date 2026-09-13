@@ -76,7 +76,7 @@ export async function runProductionMission(input: {
       await store.appendEvent(event("MISSION_RESUMED", input.missionId, holderId));
     }
     const agent = buildOrganizationSnapshot().agents.find((item) => item.id === mission.assignedAgentId) ?? null;
-    await runAgent(state, input.missionId, agent, input.worker ?? internalStepWorker, {}, async (next) => {
+    await runAgent(state, input.missionId, agent, input.worker ?? internalStepWorker, { maxModelCalls: RUNTIME_DEFAULTS.maxModelCallsPerCycle }, async (next) => {
       if (heartbeatError) throw heartbeatError;
       snapshot = await store.save(next, { expectedVersion: snapshot.version, lease: guard });
     });
