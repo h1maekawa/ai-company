@@ -22,6 +22,9 @@ export const emptyRunnerState = (): RunnerState => ({
   executions: [],
   artifacts: [],
   learning: [],
+  attention: [],
+  learningQueue: [],
+  canaries: [],
 });
 export const emptyMissionRun = (): MissionRun => ({
   steps: 0,

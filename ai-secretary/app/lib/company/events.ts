@@ -34,7 +34,11 @@ export type CompanyEventKind =
   | "approval.rejected"
   | "human.corrected"
   | "decision.created"
-  | "security.blocked";
+  | "security.blocked"
+  | "runtime.lease"
+  | "runtime.recovery"
+  | "runtime.cycle"
+  | "runtime.canary";
 
 export type CompanyEventOutcome = "success" | "failure" | "skipped";
 

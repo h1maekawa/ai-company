@@ -32,6 +32,8 @@ export type MissionTransition = {
 };
 
 export type ExecutionMission = Omit<PersonalMission, "status"> & {
+  /** Durable store CAS version that last changed this mission. */
+  version: number;
   status: FullMissionStatus;
   traceId?: string;
   assignedAgentId?: string;
@@ -105,6 +107,7 @@ export function transition(
 export function toExecutionMission(mission: PersonalMission): ExecutionMission {
   return {
     ...mission,
+    version: 0,
     status: mission.status,
     history: [],
     actionRequestIds: [],
