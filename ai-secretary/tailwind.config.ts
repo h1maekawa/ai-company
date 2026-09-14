@@ -39,10 +39,16 @@ const config: Config = {
         shimmer: {
           "100%": { transform: "translateX(100%)" },
         },
+        // Pixel Officeのタイピング。1pxだけ動かす控えめな表現にする
+        "office-type": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(1px)" },
+        },
       },
       animation: {
         "fade-up": "fade-up 0.35s ease-out both",
         shimmer: "shimmer 1.6s infinite",
+        "office-type": "office-type 0.5s steps(2, end) infinite",
       },
     },
   },

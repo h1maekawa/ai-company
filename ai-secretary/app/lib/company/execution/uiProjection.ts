@@ -45,3 +45,60 @@ export function projectMissionForUi(status: FullMissionStatus): {
       return { column: "todo", status: "待機中" };
   }
 }
+
+/** ヘッダーに出す会社全体の集計。AI社員の表示状態を数えるだけ。 */
+export type OfficeSummary = {
+  working: number;
+  idle: number;
+  ceoReview: number;
+  problem: number;
+};
+
+/** 完了はそのAI社員が今は空いていることを意味するので、待機として数える。 */
+export function summarizeOffice(statuses: SimpleUiStatus[]): OfficeSummary {
+  const summary: OfficeSummary = { working: 0, idle: 0, ceoReview: 0, problem: 0 };
+  for (const status of statuses) {
+    if (status === "作業中" || status === "レビュー中") summary.working += 1;
+    else if (status === "CEO確認待ち") summary.ceoReview += 1;
+    else if (status === "問題あり") summary.problem += 1;
+    else summary.idle += 1;
+  }
+  return summary;
+}
+
+export type CurrentStepView = { title: string; index: number; total: number };
+
+/**
+ * 現在のStep。既存のExecution Planからだけ導出する。
+ * 進捗用の状態を別に持たないので、Planが無ければ何も表示しない。
+ */
+export function projectCurrentStep(
+  steps: Array<{ order: number; title: string; status: string }>,
+): CurrentStepView | undefined {
+  if (steps.length === 0) return undefined;
+  const ordered = [...steps].sort((a, b) => a.order - b.order);
+  const current = ordered.find((step) => step.status === "RUNNING")
+    ?? ordered.find((step) => step.status !== "COMPLETE");
+  if (!current) return undefined;
+  return { title: current.title, index: ordered.indexOf(current) + 1, total: ordered.length };
+}
+
+/**
+ * なぜ止まっているか。CEOが理由を探しに行かなくて済むよう1行で返す。
+ * Backendが記録した理由だけを使う。UI側で原因を推測しない（§39）。
+ */
+export function projectWaitReason(input: {
+  status: SimpleUiStatus;
+  pendingApprovalTitle?: string;
+  blockedActionReason?: string;
+  cancelReason?: string;
+  lastTransitionReason?: string;
+}): string | undefined {
+  if (input.status === "CEO確認待ち") return input.pendingApprovalTitle ?? "CEOの承認を待っています";
+  if (input.status === "問題あり")
+    return input.blockedActionReason
+      ?? input.cancelReason
+      ?? input.lastTransitionReason
+      ?? "理由が記録されていません";
+  return undefined;
+}
