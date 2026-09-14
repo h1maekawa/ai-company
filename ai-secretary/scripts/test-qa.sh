@@ -69,6 +69,7 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/execution/actionTypes.ts",
     "$PWD/app/lib/company/execution/actionGateway.ts",
     "$PWD/app/lib/company/execution/mission.ts",
+    "$PWD/app/lib/company/execution/uiProjection.ts",
     "$PWD/app/lib/company/execution/manualMission.ts",
     "$PWD/app/lib/company/execution/approval.ts",
     "$PWD/app/lib/company/execution/assignment.ts",

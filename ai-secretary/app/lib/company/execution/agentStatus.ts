@@ -24,13 +24,13 @@ export type AgentActivityStatus =
 
 export const AGENT_STATUS_LABELS: Record<AgentActivityStatus, string> = {
   IDLE: "待機中",
-  THINKING: "計画中",
-  RESEARCHING: "調査中",
+  THINKING: "作業中",
+  RESEARCHING: "作業中",
   EXECUTING: "作業中",
-  REVIEWING: "確認中",
-  WAITING_APPROVAL: "承認待ち",
+  REVIEWING: "レビュー中",
+  WAITING_APPROVAL: "CEO確認待ち",
   COMPLETE: "完了",
-  ERROR: "エラー",
+  ERROR: "問題あり",
 };
 
 export type AgentLiveStatus = {
