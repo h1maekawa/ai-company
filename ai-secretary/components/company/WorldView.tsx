@@ -1,358 +1,221 @@
 "use client";
 
-/**
- * RPG World — Phase 6 §40 〜 §51
- *
- * §39 のとおり、AI社員の状態はBackendから受け取る。UI側で推測しない。
- * §50 のとおり、見た目はRPGだが数字は読みやすく出す。ゲームだけにしない。
- * §32 の判断を引き継ぎ、ゲームエンジンは入れずCSSとReactで作る。
- */
-
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { AlertTriangle, ShieldAlert } from "lucide-react";
-import {
-  AGENT_STATUS_LABELS,
-  type AgentLiveStatus,
-} from "@/app/lib/company/execution/agentStatus";
-import {
-  DEPARTMENT_GOAL_LABELS,
-  type PersonalDepartmentGoal,
-} from "@/app/lib/company/departmentGoals";
+import { AlertTriangle, Coffee, Monitor, ShieldAlert } from "lucide-react";
+import type { ExecutionState } from "@/app/lib/company/execution/store";
+import { AGENT_STATUS_LABELS, type AgentLiveStatus } from "@/app/lib/company/execution/agentStatus";
+import { TASK_BOARD_COLUMNS, projectMissionForUi, type SimpleUiStatus } from "@/app/lib/company/execution/uiProjection";
 import { MissionExecutionPanel } from "./MissionExecutionPanel";
 import { Skeleton } from "@/components/ui/primitives";
 
+type Approval = { id: string; title: string; summary: string; riskLevel: string; requestedBy: string; missionId: string };
 type World = {
   agents: AgentLiveStatus[];
-  buildings: {
-    goal: PersonalDepartmentGoal;
-    agents: number;
-    activeMissions: number;
-    completedToday: number;
-    revenueYen: number;
-  }[];
   boardRoom: { pendingApprovals: Approval[] };
   securityCenter: {
     blockedActions: { id: string; actionType: string; reason?: string }[];
     r4Requests: unknown[];
     permissionViolations: unknown[];
-    noExecutor?: unknown[];
-    injectionAlerts?: unknown[];
-    protectedCoreAttempts?: unknown[];
   };
-  organizationCenter: {
-    proposals: { id: string; type: string; title: string }[];
-  };
-  companyXp: number;
-  ceoLocation: string;
   error?: string;
 };
+type ExecutionSnapshot = { state: ExecutionState; error?: string };
 
-type Approval = {
-  id: string;
-  title: string;
-  summary: string;
-  riskLevel: string;
-  requestedBy: string;
-  missionId: string;
+const STATUS_STYLE: Record<SimpleUiStatus, string> = {
+  待機中: "border-slate-500/30 bg-white/5 text-sub",
+  作業中: "border-sky-400/30 bg-sky-400/10 text-sky-300",
+  レビュー中: "border-violet-400/30 bg-violet-400/10 text-violet-300",
+  CEO確認待ち: "border-amber-400/40 bg-amber-400/10 text-amber-300",
+  問題あり: "border-loss/40 bg-loss/10 text-loss",
+  完了: "border-gain/30 bg-gain/10 text-gain",
 };
 
-const BUILDING_EMOJI: Record<string, string> = {
-  wealth: "🏦",
-  income: "💰",
-  media: "📣",
-  business: "🧪",
-  organization_evolution: "🏢",
-  security: "🛡️",
-};
-
-const STATUS_STYLE: Record<string, string> = {
-  IDLE: "bg-white/5 text-sub",
-  THINKING: "bg-brand/10 text-brand",
-  RESEARCHING: "bg-brand/10 text-brand",
-  EXECUTING: "bg-gain/10 text-gain",
-  REVIEWING: "bg-amber-500/10 text-amber-400",
-  WAITING_APPROVAL: "bg-loss/10 text-loss",
-  COMPLETE: "bg-gain/10 text-gain",
-  ERROR: "bg-loss/10 text-loss",
-};
-
-const yen = (v: number) => `¥${Math.round(v).toLocaleString("ja-JP")}`;
+function PixelEmployee({ working }: { working: boolean }) {
+  return (
+    <div aria-hidden="true" className="relative h-14 w-16 shrink-0 overflow-hidden rounded-lg border border-hairline bg-[#172238]" style={{ imageRendering: "pixelated" }}>
+      <div className="absolute bottom-0 left-0 h-2 w-full bg-[#25334a]" />
+      <div className="absolute left-3 top-2 h-3 w-3 bg-[#e3af83] shadow-[4px_0_0_#e3af83]" />
+      <div className="absolute left-3 top-5 h-6 w-5 bg-[#526b91]" />
+      <div className="absolute left-5 top-5 h-6 w-1 bg-[#dbeafe]" />
+      <div className="absolute bottom-2 right-2 h-5 w-7 border-2 border-[#7d91ad] bg-[#0d1524]" />
+      <div className={`absolute bottom-4 right-4 h-1.5 w-3 bg-sky-300 ${working ? "animate-pulse" : "opacity-40"}`} />
+      <div className="absolute bottom-1 right-0 h-1 w-10 bg-[#9b6c45]" />
+    </div>
+  );
+}
 
 export function WorldView() {
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [world, setWorld] = useState<World | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [world, setWorld] = useState<World>();
+  const [execution, setExecution] = useState<ExecutionSnapshot>();
+  const [busy, setBusy] = useState<string>();
+  const [showExecutionDetails, setShowExecutionDetails] = useState(false);
 
-  const load = useCallback(() => {
-    fetch("/api/company/world")
-      .then((r) => r.json())
-      .then((json: World) => setWorld(json))
-      .catch(() => undefined);
+  const load = useCallback(async () => {
+    try {
+      const [worldResponse, executionResponse] = await Promise.all([
+        fetch("/api/company/world"),
+        fetch("/api/company/execution"),
+      ]);
+      const [worldData, executionData] = await Promise.all([worldResponse.json(), executionResponse.json()]);
+      if (worldResponse.ok) setWorld(worldData);
+      if (executionResponse.ok) setExecution(executionData);
+    } catch {
+      // Keep existing data visible; a manual/event refresh retries.
+    }
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
     window.addEventListener("company-execution-updated", load);
     return () => window.removeEventListener("company-execution-updated", load);
   }, [load]);
 
-  const hasActiveAgent =
-    world?.agents.some((a) =>
-      ["THINKING", "EXECUTING", "REVIEWING"].includes(a.status),
-    ) ?? false;
+  const hasActiveAgent = world?.agents.some((agent) =>
+    ["THINKING", "RESEARCHING", "EXECUTING", "REVIEWING"].includes(agent.status),
+  ) ?? false;
   useEffect(() => {
     if (!hasActiveAgent) return;
-    const interval = window.setInterval(load, 3000);
+    const interval = window.setInterval(() => void load(), 3000);
     return () => window.clearInterval(interval);
   }, [hasActiveAgent, load]);
 
-  const decide = useCallback(
-    async (approval: Approval, decision: "approve" | "reject") => {
-      let reason: string | undefined;
-      if (decision === "reject") {
-        const input = window.prompt(
-          "却下する理由を入力してください（修正して再提出できます）",
-        );
-        if (!input?.trim()) return;
-        reason = input.trim();
-      }
+  const decide = useCallback(async (approval: Approval, decision: "approve" | "reject") => {
+    let reason: string | undefined;
+    if (decision === "reject") {
+      const input = window.prompt("却下理由を入力してください");
+      if (!input?.trim()) return;
+      reason = input.trim();
+    }
+    setBusy(approval.id);
+    try {
+      const response = await fetch(`/api/company/approvals/${approval.id}/${decision}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      const data = await response.json();
+      if (!response.ok) window.alert(data.error ?? "処理に失敗しました");
+      await load();
+    } finally {
+      setBusy(undefined);
+    }
+  }, [load]);
 
-      setBusy(approval.id);
-      try {
-        const res = await fetch(
-          `/api/company/approvals/${approval.id}/${decision}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason }),
-          },
-        );
-        const json = await res.json();
-        if (!res.ok) window.alert(json.error ?? "処理に失敗しました");
-        load();
-      } finally {
-        setBusy(null);
-      }
-    },
-    [load],
-  );
+  if (!world || !execution) return <Skeleton className="h-96 rounded-2xl" />;
+  if (world.error || execution.error) return null;
 
-  if (!world) return <Skeleton className="h-72 rounded-2xl" />;
-  if (world.error) return null;
+  const agentById = new Map(world.agents.map((agent) => [agent.agentId, agent]));
+  const missions = [...execution.state.missions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return (
-    <div className="space-y-3">
-      {/* ─── Board Room（§46） ─── */}
-      <section className="rounded-2xl border border-hairline bg-ink-card p-5">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <p className="text-sm font-semibold text-white">📊 Board Room</p>
+    <div className="space-y-4">
+      <header className="rounded-2xl border border-hairline bg-ink-card px-5 py-4">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-brand">Simple Pixel Office</p>
+        <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h1 className="text-xl font-semibold text-white">AI Company Office</h1>
+            <p className="mt-1 text-xs text-sub">今、誰が、何をしているか</p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-sub"><Coffee className="h-3.5 w-3.5" /> Office online</span>
         </div>
+      </header>
 
-        {world.boardRoom.pendingApprovals.length === 0 ? (
-          <p className="mt-2 text-[11px] text-sub">
-            CEOの判断待ちはありません。
-          </p>
-        ) : (
+      <section aria-labelledby="task-board-heading">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 id="task-board-heading" className="text-sm font-semibold text-white">Task Board</h2>
+          <span className="text-[11px] text-sub">Missionから自動表示</span>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {TASK_BOARD_COLUMNS.map((column) => {
+            const tasks = missions.filter((mission) => projectMissionForUi(mission.status).column === column.id);
+            const visibleTasks = column.id === "done" ? tasks.slice(0, 6) : tasks;
+            return (
+              <div key={column.id} className="min-h-40 rounded-xl border border-hairline bg-ink-card p-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-white">{column.label}</h3>
+                  <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-sub">{tasks.length}</span>
+                </div>
+                <ul className="mt-3 space-y-2">
+                  {visibleTasks.map((mission) => {
+                    const projected = projectMissionForUi(mission.status);
+                    const assignee = mission.assignedAgentId ? agentById.get(mission.assignedAgentId) : undefined;
+                    return (
+                      <li key={mission.id} className="rounded-lg border border-hairline bg-white/[0.025] p-3">
+                        <p className="line-clamp-2 text-xs font-medium leading-relaxed text-white">{mission.title}</p>
+                        <p className="mt-2 truncate text-[10px] text-sub">担当: {assignee?.name ?? "未割当"}</p>
+                        <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] ${STATUS_STYLE[projected.status]}`}>{projected.status}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {visibleTasks.length === 0 && <p className="mt-8 text-center text-[11px] text-sub">タスクなし</p>}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section aria-labelledby="employees-heading" className="rounded-2xl border border-hairline bg-ink-card p-5">
+        <div className="flex items-center justify-between">
+          <h2 id="employees-heading" className="text-sm font-semibold text-white">AI Employees</h2>
+          <span className="inline-flex items-center gap-1 text-[11px] text-sub"><Monitor className="h-3.5 w-3.5" /> {world.agents.length} employees</span>
+        </div>
+        <ul className="mt-4 grid gap-3 md:grid-cols-2">
+          {world.agents.map((agent) => {
+            const label = AGENT_STATUS_LABELS[agent.status] as SimpleUiStatus;
+            const working = ["THINKING", "RESEARCHING", "EXECUTING"].includes(agent.status);
+            return (
+              <li key={agent.agentId} className="flex gap-3 rounded-xl border border-hairline bg-white/[0.025] p-3">
+                <PixelEmployee working={working} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    <p className="truncate text-sm font-medium text-white">{agent.name}</p>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] ${STATUS_STYLE[label]}`}>{label}</span>
+                  </div>
+                  <p className="mt-0.5 truncate text-[11px] text-sub">{agent.role}</p>
+                  <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-slate-300"><span className="text-sub">Current Mission: </span>{agent.currentMissionTitle ?? "なし"}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
+      {world.boardRoom.pendingApprovals.length > 0 && (
+        <section className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.06] p-5">
+          <h2 className="text-sm font-semibold text-amber-200">CEO確認待ち</h2>
           <ul className="mt-3 space-y-2">
             {world.boardRoom.pendingApprovals.map((approval) => (
-              <li
-                key={approval.id}
-                className="rounded-xl border border-loss/25 bg-loss/[0.06] p-3"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-loss">
-                      🔴 CEO DECISION
-                      <span className="rounded-full border border-loss/30 px-1.5 py-0.5">
-                        {approval.riskLevel}
-                      </span>
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-white">
-                      {approval.title}
-                    </p>
-                    <p className="mt-0.5 text-[11px] leading-relaxed text-sub">
-                      {approval.summary}
-                    </p>
-                    <p className="mt-1 text-[10px] text-sub">
-                      依頼: {approval.requestedBy}
-                    </p>
-                  </div>
-                  {/* モバイルでも押しやすい並びにしておく（§51） */}
-                  <div className="flex w-full shrink-0 gap-2 sm:w-auto">
-                    <button
-                      type="button"
-                      disabled={busy === approval.id}
-                      onClick={() => decide(approval, "approve")}
-                      className="flex-1 rounded-lg border border-gain/30 bg-gain/10 px-3 py-2 text-xs font-medium text-gain disabled:opacity-50 sm:flex-none"
-                    >
-                      承認
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy === approval.id}
-                      onClick={() => decide(approval, "reject")}
-                      className="flex-1 rounded-lg border border-loss/30 px-3 py-2 text-xs font-medium text-loss disabled:opacity-50 sm:flex-none"
-                    >
-                      却下
-                    </button>
-                  </div>
+              <li key={approval.id} className="rounded-xl border border-amber-400/20 p-3">
+                <p className="text-sm font-medium text-white">{approval.title}</p>
+                <p className="mt-1 text-[11px] text-sub">{approval.summary}</p>
+                <div className="mt-3 flex gap-2">
+                  <button type="button" disabled={busy === approval.id} onClick={() => void decide(approval, "approve")} className="rounded-lg border border-gain/30 bg-gain/10 px-3 py-2 text-xs text-gain disabled:opacity-50">承認</button>
+                  <button type="button" disabled={busy === approval.id} onClick={() => void decide(approval, "reject")} className="rounded-lg border border-loss/30 px-3 py-2 text-xs text-loss disabled:opacity-50">却下</button>
                 </div>
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      )}
 
-      {/* ─── World Map（§41 §42） ─── */}
-      <section className="rounded-2xl border border-hairline bg-ink-card p-5">
-        <p className="text-sm font-semibold text-white">オフィス</p>
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {world.buildings.map((building) => (
-            <div
-              key={building.goal}
-              className={`rounded-xl border p-3 ${
-                building.activeMissions > 0
-                  ? "border-brand/30 bg-brand/[0.06]"
-                  : "border-hairline bg-white/[0.02]"
-              }`}
-            >
-              <p className="text-xl" aria-hidden>
-                {BUILDING_EMOJI[building.goal] ?? "🏠"}
-              </p>
-              <p className="mt-1 text-[11px] font-medium text-white">
-                {DEPARTMENT_GOAL_LABELS[building.goal]}
-              </p>
-              <p className="mt-1 text-[10px] text-sub">
-                AI社員 {building.agents}・進行中 {building.activeMissions}
-              </p>
-              {building.revenueYen > 0 && (
-                <p className="text-[10px] text-gain">
-                  {yen(building.revenueYen)}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
+      <details
+        className="rounded-2xl border border-hairline bg-ink-card p-4"
+        onToggle={(event) => setShowExecutionDetails(event.currentTarget.open)}
+      >
+        <summary className="cursor-pointer text-sm font-medium text-white">Manual Missionの作成・実行詳細</summary>
+        {showExecutionDetails ? <div className="mt-4"><MissionExecutionPanel /></div> : null}
+      </details>
 
-      <p className="text-xs text-sub">Game: Company XP {world.companyXp.toLocaleString("ja-JP")}</p>
-      {/* ─── AI社員（§44） ─── */}
-      <section className="rounded-2xl border border-hairline bg-ink-card p-5">
-        <p className="text-sm font-semibold text-white">AI社員</p>
-        <ul className="mt-3 space-y-2">
-          {world.agents.map((agent) => (
-            <li key={agent.agentId} className="flex items-center gap-3 text-xs">
-              <span className="text-lg" aria-hidden>
-                🧑‍💻
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium text-white">
-                  <button
-                    className="text-left hover:underline"
-                    onClick={() =>
-                      setSelectedAgent(
-                        agent.agentId === selectedAgent ? null : agent.agentId,
-                      )
-                    }
-                  >
-                    {agent.name}
-                  </button>
-                  <span className="ml-1.5 text-[10px] font-normal text-sub">
-                    Lv.{agent.level}
-                  </span>
-                </span>
-                <span className="block truncate text-[10px] text-sub">
-                  {agent.role}
-                  {agent.currentMissionTitle
-                    ? ` · ${agent.currentMissionTitle}`
-                    : ""}
-                </span>
-              </span>
-              <span className="shrink-0 text-right">
-                <span
-                  className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    STATUS_STYLE[agent.status] ?? STATUS_STYLE.IDLE
-                  }`}
-                >
-                  {AGENT_STATUS_LABELS[agent.status]}
-                </span>
-                {agent.attributedRevenueYen > 0 && (
-                  <span className="mt-0.5 block text-[10px] text-gain">
-                    {yen(agent.attributedRevenueYen)}
-                  </span>
-                )}
-              </span>
-            </li>
+      <details className="rounded-xl border border-hairline bg-ink-card p-4">
+        <summary className="inline-flex cursor-pointer items-center gap-2 text-xs text-sub"><ShieldAlert className="h-4 w-4" /> セキュリティ状況</summary>
+        <p className="mt-3 text-xs text-sub">Block {world.securityCenter.blockedActions.length} · R4 {world.securityCenter.r4Requests.length} · Permission Denied {world.securityCenter.permissionViolations.length}</p>
+        <ul className="mt-2 space-y-1.5">
+          {world.securityCenter.blockedActions.slice(0, 5).map((action) => (
+            <li key={action.id} className="flex gap-1.5 text-[11px] text-loss"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{action.actionType}: {action.reason}</span></li>
           ))}
         </ul>
-      </section>
-
-      <MissionExecutionPanel agentId={selectedAgent ?? undefined} />
-
-      {/* ─── Security Center（§47） ─── */}
-      <section className="rounded-2xl border border-hairline bg-ink-card p-5">
-        <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-white">
-          <ShieldAlert className="h-4 w-4 text-sub" />
-          Security Center
-        </p>
-        <p className="mt-2 text-xs text-sub">
-          R4 {world.securityCenter.r4Requests.length} · Permission Denied{" "}
-          {world.securityCenter.permissionViolations.length} · No Executor / DRY
-          RUN {world.securityCenter.noExecutor?.length ?? 0} · Prompt Injection{" "}
-          {world.securityCenter.injectionAlerts?.length ?? 0} · Protected Core{" "}
-          {world.securityCenter.protectedCoreAttempts?.length ?? 0}
-        </p>
-        {world.securityCenter.blockedActions.length === 0 ? (
-          <p className="mt-2 text-[11px] text-sub">
-            ブロックされたActionはありません。
-          </p>
-        ) : (
-          <ul className="mt-2 space-y-1.5">
-            {world.securityCenter.blockedActions.slice(0, 5).map((action) => (
-              <li
-                key={action.id}
-                className="flex items-start gap-1.5 rounded-lg bg-loss/[0.06] px-3 py-2 text-[11px] text-loss"
-              >
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>
-                  {action.actionType}: {action.reason}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* ─── Organization Center（§48） ─── */}
-      <section className="rounded-2xl border border-hairline bg-ink-card p-5">
-        <div className="flex items-baseline justify-between">
-          <p className="text-sm font-semibold text-white">
-            🏢 Organization Center
-          </p>
-          <Link
-            href="/company/organization"
-            className="text-[11px] text-brand hover:underline"
-          >
-            詳しく見る
-          </Link>
-        </div>
-        {world.organizationCenter.proposals.length === 0 ? (
-          <p className="mt-2 text-[11px] text-sub">いま提案はありません。</p>
-        ) : (
-          <ul className="mt-2 space-y-1">
-            {world.organizationCenter.proposals.slice(0, 5).map((proposal) => (
-              <li key={proposal.id} className="text-[11px] text-sub">
-                <span className="text-slate-300">{proposal.type}</span> ·{" "}
-                {proposal.title}
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="mt-2 text-[10px] text-sub">
-          Learningは提案の根拠として蓄積します。組織やコードの自動変更は行いません。
-        </p>
-      </section>
+      </details>
     </div>
   );
 }

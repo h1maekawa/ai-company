@@ -1,28 +1,35 @@
 "use client";
 
+import { useState } from "react";
 import { PersonalDashboard } from "@/components/company/PersonalDashboard";
 import { RevenuePanel } from "@/components/company/RevenuePanel";
 import { FinancialSettingsPanel } from "@/components/company/FinancialSettingsPanel";
-import { RpgShell } from "@/components/company/RpgShell";
 import { WorldView } from "@/components/company/WorldView";
 
 /**
- * /company — Personal AI Company のCEOダッシュボード（Phase 4 §30 / §31）
+ * /company — CEOが「今、誰が、何をしているか」を把握するトップ画面。
+ * 詳細な経営指標は残すが、初期表示には混ぜない。
  */
 export default function CompanyPage() {
+  const [showManagement, setShowManagement] = useState(false);
+
   return (
     <main className="mx-auto max-w-5xl space-y-4 px-3 py-6 sm:px-6">
-      <PersonalDashboard />
-      {/* 収益とMoney Quest（Phase 5）。最初の1円が未達のうちは最上部寄りに置く */}
-      <RevenuePanel />
-      {/* Phase 6: 承認・AI社員の状態・セキュリティを実データで表示する */}
       <WorldView />
-      <FinancialSettingsPanel />
-      <details>
+      <details
+        className="rounded-xl border border-hairline bg-ink-card p-4"
+        onToggle={(event) => setShowManagement(event.currentTarget.open)}
+      >
         <summary className="cursor-pointer text-xs text-sub">
-          各部門へのナビゲーション
+          経営データ・設定
         </summary>
-        <RpgShell />
+        {showManagement ? (
+          <div className="mt-4 space-y-4">
+            <PersonalDashboard />
+            <RevenuePanel />
+            <FinancialSettingsPanel />
+          </div>
+        ) : null}
       </details>
     </main>
   );
