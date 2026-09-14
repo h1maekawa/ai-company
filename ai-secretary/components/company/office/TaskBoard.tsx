@@ -60,7 +60,7 @@ export function TaskBoard({ tasks }: { tasks: TaskView[] }) {
         <span className="text-[10px] text-sub">Missionをそのまま表示</span>
       </div>
 
-      <div className="mt-3 space-y-3">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {TASK_BOARD_COLUMNS.map((column) => {
           const columnTasks = tasks.filter((task) => task.column === column.id);
           const visible = column.id === "done" ? columnTasks.slice(0, DONE_VISIBLE) : columnTasks;

@@ -13,8 +13,8 @@ const SCREEN: Record<PixelPose, string> = {
  * Animationは状態理解の補助なので、主役にしない（v2方針）。
  * 状態そのものはバッジとテキストが伝え、ここは雰囲気だけを担う。
  */
-export function PixelEmployee({ pose }: { pose: PixelPose }) {
-  return (
+export function PixelEmployee({ pose, compact }: { pose: PixelPose; compact?: boolean }) {
+  const art = (
     <div
       aria-hidden="true"
       className="relative h-14 w-16 shrink-0 overflow-hidden rounded-lg border border-hairline bg-[#172238]"
@@ -56,6 +56,14 @@ export function PixelEmployee({ pose }: { pose: PixelPose }) {
           <div className="absolute bottom-4 left-2 h-1 w-2 bg-[#64748b]/60" />
         </>
       )}
+    </div>
+  );
+
+  /* 一覧では縮小して置く。ドット絵を作り直すと2つの見た目を保守することになる */
+  if (!compact) return art;
+  return (
+    <div aria-hidden="true" className="h-8 w-9 shrink-0 overflow-hidden">
+      <div className="origin-top-left scale-[0.57]">{art}</div>
     </div>
   );
 }

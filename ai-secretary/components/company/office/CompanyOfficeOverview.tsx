@@ -60,10 +60,9 @@ export function CompanyOfficeOverview({
         </dl>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-        <TaskBoard tasks={view.tasks} />
-        <DepartmentPanel departments={view.departments} />
-      </div>
+      {/* 全体像が先。AI社員を横並びにしたので、事業ブロックは全幅で置く */}
+      <DepartmentPanel departments={view.departments} />
+      <TaskBoard tasks={view.tasks} />
     </div>
   );
 }
