@@ -2,7 +2,7 @@ export const RUNTIME_DEFAULTS = Object.freeze({
   missionLeaseTtlMs: 30_000,
   heartbeatIntervalMs: 10_000,
   globalCycleLeaseTtlMs: 55_000,
-  maxMissionsPerCycle: 3,
+  maxMissionsPerCycle: 1,
   maxModelCallsPerCycle: 6,
   maxRuntimeMs: 50_000,
   idempotencyTtlSeconds: 7 * 24 * 60 * 60,

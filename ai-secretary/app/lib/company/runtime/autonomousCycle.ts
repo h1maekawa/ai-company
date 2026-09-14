@@ -10,11 +10,11 @@ import { generateOpportunities, applyRevenueToOpportunities } from "../opportuni
 import { loadOpportunities, saveOpportunities } from "../opportunity/store";
 import { syncRevenueLearning } from "../execution/revenueLearning";
 import type { RevenueEntry } from "../revenueStore";
-import { startMission } from "../execution/service";
 import { runDailyPersonalCompanyReview, runMonthlyPersonalCompanyReview, runWeeklyPersonalCompanyReview } from "../reviews/reviews";
 import { saveReview } from "../reviews/store";
 import { runtimeEnvironment } from "./environment";
 import { runtimeLog } from "./runtimeLog";
+import { autonomousEligibility } from "./autonomousEligibility";
 
 const GLOBAL_LEASE = "__autonomous_cycle__";
 const cycleEvent = (type: "CYCLE_STARTED" | "CYCLE_COMPLETED" | "CYCLE_FAILED", cycleId: string, detail?: string) => {
@@ -35,6 +35,7 @@ export async function runAutonomousCycle(options: { store?: ExecutionStore; maxM
   if (!lease) return { cycleId, status: "SKIPPED" as const, reason: "CYCLE_BUSY", processed: [] };
   await store.appendEvent(cycleEvent("CYCLE_STARTED", cycleId));
   const processed: Array<{ missionId: string; status: string }> = [];
+  const skipped: Array<{ missionId: string; reason: string }> = [];
   try {
     const dayKey = new Date().toISOString().slice(0, 10);
     if (environment.opportunityAutoRefreshEnabled && await store.claimIdempotency("opportunity-refresh", dayKey)) {
@@ -84,22 +85,29 @@ export async function runAutonomousCycle(options: { store?: ExecutionStore; maxM
       });
     }
     await store.save(attentionSnapshot.state, { expectedVersion: attentionSnapshot.version });
+    const snapshot = await store.load();
+    const organization = buildOrganizationSnapshot();
     const pending = (await store.listPendingMissions())
       .sort((a, b) => {
         const rank = (status: string) => ["ACTIVE", "EXECUTING", "REVIEWING", "REPLAN_REQUIRED"].includes(status) ? 0 : 1;
         return rank(a.status) - rank(b.status) || (a.estimatedMinutesToRevenue ?? Number.MAX_SAFE_INTEGER) - (b.estimatedMinutesToRevenue ?? Number.MAX_SAFE_INTEGER);
-      })
-      .slice(0, maxMissions);
-    for (const mission of pending) {
+      });
+    const eligible = pending.filter((mission) => {
+      const decision = autonomousEligibility(snapshot.state, mission, organization.agents);
+      if (decision.eligible) return true;
+      skipped.push({ missionId: mission.id, reason: decision.reason });
+      runtimeLog({ traceId: mission.traceId, missionId: mission.id, cycleId, event: "mission.skip", result: "skipped", error: decision.reason });
+      return false;
+    }).slice(0, maxMissions);
+    for (const mission of eligible) {
       if (Date.now() - startedAt >= maxRuntimeMs) break;
       try {
-        if (["PLANNED", "open"].includes(mission.status)) {
-          const started = await startMission({ missionId: mission.id });
-          if (!started.ok) throw new Error(started.error);
-        }
         await runProductionMission({ missionId: mission.id, idempotencyKey: cycleId + ":" + mission.id, store });
+        const completed = await store.getMission(mission.id);
+        if (completed?.status !== "COMPLETED")
+          throw new Error(`MISSION_${completed?.status ?? "RESULT_MISSING"}`);
         runtimeLog({ traceId: mission.traceId, missionId: mission.id, cycleId, event: "mission.run", result: "success" });
-        processed.push({ missionId: mission.id, status: "OK" });
+        processed.push({ missionId: mission.id, status: "COMPLETED" });
       } catch (error) {
         const reason = error instanceof Error ? error.message : "MISSION_RUN_FAILED";
         runtimeLog({ traceId: mission.traceId, missionId: mission.id, cycleId, event: "mission.run", result: "failure", error });
@@ -131,8 +139,8 @@ export async function runAutonomousCycle(options: { store?: ExecutionStore; maxM
         await store.completeIdempotency("organization-review:" + scope, periodKey, { date: review.date });
       }
     }
-    await store.appendEvent(cycleEvent("CYCLE_COMPLETED", cycleId, JSON.stringify(processed)));
-    return { cycleId, status: "COMPLETED" as const, processed };
+    await store.appendEvent(cycleEvent("CYCLE_COMPLETED", cycleId, JSON.stringify({ processed, skipped })));
+    return { cycleId, status: "COMPLETED" as const, processed, skipped };
   } catch (error) {
     await store.appendEvent(cycleEvent("CYCLE_FAILED", cycleId, error instanceof Error ? error.message : "UNKNOWN"));
     throw error;

@@ -24,6 +24,10 @@ export async function GET(req: NextRequest) {
     runtimeLog({ event: "cron.canary", result: "failure", error });
     return NextResponse.json({ error: error instanceof Error ? error.message : "CANARY_FAILED" }, { status: 503 });
   }
+  if (canary.status !== "PASS") {
+    runtimeLog({ event: "cron.runtime", result: "skipped", error: "CANARY_NOT_PASSED" });
+    return NextResponse.json({ ok: true, canary, skipped: true, reason: "CANARY_NOT_PASSED" });
+  }
   if (!validation.environment.autonomousRuntimeEnabled) {
     runtimeLog({ event: "cron.runtime", result: "skipped" });
     return NextResponse.json({ ok: true, canary, skipped: true, reason: "AUTONOMOUS_RUNTIME_DISABLED" });
