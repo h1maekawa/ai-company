@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { ADMIN_NAV, QUICK_ACTIONS } from "@/app/lib/config/navigation";
+import { CompanyOfficeOverview } from "@/components/company/office/CompanyOfficeOverview";
+import { useCompanyOffice } from "@/components/company/office/useCompanyOffice";
 import { useHomeStatus } from "./useHome";
 
 type Health = {
@@ -13,11 +15,14 @@ type Health = {
 };
 
 /**
- * ホームは部署一覧ではなく「今どういう状態か」と「次に何をするか」を出す場所。
- * 部署名ではなく動詞で並べ、詳しい設定・接続確認は管理へ送る。
+ * ホームは「AI会社が今なにをしているか」→「ではCEOは何をするか」の順で出す。
+ *
+ * 会社の現在地は /company と同じ CompanyOfficeOverview を使う。
+ * 画面ごとに作ると、同じAI社員が別の状態に見えるようになるため（§39）。
  */
 export default function HomePage() {
   const { loading, stats, activity } = useHomeStatus();
+  const { view: office } = useCompanyOffice();
   const [health, setHealth] = useState<Health | null>(null);
 
   useEffect(() => {
@@ -31,13 +36,42 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto min-h-screen max-w-5xl px-5 py-16 sm:px-8 lg:py-10">
-      <header>
-        <p className="text-sm font-medium text-violet-300">AI Company</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">今日は何をしますか？</h1>
-        <p className="mt-2 text-sm text-slate-400">
+      {/* ─── AI Company Office ─────────────────── */}
+      <CompanyOfficeOverview
+        view={office}
+        title="AI Company"
+        subtitle="今、どの事業部の誰が、何をしているか"
+      />
+
+      {/* ─── Quick Action ──────────────────────── */}
+      <section className="mt-10">
+        <h2 className="text-lg font-semibold text-white">今日は何をしますか？</h2>
+        <p className="mt-1 text-sm text-slate-400">
           やりたいことを秘書に話せば、必要な担当につながります。
         </p>
-      </header>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {QUICK_ACTIONS.map((action) => (
+            <Link
+              key={action.id}
+              href={action.href}
+              className={`group flex items-center gap-3 rounded-2xl border p-4 transition hover:-translate-y-0.5 ${
+                action.primary
+                  ? "border-violet-500/50 bg-violet-500/10 hover:bg-violet-500/15"
+                  : "border-slate-800 bg-slate-900/65 hover:border-violet-500/40 hover:bg-slate-900"
+              }`}
+            >
+              <span className="text-2xl" aria-hidden>
+                {action.icon}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-white">{action.label}</span>
+                <span className="block text-xs text-slate-400">{action.hint}</span>
+              </span>
+              <ArrowRight className="h-4 w-4 shrink-0 text-slate-600 group-hover:text-violet-300" />
+            </Link>
+          ))}
+        </div>
+      </section>
 
       {/* ─── 今日の状況 ─────────────────────────── */}
       <section className="mt-8">
@@ -64,33 +98,6 @@ export default function HomePage() {
             [0, 1, 2, 3].map((index) => (
               <div key={index} className="h-[86px] animate-pulse rounded-2xl border border-slate-800 bg-slate-900/50" />
             ))}
-        </div>
-      </section>
-
-      {/* ─── Quick Action ──────────────────────── */}
-      <section className="mt-8">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500">まず何をする？</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {QUICK_ACTIONS.map((action) => (
-            <Link
-              key={action.id}
-              href={action.href}
-              className={`group flex items-center gap-3 rounded-2xl border p-4 transition hover:-translate-y-0.5 ${
-                action.primary
-                  ? "border-violet-500/50 bg-violet-500/10 hover:bg-violet-500/15"
-                  : "border-slate-800 bg-slate-900/65 hover:border-violet-500/40 hover:bg-slate-900"
-              }`}
-            >
-              <span className="text-2xl" aria-hidden>
-                {action.icon}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-white">{action.label}</span>
-                <span className="block text-xs text-slate-400">{action.hint}</span>
-              </span>
-              <ArrowRight className="h-4 w-4 shrink-0 text-slate-600 group-hover:text-violet-300" />
-            </Link>
-          ))}
         </div>
       </section>
 
