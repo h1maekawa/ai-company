@@ -68,3 +68,28 @@ test("cronのpathが重複していない（同一pathの多重登録は二重�
     assert.equal(unique.size, schedules.length, `${p} に同じscheduleが重複しています`);
   }
 });
+
+/**
+ * Phase 10-B.1 Cadence Expansion（2026-09-15）
+ *
+ * Internal Autonomous Runtime は1日3回。頻度を変えるのは実行機会の数だけで、
+ * 1 Cycleあたりの上限（maxMissionsPerCycle = 1）は別管理。
+ */
+const RUNTIME_CRON = "/api/cron/personal-company-runtime";
+const runtimeSchedules = () =>
+  vercel.crons.filter((cron) => cron.path === RUNTIME_CRON).map((cron) => cron.schedule);
+
+test("Internal Autonomous Runtime は1日3回ちょうど登録されている", () => {
+  assert.deepEqual([...runtimeSchedules()].sort(), ["15 11 * * *", "15 21 * * *", "15 4 * * *"].sort());
+});
+
+test("Runtime Healthのschedule表示が vercel.json と食い違わない", () => {
+  // 表示が固定文字列なので、cronを足して表示を直し忘れると嘘を出し続ける
+  const source = fs.readFileSync(path.join(ROOT, "app/lib/company/runtime/operations.ts"), "utf8");
+  const shown = source.match(/nextScheduledRun:\s*"([^"]+)"/)?.[1] ?? "";
+  for (const schedule of runtimeSchedules()) {
+    const [minute, hour] = schedule.trim().split(/\s+/);
+    const hhmm = `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
+    assert.ok(shown.includes(hhmm), `${hhmm} が Runtime Health の表示 "${shown}" に含まれていません`);
+  }
+});
