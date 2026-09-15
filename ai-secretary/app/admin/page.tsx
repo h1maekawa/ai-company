@@ -10,6 +10,17 @@ type Health = {
   total: number;
 };
 
+/** 取得中と取得失敗を同じ値で表すと、障害時に「取得中…」のまま止まって見える */
+type Observability =
+  | { status: "loading" }
+  | {
+      status: "connected";
+      executionStoreVersion: number;
+      runtimeSchemaVersion: string;
+      observedAt: string;
+    }
+  | { status: "unavailable" };
+
 const DOT: Record<string, string> = {
   connected: "text-emerald-400",
   warning: "text-amber-400",
@@ -21,12 +32,27 @@ const DOT: Record<string, string> = {
  */
 export default function AdminPage() {
   const [health, setHealth] = useState<Health | null>(null);
+  const [observability, setObservability] = useState<Observability>({ status: "loading" });
 
   useEffect(() => {
     fetch("/api/system/connections")
       .then((r) => (r.ok ? r.json() : null))
       .then(setHealth)
       .catch(() => setHealth(null));
+    fetch("/api/company/runtime/observability")
+      .then(async (response): Promise<Observability> => {
+        const data = response.ok ? await response.json() : null;
+        return data?.store === "connected"
+          ? {
+              status: "connected",
+              executionStoreVersion: data.executionStoreVersion,
+              runtimeSchemaVersion: data.runtimeSchemaVersion,
+              observedAt: data.observedAt,
+            }
+          : { status: "unavailable" };
+      })
+      .then(setObservability)
+      .catch(() => setObservability({ status: "unavailable" }));
   }, []);
 
   return (
@@ -57,6 +83,36 @@ export default function AdminPage() {
             ))}
           </div>
         )}
+      </section>
+
+      {/* 検証時にExecution Storeが進んだかを見る場所。日常画面には出さない */}
+      <section className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/55 p-5">
+        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Runtime Observability</p>
+        {observability.status === "connected" ? (
+          <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2 text-sm">
+            <div>
+              <dt className="text-xs text-slate-500">Execution Store</dt>
+              <dd className="mt-0.5 font-semibold text-white">v{observability.executionStoreVersion}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">Runtime Schema</dt>
+              <dd className="mt-0.5 font-semibold text-white">{observability.runtimeSchemaVersion}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">Observed</dt>
+              <dd className="mt-0.5 font-semibold text-white">
+                {new Date(observability.observedAt).toLocaleTimeString("ja-JP")}
+              </dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="mt-3 text-xs text-slate-500">
+            {observability.status === "loading" ? "取得中…" : "Execution Storeに接続できません"}
+          </p>
+        )}
+        <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+          Execution Store のバージョンは保存のたびに進む論理revisionです。Mission実行回数とは一致しません。
+        </p>
       </section>
 
       {ADMIN_SECTIONS.map((section) => (
