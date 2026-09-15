@@ -53,6 +53,7 @@ export async function runtimeHealth(store: ExecutionStore) {
     lastCycleCompletedAt: lastCycleEnd?.createdAt ?? null,
     lastCycleStatus: lastCycleEnd?.type === "CYCLE_COMPLETED" ? "success" : lastCycleEnd ? "failure" : "never",
     lastCycleDuration: lastCycleStart && lastCycleEnd ? Math.max(0, Date.parse(lastCycleEnd.createdAt) - Date.parse(lastCycleStart.createdAt)) : null,
-    nextScheduledRun: "daily 21:15 UTC",
+    /* vercel.json の personal-company-runtime と揃えること */
+    nextScheduledRun: "3x daily: 04:15 / 11:15 / 21:15 UTC",
   };
 }
