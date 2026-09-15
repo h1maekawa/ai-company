@@ -58,6 +58,15 @@ test("観測口が接続情報や秘密を返さない", () => {
   assert.doesNotMatch(observabilityCode, /snapshot\.state/);
 });
 
+test("Adminが取得中と取得失敗を区別する", () => {
+  // 両方を同じ値で表すと、Store障害時に「取得中…」のまま止まって見える
+  for (const state of ['"loading"', '"connected"', '"unavailable"']) {
+    assert.ok(admin.includes(state), `Admin が ${state} の状態を持っていません`);
+  }
+  assert.match(admin, /取得中/);
+  assert.match(admin, /接続できません/);
+});
+
 test("Admin だけに表示し、日常画面には出さない", () => {
   assert.match(admin, /Runtime Observability/);
   assert.match(admin, /api\/company\/runtime\/observability/);
