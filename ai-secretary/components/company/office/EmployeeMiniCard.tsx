@@ -11,7 +11,8 @@ import { STATUS_DOT, poseOf, type AgentView } from "./types";
 export function EmployeeMiniCard({ agent }: { agent: AgentView }) {
   const hasDetail = Boolean(agent.role || agent.currentStep || agent.waitReason);
   return (
-    <details className="group rounded-lg border border-hairline bg-white/[0.025] open:bg-white/[0.05]">
+    // 名前が2行になるカードだけ背が高くなるので、行の中で高さを揃える
+    <details className="group h-full rounded-lg border border-hairline bg-white/[0.025] open:bg-white/[0.05]">
       <summary className="flex cursor-pointer list-none items-center gap-2 p-2 [&::-webkit-details-marker]:hidden">
         <PixelEmployee pose={poseOf(agent.status)} compact />
         <span className="min-w-0 flex-1">
