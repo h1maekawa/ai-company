@@ -11,18 +11,29 @@ import { STATUS_DOT, poseOf, type AgentView } from "./types";
 export function EmployeeMiniCard({ agent }: { agent: AgentView }) {
   const hasDetail = Boolean(agent.role || agent.currentStep || agent.waitReason);
   return (
-    <details className="group rounded-lg border border-hairline bg-white/[0.025] open:bg-white/[0.05]">
+    // 名前が2行になるカードだけ背が高くなるので、行の中で高さを揃える
+    <details className="group h-full rounded-lg border border-hairline bg-white/[0.025] open:bg-white/[0.05]">
       <summary className="flex cursor-pointer list-none items-center gap-2 p-2 [&::-webkit-details-marker]:hidden">
         <PixelEmployee pose={poseOf(agent.status)} compact />
         <span className="min-w-0 flex-1">
-          <span title={agent.name} className="block truncate text-[11px] font-medium text-white">{agent.name}</span>
+          {/* モバイルは2列で名前が切れるうえ、hoverが無いのでtitleも読めない。
+              名前だけは2行まで折り返す */}
+          <span title={agent.name} className="block line-clamp-2 text-[11px] font-medium leading-snug text-white">
+            {agent.name}
+          </span>
           <span className="mt-0.5 flex items-center gap-1 text-[10px] text-sub">
             <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[agent.status]}`} />
             <span className="truncate">{agent.status}</span>
           </span>
-          <span title={agent.currentMissionTitle} className="mt-0.5 block truncate text-[10px] text-slate-300">
-            {agent.currentMissionTitle ?? "―"}
-          </span>
+          {/* 「―」だけだと何の行か分からない。無いことは無いと書く。
+              実際のMission名と取り違えないよう、色も落としておく */}
+          {agent.currentMissionTitle ? (
+            <span title={agent.currentMissionTitle} className="mt-0.5 block truncate text-[10px] text-slate-300">
+              {agent.currentMissionTitle}
+            </span>
+          ) : (
+            <span className="mt-0.5 block truncate text-[10px] text-sub">Mission なし</span>
+          )}
         </span>
       </summary>
       {hasDetail && (
