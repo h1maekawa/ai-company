@@ -5,6 +5,8 @@ import { generateMoneyQuests } from "@/app/lib/company/opportunity/moneyQuest";
 import { effectiveEntries, loadRevenueEntries } from "@/app/lib/company/revenueStore";
 import { summarizeRevenue } from "@/app/lib/company/revenue";
 import { loadOpportunities, saveOpportunities } from "@/app/lib/company/opportunity/store";
+import { generateCreatorOpportunitiesFromKnowledge } from "@/app/lib/company/opportunity/knowledgeBridge";
+import { vaultKnowledgeSearch } from "@/app/lib/knowledge/search";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -16,19 +18,31 @@ export const maxDuration = 60;
  */
 export async function GET(): Promise<NextResponse> {
   try {
-    const [entries, existing] = await Promise.all([
+    const organization = buildOrganizationSnapshot();
+    const [entries, existing, knowledge] = await Promise.all([
       loadRevenueEntries().catch(() => []),
       loadOpportunities().catch(() => []),
+      vaultKnowledgeSearch
+        .search({ status: ["promoted", "merged"], limit: 20 })
+        .catch(() => []),
     ]);
     const effective = effectiveEntries(entries);
     const aiRevenue = summarizeRevenue(effective).aiGeneratedYen;
 
     const generated = generateOpportunities({
-      organization: buildOrganizationSnapshot(),
+      organization,
       revenueEntries: entries,
       existing,
     });
-    const opportunities = applyRevenueToOpportunities(generated.opportunities, entries);
+    const knowledgeOpportunities = generateCreatorOpportunitiesFromKnowledge({
+      knowledge,
+      organization,
+      existing,
+    });
+    const opportunities = applyRevenueToOpportunities(
+      [...generated.opportunities, ...knowledgeOpportunities],
+      entries
+    );
 
     const quests = generateMoneyQuests({
       opportunities,

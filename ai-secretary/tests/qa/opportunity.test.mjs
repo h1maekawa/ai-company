@@ -11,6 +11,7 @@ import path from "node:path";
 
 const OUT = path.join(process.env.QA_DIST, "out", "app", "lib", "company");
 const engine = await import(path.join(OUT, "opportunity", "engine.js"));
+const knowledgeBridge = await import(path.join(OUT, "opportunity", "knowledgeBridge.js"));
 const score = await import(path.join(OUT, "opportunity", "score.js"));
 const quest = await import(path.join(OUT, "opportunity", "moneyQuest.js"));
 const types = await import(path.join(OUT, "opportunity", "types.js"));
@@ -244,4 +245,75 @@ test("未確認の収益は学習に含めない", () => {
     revenueEntry({ amountYen: 9999, confirmedByHuman: false }),
   ]);
   assert.equal(learning.pastRevenueByCategory.note, undefined);
+});
+
+/* ─── Knowledge → Creator Opportunity ───────────── */
+
+const knowledgeAsset = (over = {}) => ({
+  path: "memory/knowledge/ai/human-only-boundary.md",
+  id: "human-only-boundary",
+  title: "AI投資判断のHuman Only Boundary",
+  domain: "ai",
+  status: "promoted",
+  importance: 3,
+  managed_by: "human",
+  tags: ["ai", "investment", "security"],
+  updated: "2026-09-19",
+  score: 3,
+  matchedIn: [],
+  snippet: "AIは分析と候補提示までを担当し、証券注文は人間だけが行う。",
+  ...over,
+});
+
+test("正式KnowledgeからNote候補を生成し、本文ではなく正本参照を保持する", () => {
+  const opportunities = knowledgeBridge.generateCreatorOpportunitiesFromKnowledge({
+    knowledge: [knowledgeAsset()],
+    organization: org,
+    now: NOW,
+  });
+
+  assert.equal(opportunities.length, 1);
+  const opportunity = opportunities[0];
+  assert.equal(opportunity.category, "content");
+  assert.equal(opportunity.sourceKnowledge.id, "human-only-boundary");
+  assert.equal(opportunity.sourceKnowledge.path, knowledgeAsset().path);
+  assert.equal(opportunity.summary.includes(knowledgeAsset().snippet), false);
+  assert.equal(opportunity.status, "CANDIDATE");
+});
+
+test("Knowledge固有の収益Evidenceがなければ見込み金額を生成しない", () => {
+  const [opportunity] = knowledgeBridge.generateCreatorOpportunitiesFromKnowledge({
+    knowledge: [knowledgeAsset()],
+    organization: org,
+    now: NOW,
+  });
+  assert.equal(opportunity.expectedRevenue.known, false);
+  assert.match(opportunity.expectedRevenue.reason, /Evidence/);
+});
+
+test("candidate/rejected等の未昇格KnowledgeはOpportunityにしない", () => {
+  const opportunities = knowledgeBridge.generateCreatorOpportunitiesFromKnowledge({
+    knowledge: [knowledgeAsset({ status: "candidate" }), knowledgeAsset({ status: "rejected" })],
+    organization: org,
+    now: NOW,
+  });
+  assert.equal(opportunities.length, 0);
+});
+
+test("同じKnowledgeから再生成してもIDとcreatedAtを維持する", () => {
+  const first = knowledgeBridge.generateCreatorOpportunitiesFromKnowledge({
+    knowledge: [knowledgeAsset()],
+    organization: org,
+    now: NOW,
+  });
+  const second = knowledgeBridge.generateCreatorOpportunitiesFromKnowledge({
+    knowledge: [knowledgeAsset()],
+    organization: org,
+    existing: first,
+    now: new Date(NOW.getTime() + 86_400_000),
+  });
+
+  assert.equal(second[0].id, first[0].id);
+  assert.equal(second[0].createdAt, first[0].createdAt);
+  assert.notEqual(second[0].updatedAt, first[0].updatedAt);
 });

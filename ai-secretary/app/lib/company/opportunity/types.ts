@@ -60,6 +60,17 @@ export type RevenueOpportunity = {
   summary: string;
   category: OpportunityCategory;
 
+  /**
+   * 正式Knowledgeから生成した機会の参照。
+   * Knowledge本文は複製せず、Obsidian/Vault上の正本へリンクする。
+   */
+  sourceKnowledge?: {
+    id: string;
+    path: string;
+    domain: string | null;
+    tags: string[];
+  };
+
   evidence: OpportunityEvidence[];
   expectedRevenue: ExpectedRevenue;
   estimatedEffortMinutes?: number;
