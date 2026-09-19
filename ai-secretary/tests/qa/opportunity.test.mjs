@@ -12,10 +12,12 @@ import path from "node:path";
 const OUT = path.join(process.env.QA_DIST, "out", "app", "lib", "company");
 const engine = await import(path.join(OUT, "opportunity", "engine.js"));
 const knowledgeBridge = await import(path.join(OUT, "opportunity", "knowledgeBridge.js"));
+const creatorRanking = await import(path.join(OUT, "opportunity", "creatorRanking.js"));
 const score = await import(path.join(OUT, "opportunity", "score.js"));
 const quest = await import(path.join(OUT, "opportunity", "moneyQuest.js"));
 const types = await import(path.join(OUT, "opportunity", "types.js"));
 const store = await import(path.join(OUT, "revenueStore.js"));
+const businessCost = await import(path.join(OUT, "businessCost.js"));
 
 const NOW = new Date("2026-09-13T09:00:00Z");
 
@@ -36,6 +38,15 @@ const revenueEntry = (over = {}) =>
     occurredAt: "2026-09-12T00:00:00Z",
     confirmedByHuman: true,
     originAgentId: "personal-note",
+    ...over,
+  });
+
+const costEntry = (over = {}) =>
+  businessCost.createBusinessCostEntry({
+    amountYen: 1_000,
+    category: "production",
+    occurredAt: "2026-09-12T00:00:00Z",
+    confirmedByHuman: true,
     ...over,
   });
 
@@ -343,4 +354,148 @@ test("同じKnowledgeから再生成してもIDとcreatedAtを維持する", () 
   assert.equal(second[0].id, first[0].id);
   assert.equal(second[0].createdAt, first[0].createdAt);
   assert.notEqual(second[0].updatedAt, first[0].updatedAt);
+});
+
+/* ─── Creator Decision Loop ─────────────────────── */
+
+function decisionFixture({ aProfit = 9_000, demand = true } = {}) {
+  const assets = ["a", "b", "c", "d", "e", "f"].map((id) =>
+    knowledgeAsset({ id: `knowledge-${id}`, path: `memory/knowledge/${id}.md`, title: id })
+  );
+  const generated = knowledgeBridge.generateCreatorOpportunitiesFromKnowledge({
+    knowledge: assets,
+    organization: org,
+    now: NOW,
+    demandEvidence: demand
+      ? [{
+          sourcePublishedContentId: "pub-a",
+          sourcePerformanceId: "snap-a",
+          sourceKnowledgeId: "knowledge-a",
+          capturedAt: NOW.toISOString(),
+          coveragePct: 100,
+          engagementCoveragePct: 100,
+          status: "OBSERVED",
+          relativeScore: 95,
+          baselineSampleSize: 10,
+        }]
+      : [],
+  }).map((opportunity) => ({
+    ...opportunity,
+    score:
+      opportunity.sourceKnowledge.id === "knowledge-a"
+        ? 75
+        : opportunity.sourceKnowledge.id === "knowledge-b"
+          ? 80
+          : 60,
+  }));
+  const profits = new Map([
+    ["knowledge-a", aProfit],
+    ["knowledge-c", 100],
+    ["knowledge-d", 200],
+    ["knowledge-e", 300],
+    ["knowledge-f", 400],
+  ]);
+  const revenueEntries = [...profits].map(([sourceKnowledgeId, profitYen]) =>
+    revenueEntry({ sourceKnowledgeId, amountYen: 1_000 + profitYen })
+  );
+  const costEntries = [...profits.keys()].map((sourceKnowledgeId) =>
+    costEntry({ sourceKnowledgeId })
+  );
+  return { generated, revenueEntries, costEntries };
+}
+
+test("Demand + Confirmed ProfitがRankingとMoney Quest Priorityまで接続される", () => {
+  const fixture = decisionFixture();
+  const ranked = creatorRanking.applyCreatorDecisionRanking({
+    opportunities: fixture.generated,
+    revenueEntries: fixture.revenueEntries,
+    costEntries: fixture.costEntries,
+  });
+  const a = ranked.find((item) => item.sourceKnowledge.id === "knowledge-a");
+  const b = ranked.find((item) => item.sourceKnowledge.id === "knowledge-b");
+  assert.equal(a.economicEvidence.profitYen, 9_000);
+  assert.equal(a.rankingBreakdown.economicRankingStatus, "CONFIRMED");
+  assert.ok(a.rankingScore > b.rankingScore);
+  assert.ok(quest.questPriority(a, "GROWTH_MODE") > quest.questPriority(b, "GROWTH_MODE"));
+});
+
+test("高DemandでもConfirmed赤字なら無条件に最優先にしない", () => {
+  const fixture = decisionFixture({ aProfit: -500 });
+  const ranked = creatorRanking.applyCreatorDecisionRanking({
+    opportunities: fixture.generated,
+    revenueEntries: fixture.revenueEntries,
+    costEntries: fixture.costEntries,
+  });
+  const a = ranked.find((item) => item.sourceKnowledge.id === "knowledge-a");
+  const b = ranked.find((item) => item.sourceKnowledge.id === "knowledge-b");
+  assert.equal(a.economicEvidence.profitYen, -500);
+  assert.ok(a.rankingScore < b.rankingScore);
+});
+
+test("高Profit・Demand unknownもEconomic Evidenceで評価できる", () => {
+  const fixture = decisionFixture({ demand: false });
+  const ranked = creatorRanking.applyCreatorDecisionRanking({
+    opportunities: fixture.generated,
+    revenueEntries: fixture.revenueEntries,
+    costEntries: fixture.costEntries,
+  });
+  const a = ranked.find((item) => item.sourceKnowledge.id === "knowledge-a");
+  const b = ranked.find((item) => item.sourceKnowledge.id === "knowledge-b");
+  assert.equal(a.creatorDemand.status, "UNKNOWN");
+  assert.ok(a.rankingScore > b.rankingScore);
+});
+
+test("PARTIAL/少数Economic sampleはRankingへ使わない", () => {
+  const [opportunity] = knowledgeBridge.generateCreatorOpportunitiesFromKnowledge({
+    knowledge: [knowledgeAsset()], organization: org, now: NOW, demandEvidence: [],
+  });
+  const [ranked] = creatorRanking.applyCreatorDecisionRanking({
+    opportunities: [opportunity],
+    revenueEntries: [revenueEntry({ sourceKnowledgeId: "human-only-boundary", confirmedByHuman: false })],
+    costEntries: [costEntry({ sourceKnowledgeId: "human-only-boundary" })],
+  });
+  assert.equal(ranked.economicEvidence.status, "PARTIAL");
+  assert.equal(ranked.rankingBreakdown.economicWeight, 0);
+  assert.equal(ranked.rankingScore, ranked.score);
+});
+
+test("ConfirmedでもEconomic sampleが5件未満ならRankingへ使わない", () => {
+  const [opportunity] = knowledgeBridge.generateCreatorOpportunitiesFromKnowledge({
+    knowledge: [knowledgeAsset()], organization: org, now: NOW, demandEvidence: [],
+  });
+  const [ranked] = creatorRanking.applyCreatorDecisionRanking({
+    opportunities: [opportunity],
+    revenueEntries: [revenueEntry({ sourceKnowledgeId: "human-only-boundary" })],
+    costEntries: [costEntry({ sourceKnowledgeId: "human-only-boundary" })],
+  });
+  assert.equal(ranked.economicEvidence.status, "CONFIRMED");
+  assert.equal(ranked.rankingBreakdown.economicRankingStatus, "INSUFFICIENT_DATA");
+  assert.equal(ranked.rankingBreakdown.economicWeight, 0);
+  assert.equal(ranked.rankingScore, ranked.score);
+});
+
+test("Investment RevenueはCreator Economic Rankingへ入らない", () => {
+  const [opportunity] = knowledgeBridge.generateCreatorOpportunitiesFromKnowledge({
+    knowledge: [knowledgeAsset()], organization: org, now: NOW, demandEvidence: [],
+  });
+  const [ranked] = creatorRanking.applyCreatorDecisionRanking({
+    opportunities: [opportunity],
+    revenueEntries: [revenueEntry({
+      sourceKnowledgeId: "human-only-boundary", sourceType: "investment", amountYen: 999_999,
+    })],
+    costEntries: [],
+  });
+  assert.equal(ranked.economicEvidence.status, "UNKNOWN");
+  assert.equal(ranked.economicEvidence.profitYen, null);
+});
+
+test("Money QuestはrankingScoreを使い、legacyはscoreへfallbackする", () => {
+  const base = engine.generateOpportunities({ organization: org, now: NOW }).opportunities[0];
+  const legacy = { ...base, score: 40, rankingScore: undefined };
+  const ranked = { ...base, score: 40, rankingScore: 90 };
+  assert.ok(quest.questPriority(ranked, "GROWTH_MODE") > quest.questPriority(legacy, "GROWTH_MODE"));
+  assert.equal(
+    quest.questPriority(legacy, "FIRST_REVENUE_MODE"),
+    quest.questPriority({ ...legacy, rankingScore: 40 }, "FIRST_REVENUE_MODE")
+  );
 });

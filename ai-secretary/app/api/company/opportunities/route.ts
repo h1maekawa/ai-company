@@ -7,6 +7,14 @@ import { summarizeRevenue } from "@/app/lib/company/revenue";
 import { loadOpportunities, saveOpportunities } from "@/app/lib/company/opportunity/store";
 import { generateCreatorOpportunitiesFromKnowledge } from "@/app/lib/company/opportunity/knowledgeBridge";
 import { vaultKnowledgeSearch } from "@/app/lib/knowledge/search";
+import { loadPublishedContent, loadPerformance } from "@/app/lib/note/research/store";
+import { buildCreatorDemandEvidence } from "@/app/lib/content/evidence/engine";
+import type { CreatorDemandEvidence } from "@/app/lib/content/evidence/types";
+import { loadBusinessCostEntries } from "@/app/lib/company/businessCostStore";
+import {
+  applyCreatorDecisionRanking,
+  withoutCreatorDecisionReadModel,
+} from "@/app/lib/company/opportunity/creatorRanking";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -19,13 +27,25 @@ export const maxDuration = 60;
 export async function GET(): Promise<NextResponse> {
   try {
     const organization = buildOrganizationSnapshot();
-    const [entries, existing, knowledge] = await Promise.all([
+    const [entries, costs, existing, knowledge, published, performance] = await Promise.all([
       loadRevenueEntries().catch(() => []),
+      loadBusinessCostEntries().catch(() => []),
       loadOpportunities().catch(() => []),
       vaultKnowledgeSearch
         .search({ status: ["promoted", "merged"], limit: 20 })
         .catch(() => []),
+      loadPublishedContent().catch(() => []),
+      loadPerformance().catch(() => null),
     ]);
+    let demandEvidence: CreatorDemandEvidence[] = [];
+    try {
+      demandEvidence = buildCreatorDemandEvidence(
+        published,
+        performance?.snapshots ?? []
+      );
+    } catch (error) {
+      console.warn("[api/company/opportunities] Demand Evidence生成をskip:", error);
+    }
     const effective = effectiveEntries(entries);
     const aiRevenue = summarizeRevenue(effective).aiGeneratedYen;
 
@@ -38,11 +58,17 @@ export async function GET(): Promise<NextResponse> {
       knowledge,
       organization,
       existing,
+      demandEvidence,
     });
-    const opportunities = applyRevenueToOpportunities(
+    const revenueApplied = applyRevenueToOpportunities(
       [...generated.opportunities, ...knowledgeOpportunities],
       entries
     );
+    const opportunities = applyCreatorDecisionRanking({
+      opportunities: revenueApplied,
+      revenueEntries: entries,
+      costEntries: costs,
+    });
 
     const quests = generateMoneyQuests({
       opportunities,
@@ -50,7 +76,9 @@ export async function GET(): Promise<NextResponse> {
     });
 
     // 生成結果を保存する（重複を防ぐため次回は既存として渡される）
-    await saveOpportunities(opportunities).catch(() => undefined);
+    await saveOpportunities(
+      opportunities.map(withoutCreatorDecisionReadModel)
+    ).catch(() => undefined);
 
     return NextResponse.json({
       mode: generated.mode,

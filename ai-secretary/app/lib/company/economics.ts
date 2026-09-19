@@ -16,6 +16,7 @@ export type EconomicScope =
   | { type: "mission"; id: string }
   | { type: "opportunity"; id: string }
   | { type: "content"; id: string }
+  | { type: "knowledge"; id: string }
   | { type: "business"; id: string };
 
 export type EconomicOutcome = {
@@ -47,6 +48,7 @@ function matchesScope(
     missionId?: string;
     opportunityId?: string;
     contentId?: string;
+    sourceKnowledgeId?: string;
     businessId?: string;
   },
   scope: EconomicScope
@@ -55,6 +57,7 @@ function matchesScope(
   if (scope.type === "mission") return entry.missionId === scope.id;
   if (scope.type === "opportunity") return entry.opportunityId === scope.id;
   if (scope.type === "content") return entry.contentId === scope.id;
+  if (scope.type === "knowledge") return entry.sourceKnowledgeId === scope.id;
   return entry.businessId === scope.id;
 }
 

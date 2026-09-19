@@ -2,10 +2,9 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { loadPerformance, loadPublishedContent } from "@/app/lib/note/research/store";
 import { loadLedger } from "@/app/lib/content/monetization/store";
-import { latestSnapshotByContent } from "@/app/lib/content/monetization/metrics";
 import {
+  buildCreatorDemandEvidence,
   buildRelationFunnel,
-  createDemandEvidence,
 } from "@/app/lib/content/evidence/engine";
 import {
   appendContentContribution,
@@ -30,19 +29,10 @@ export async function GET(): Promise<NextResponse> {
       loadLedger(),
       loadContentEvidence(),
     ]);
-    const xPublished = published.filter(
-      (content) => content.channel === "x" && content.status === "published"
+    const demandEvidence = buildCreatorDemandEvidence(
+      published,
+      performance.snapshots ?? []
     );
-    const latest = latestSnapshotByContent(performance.snapshots ?? []);
-    const baseline = xPublished
-      .map((content) => latest.get(content.id))
-      .filter((snapshot): snapshot is NonNullable<typeof snapshot> => Boolean(snapshot));
-    const demandEvidence = xPublished.flatMap((content) => {
-      const snapshot = latest.get(content.id);
-      return snapshot
-        ? [createDemandEvidence({ published: content, snapshot, baselineSnapshots: baseline })]
-        : [];
-    });
     const funnels = evidence.relations.map((relation) => ({
       relationId: relation.id,
       steps: buildRelationFunnel({
