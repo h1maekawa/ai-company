@@ -77,7 +77,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       originWorkflowId: body.originWorkflowId,
       missionId: body.missionId,
       opportunityId: body.opportunityId,
+      contentId: body.contentId,
+      sourceKnowledgeId: body.sourceKnowledgeId,
       businessId: body.businessId,
+      attributionType: body.attributionType,
       note: body.note,
     });
 

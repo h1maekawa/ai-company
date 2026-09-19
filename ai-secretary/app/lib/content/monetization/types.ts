@@ -2,7 +2,7 @@
  * Monetization Core — 「何を書くか」だけでなく「何のために投稿するか」を持たせるための型。
  *
  * 原則:
- *  - Revenueは manual / 正式API / import のみがFact。AIは生成しない
+ *  - Revenue Eventはチャネル証跡。Business Revenueの会計正本はCompany Revenue Ledger
  *  - Draftは公開ではない。PublishedContentのみが本人の正式な発信
  *  - 取得できない数値は0ではなくundefined/null
  *  - 同じRevenueEventを複数Contentへ二重計上しない（1 RevenueEvent = 1 publishedContentId）
@@ -233,11 +233,15 @@ export type RevenueType =
   | "other";
 
 /**
- * Revenueの唯一の正データ。AIは生成禁止。1件のRevenueEventは必ず1つのpublishedContentIdへのみ属する
+ * Contentチャネル内のRevenue evidence / attribution event。会社全体の会計SSOTは
+ * Company Revenue Ledgerであり、連携時はcompanyRevenueIdで参照する。AIは生成禁止。
+ * 1件のRevenueEventは必ず1つのpublishedContentIdへのみ属する
  * （複数Contentへの二重計上を防ぐため、配分が必要な場合は amount を按分して複数件に分けて記録する）。
  */
 export type RevenueEvent = {
   id: string;
+  /** Company Revenue Ledgerの正本Entry。未連携ならundefined */
+  companyRevenueId?: string;
   publishedContentId: string;
   offerId?: string;
   ctaId?: string;

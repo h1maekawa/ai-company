@@ -33,10 +33,18 @@ const REVENUE_FILES = [
   "app/lib/company/revenueMode.ts",
   "app/lib/company/financialSettings.ts",
 ];
+const ECONOMIC_FILES = [
+  "app/lib/company/businessCost.ts",
+  "app/lib/company/businessCostStore.ts",
+  "app/lib/company/economics.ts",
+];
 
 test("Phase 5 のファイルが存在する（テストが空振りしていない）", () => {
   assert.ok(OPPORTUNITY_FILES.length >= 4, `${OPPORTUNITY_FILES.length}件しかありません`);
   for (const file of REVENUE_FILES) {
+    assert.ok(fs.existsSync(path.join(ROOT, file)), `${file} がありません`);
+  }
+  for (const file of ECONOMIC_FILES) {
     assert.ok(fs.existsSync(path.join(ROOT, file)), `${file} がありません`);
   }
 });
@@ -101,6 +109,24 @@ test("【重要】収益履歴を上書きする実装がない（Append Only・
   // 追記のみ。既存配列の要素を書き換えるコードを置かない
   assert.match(source, /const next = \[\.\.\.entries, entry\]/);
   assert.doesNotMatch(source, /entries\[\w+\]\s*=/);
+});
+
+test("【重要】Business Cost履歴もAppend Onlyである", () => {
+  const source = read("app/lib/company/businessCostStore.ts");
+  assert.match(source, /const next = \[\.\.\.entries, entry\]/);
+  assert.doesNotMatch(source, /entries\[\w+\]\s*=/);
+});
+
+test("【重要】Creator Economic OutcomeはInvestment Revenueを除外する", () => {
+  const source = read("app/lib/company/economics.ts");
+  assert.match(source, /sourceType !== "investment"/);
+  assert.match(source, /confirmedByHuman/);
+});
+
+test("Content Revenue EventはCompany Revenue Ledgerを参照できる", () => {
+  const source = read("app/lib/content/monetization/types.ts");
+  assert.match(source, /companyRevenueId\?: string/);
+  assert.match(source, /Company Revenue Ledger/);
 });
 
 test("【重要】Phase 5 は EmployeeAgent の権限を変更しない", () => {
