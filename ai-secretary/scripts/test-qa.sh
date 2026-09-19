@@ -65,6 +65,7 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/opportunity/types.ts",
     "$PWD/app/lib/company/opportunity/score.ts",
     "$PWD/app/lib/company/opportunity/engine.ts",
+    "$PWD/app/lib/company/opportunity/knowledgeBridge.ts",
     "$PWD/app/lib/company/opportunity/moneyQuest.ts",
     "$PWD/app/lib/company/execution/actionTypes.ts",
     "$PWD/app/lib/company/execution/actionGateway.ts",
