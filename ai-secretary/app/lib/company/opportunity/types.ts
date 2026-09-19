@@ -88,6 +88,17 @@ export type RevenueOpportunity = {
   /** スコアの何割を実測から出せたか（0〜100） */
   coveragePct: number;
 
+  /** 既存scoreを変えず、実観測X需要を別軸で接続する。 */
+  creatorDemand?: {
+    status: "OBSERVED" | "INSUFFICIENT_DATA" | "UNKNOWN";
+    score?: number;
+    coveragePct: number;
+    evidenceCount: number;
+    sourcePublishedContentIds: string[];
+  };
+  /** base scoreとObserved Demandを明示的に合成した並び替え用スコア */
+  rankingScore?: number;
+
   status: OpportunityStatus;
   /** §55 継続的に稼げるなら後でBusiness Unitへ昇格しうる */
   businessCandidate: boolean;

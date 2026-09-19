@@ -129,6 +129,32 @@ test("Content Revenue EventはCompany Revenue Ledgerを参照できる", () => {
   assert.match(source, /Company Revenue Ledger/);
 });
 
+test("【重要】Cross-content ContributionはRevenueを複製せずID参照だけを持つ", () => {
+  const types = read("app/lib/content/evidence/types.ts");
+  assert.match(types, /companyRevenueId: string/);
+  assert.match(types, /contributionType: Extract<AttributionType, "assisted">/);
+  assert.doesNotMatch(types, /revenueYen:/);
+
+  const engine = read("app/lib/content/evidence/engine.ts");
+  assert.doesNotMatch(engine, /appendRevenueEntry|createRevenueEntry/);
+});
+
+test("【重要】Demand EvidenceはPerformance参照とCoverageを必須にする", () => {
+  const types = read("app/lib/content/evidence/types.ts");
+  assert.match(types, /sourcePerformanceId: string/);
+  assert.match(types, /coveragePct: number/);
+  assert.match(types, /INSUFFICIENT_DATA/);
+});
+
+test("【重要】Content EvidenceのWrite APIはProduction Guardと冪等性を通る", () => {
+  const route = read("app/api/content/evidence/route.ts");
+  assert.match(route, /assertProductionMutationAllowed\(\)/);
+  assert.match(route, /claimIdempotency/);
+  assert.match(route, /completeIdempotency/);
+  assert.match(route, /confirmedByHuman !== true/);
+  assert.doesNotMatch(route, /appendRevenueEntry|createRevenueEntry/);
+});
+
 test("【重要】Phase 5 は EmployeeAgent の権限を変更しない", () => {
   for (const file of [...OPPORTUNITY_FILES, ...REVENUE_FILES]) {
     assert.doesNotMatch(read(file), /\.permissions\s*=|denyAllPermissions\(\)\s*=/,

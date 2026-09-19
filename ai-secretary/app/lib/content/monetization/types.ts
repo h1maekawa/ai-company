@@ -138,6 +138,10 @@ export type PublishedContent = {
   contentId: string;
   draftId?: string;
   articleSessionId?: string;
+  /** Knowledge本文は複製せず、正本IDだけを追跡する */
+  sourceKnowledgeId?: string;
+  /** Knowledgeから生成されたCreator Opportunityへの参照 */
+  opportunityId?: string;
 
   title: string;
   bodySummary?: string;

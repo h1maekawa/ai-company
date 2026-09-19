@@ -6,6 +6,7 @@
 
 import type { ContentGoal } from "../../note/research/types";
 import { ContentRecommendation, createRecommendation, Learning } from "./types";
+import type { CreatorDemandEvidence } from "../evidence/types";
 
 export type RecommendationChannel = ContentRecommendation["channel"];
 
@@ -30,4 +31,30 @@ export function generateRecommendationsFromLearnings(
         priority: l.confidence === "high" ? 1 : l.confidence === "medium" ? 2 : 3 + index * 0,
       })
     );
+}
+
+/** Observed値だけをObservationへ置き、AI解釈はcandidateのまま返す。 */
+export function createDemandLearningCandidate(
+  evidence: CreatorDemandEvidence,
+  interpretation: string,
+  actionCandidate: string
+): Learning {
+  const observed = [
+    evidence.impressions === undefined ? null : `impressions=${evidence.impressions}`,
+    evidence.engagements === undefined ? null : `engagements=${evidence.engagements}`,
+    evidence.linkClicks === undefined ? null : `linkClicks=${evidence.linkClicks}`,
+    evidence.relativeScore === undefined ? null : `past-X-percentile=${evidence.relativeScore}`,
+  ].filter((value): value is string => value !== null);
+  return {
+    id: `learn_demand_${evidence.sourcePerformanceId}`,
+    period: evidence.capturedAt.slice(0, 10),
+    sourceContentIds: [evidence.sourcePublishedContentId],
+    sourcePerformanceIds: [evidence.sourcePerformanceId],
+    observation: observed.join(" / ") || "観測可能なDemand指標なし",
+    interpretation,
+    confidence: evidence.status === "OBSERVED" ? "medium" : "low",
+    actionCandidate,
+    status: "candidate",
+    createdAt: evidence.capturedAt,
+  };
 }

@@ -15,12 +15,14 @@ import {
   type OpportunityEvidence,
   type RevenueOpportunity,
 } from "./types";
+import type { CreatorDemandEvidence } from "../../content/evidence/types";
 
 export type GenerateKnowledgeOpportunitiesOptions = {
   knowledge: KnowledgeHit[];
   organization: OrganizationSnapshot;
   existing?: RevenueOpportunity[];
   now?: Date;
+  demandEvidence?: CreatorDemandEvidence[];
 };
 
 const PRESERVED_STATUSES = new Set([
@@ -57,18 +59,12 @@ export function generateCreatorOpportunitiesFromKnowledge(
         businessModel: "paid-note",
       });
       const previous = existingByFingerprint.get(fingerprint);
-      const expectedRevenue = {
-        known: false as const,
-        reason: "このKnowledge固有の販売実績・需要Evidenceがないため見積もれません",
-      };
-      const scored = scoreOpportunity({
-        expectedRevenue,
-        estimatedEffortMinutes: 90,
-        existingAssetMatch: 1,
-        automationPotential: 0.6,
-        initialCostYen: 0,
-        scalability: 0.6,
-      });
+      const demandEvidence = (options.demandEvidence ?? []).filter(
+        (item) => item.sourceKnowledgeId === (asset.id || asset.path)
+      );
+      const observedDemand = demandEvidence.filter(
+        (item) => item.status === "OBSERVED" && typeof item.relativeScore === "number"
+      );
       const evidence: OpportunityEvidence[] = [
         {
           label: "正式Knowledge",
@@ -89,6 +85,58 @@ export function generateCreatorOpportunitiesFromKnowledge(
           source: "Knowledge frontmatter",
         },
       ];
+      const demandScore = observedDemand.length > 0
+        ? Math.round(
+            observedDemand.reduce((sum, item) => sum + (item.relativeScore ?? 0), 0) /
+              observedDemand.length
+          )
+        : undefined;
+      const demandCoverage = demandEvidence.length > 0
+        ? Math.round(
+            demandEvidence.reduce((sum, item) => sum + item.coveragePct, 0) /
+              demandEvidence.length
+          )
+        : 0;
+      const expectedRevenue = {
+        known: false as const,
+        reason:
+          demandEvidence.length > 0
+            ? "X需要は観測済みですが販売実績ではないため、収益額へ変換しません"
+            : "このKnowledge固有の販売実績・需要Evidenceがないため見積もれません",
+      };
+      const scored = scoreOpportunity({
+        expectedRevenue,
+        estimatedEffortMinutes: 90,
+        existingAssetMatch: 1,
+        automationPotential: 0.6,
+        initialCostYen: 0,
+        scalability: 0.6,
+      });
+      // Demandは補助信号。CoverageとEvidence件数で重みを抑え、既存scoreを上書きしない。
+      const demandWeight =
+        demandScore === undefined
+          ? 0
+          : (demandCoverage / 100) * Math.min(1, observedDemand.length / 3);
+      const rankingScore = Math.round(
+        (scored.score + (demandScore ?? 0) * demandWeight) / (1 + demandWeight)
+      );
+      const creatorDemand =
+        options.demandEvidence === undefined && previous?.creatorDemand
+          ? previous.creatorDemand
+          : {
+              status:
+                demandScore !== undefined
+                  ? ("OBSERVED" as const)
+                  : demandEvidence.length > 0
+                    ? ("INSUFFICIENT_DATA" as const)
+                    : ("UNKNOWN" as const),
+              score: demandScore,
+              coveragePct: demandCoverage,
+              evidenceCount: demandEvidence.length,
+              sourcePublishedContentIds: [
+                ...new Set(demandEvidence.map((item) => item.sourcePublishedContentId)),
+              ],
+            };
 
       return {
         id:
@@ -114,6 +162,11 @@ export function generateCreatorOpportunitiesFromKnowledge(
         score: scored.score,
         scoreBreakdown: scored.breakdown,
         coveragePct: scored.coveragePct,
+        creatorDemand,
+        rankingScore:
+          options.demandEvidence === undefined && previous?.rankingScore !== undefined
+            ? previous.rankingScore
+            : rankingScore,
         status:
           previous && PRESERVED_STATUSES.has(previous.status)
             ? previous.status
