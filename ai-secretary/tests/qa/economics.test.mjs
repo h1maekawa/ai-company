@@ -266,3 +266,15 @@ test("Assisted Contributorを追加してもEconomic Revenue総額は増えな�
   assert.equal(before.revenueYen, 1_000);
   assert.equal(after.revenueYen, 1_000);
 });
+
+test("Knowledge scopeでConfirmed Revenue/Cost/Profitを導出する", () => {
+  const outcome = economics.projectEconomicOutcome({
+    revenueEntries: [revenue({ sourceKnowledgeId: "knowledge-a", amountYen: 10_000 })],
+    costEntries: [cost({ sourceKnowledgeId: "knowledge-a", amountYen: 1_000 })],
+    scope: { type: "knowledge", id: "knowledge-a" },
+  });
+  assert.equal(outcome.revenueYen, 10_000);
+  assert.equal(outcome.costYen, 1_000);
+  assert.equal(outcome.profitYen, 9_000);
+  assert.equal(outcome.roi, 9);
+});

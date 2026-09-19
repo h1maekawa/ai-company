@@ -98,6 +98,28 @@ export type RevenueOpportunity = {
   };
   /** base scoreとObserved Demandを明示的に合成した並び替え用スコア */
   rankingScore?: number;
+  /** Ledgerから都度導出する過去実績。Opportunity Storeは正本ではない。 */
+  economicEvidence?: {
+    status: "CONFIRMED" | "PARTIAL" | "UNKNOWN";
+    revenueYen: number | null;
+    costYen: number | null;
+    profitYen: number | null;
+    roi: number | null;
+    sourceScope: "knowledge" | "opportunity";
+    confirmedRevenueEntries: number;
+    confirmedCostEntries: number;
+  };
+  rankingBreakdown?: {
+    baseScore: number;
+    demandScore?: number;
+    demandWeight: number;
+    economicScore?: number;
+    economicWeight: number;
+    economicRankingStatus: "CONFIRMED" | "INSUFFICIENT_DATA" | "PARTIAL" | "UNKNOWN";
+    economicSampleSize: number;
+  };
+  /** Creator Opportunity内での順位。会計値やRevenue予測ではない。 */
+  creatorRank?: number;
 
   status: OpportunityStatus;
   /** §55 継続的に稼げるなら後でBusiness Unitへ昇格しうる */
