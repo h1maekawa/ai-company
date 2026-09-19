@@ -210,6 +210,8 @@ test("半導体テーマ87.69%でMU追加購入0", () => {
 test("テーマ外銘柄（KO）はテーマ上限の影響を受けない", () => {
   const r = evaluate(baseInput(), DEFAULT_POLICY);
   assert.equal(r.decision, "BUY_CANDIDATE");
+  assert.equal(r.executionAuthority, "HUMAN_ONLY");
+  assert.equal(r.aiExecutionAllowed, false);
   assert.ok(r.maxShares > 0);
   assert.ok(!r.blockedBy.includes("theme_limit"));
 });
@@ -324,7 +326,63 @@ test("スプレッド既知で実資金モードの短期はexecutionBlockedに�
   );
   assert.equal(r.decision, "BUY_CANDIDATE");
   assert.equal(r.executionBlocked, false);
+  assert.equal(r.executionAuthority, "HUMAN_ONLY");
+  assert.equal(r.aiExecutionAllowed, false);
   assert.equal(r.assumedRoundTripCostPct, null); // 実資金時はnull
+});
+
+test("全Recommendation種別で証券注文権限は常にHUMAN_ONLY", () => {
+  const cases = [
+    ["BUY_CANDIDATE", baseInput()],
+    [
+      "ADD_CANDIDATE",
+      baseInput({
+        portfolio: { ...baseInput().portfolio, isHeld: true },
+        thesis: { ...baseInput().thesis, hasNewCatalyst: true },
+      }),
+    ],
+    [
+      "HOLD",
+      baseInput({
+        portfolio: { ...baseInput().portfolio, isHeld: true },
+        scores: { growth: 18, moat: 18, financial: 13, valuation: 8, mgmt: 8, fcf: 5 },
+      }),
+    ],
+    [
+      "TRIM_CANDIDATE",
+      baseInput({
+        portfolio: { ...baseInput().portfolio, isHeld: true },
+        scores: { growth: 12, moat: 11, financial: 9, valuation: 7, mgmt: 6, fcf: 5 },
+      }),
+    ],
+    [
+      "EXIT_CANDIDATE",
+      baseInput({
+        horizon: "short",
+        portfolio: { ...baseInput().portfolio, isHeld: true },
+        scores: { volume: 8, trend: 7, materials: 6, liquidity: 5, rr: 4, env: 3 },
+      }),
+    ],
+    [
+      "WAIT",
+      baseInput({
+        scores: { growth: 18, moat: 18, financial: 13, valuation: 8, mgmt: 8, fcf: 5 },
+      }),
+    ],
+    [
+      "WAIT_DATA",
+      baseInput({
+        capacity: { investableJpy: 50_000, calculatedAt: STALE, confidence: "high", missingData: [] },
+      }),
+    ],
+  ];
+
+  for (const [expectedDecision, input] of cases) {
+    const r = evaluate(input, DEFAULT_POLICY);
+    assert.equal(r.decision, expectedDecision);
+    assert.equal(r.executionAuthority, "HUMAN_ONLY", expectedDecision);
+    assert.equal(r.aiExecutionAllowed, false, expectedDecision);
+  }
 });
 
 // ─── §9.1: 損失予算はmin()へ「最大損失額÷撤退率」で入る ─────

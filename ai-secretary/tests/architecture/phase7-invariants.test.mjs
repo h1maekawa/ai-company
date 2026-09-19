@@ -12,7 +12,7 @@ test("Phase 6 Protected Core and invariant tests retain exact main content", () 
     "app/lib/company/execution/approval.ts":
       "82aa45db01701bb50dbc9dde67f78731a20bb06b622aac3bd88b41cf66105022",
     "tests/architecture/phase6-invariants.test.mjs":
-      "ae3ea2f9b80583d6daea93d3a4d206c93709b97cb33b14bb204f5385d00626bd",
+      "d553c2d9d185812be4611d5e7a2a7a6f8b9c28888393bdd207670765eede913d",
   };
   for (const [file, hash] of Object.entries(expected))
     assert.equal(

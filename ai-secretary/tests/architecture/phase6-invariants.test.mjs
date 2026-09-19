@@ -50,6 +50,16 @@ test("【重要】証券取引のExecutorが存在しない（§56）", () => {
   }
 });
 
+test("【重要】Fund Recommendationは人間のみが実行できる", () => {
+  const engine = read("app/lib/fund/engine.ts");
+  assert.match(engine, /executionAuthority:\s*"HUMAN_ONLY"/);
+  assert.match(engine, /aiExecutionAllowed:\s*false/);
+
+  const api = read("app/api/fund/evaluate/route.ts");
+  assert.match(api, /executionAuthority:\s*"HUMAN_ONLY"/);
+  assert.match(api, /aiExecutionAllowed:\s*false/);
+});
+
 test("【重要】GitHub書き込みのExecutorが存在しない（§55）", () => {
   for (const file of EXECUTION_FILES) {
     assert.doesNotMatch(read(file), /createPullRequest|createRef|child_process|execSync/,
