@@ -55,6 +55,8 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/businessCost.ts",
     "$PWD/app/lib/company/businessCostStore.ts",
     "$PWD/app/lib/company/economics.ts",
+    "$PWD/app/lib/content/evidence/types.ts",
+    "$PWD/app/lib/content/evidence/engine.ts",
     "$PWD/app/lib/company/personalMetrics.ts",
     "$PWD/app/lib/company/revenue.ts",
     "$PWD/app/lib/company/health.ts",

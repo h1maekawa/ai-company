@@ -41,6 +41,9 @@ npx tsc \
   app/lib/content/monetization/types.ts \
   app/lib/content/monetization/store.ts \
   app/lib/content/monetization/metrics.ts \
+  app/lib/content/evidence/types.ts \
+  app/lib/content/evidence/engine.ts \
+  app/lib/content/evidence/store.ts \
   app/lib/content/learning/types.ts \
   app/lib/content/learning/store.ts \
   app/lib/content/learning/engine.ts \

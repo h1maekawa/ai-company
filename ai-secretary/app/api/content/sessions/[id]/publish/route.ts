@@ -36,6 +36,8 @@ export async function POST(
       contentId: draft.id,
       draftId: draft.id,
       articleSessionId: session.id,
+      sourceKnowledgeId: body.sourceKnowledgeId,
+      opportunityId: body.opportunityId,
       title: draft.title,
       bodySummary: draft.freeSection.slice(0, 200),
       url: url || undefined,

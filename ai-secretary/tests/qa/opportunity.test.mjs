@@ -289,6 +289,33 @@ test("Knowledge固有の収益Evidenceがなければ見込み金額を生成し
   });
   assert.equal(opportunity.expectedRevenue.known, false);
   assert.match(opportunity.expectedRevenue.reason, /Evidence/);
+  assert.equal(opportunity.creatorDemand.status, "UNKNOWN");
+  assert.equal(opportunity.rankingScore, opportunity.score);
+});
+
+test("Observed X Demandは別軸でRankingへ反映し、Expected Revenueはunknownのまま", () => {
+  const [opportunity] = knowledgeBridge.generateCreatorOpportunitiesFromKnowledge({
+    knowledge: [knowledgeAsset()],
+    organization: org,
+    now: NOW,
+    demandEvidence: [
+      {
+        sourcePublishedContentId: "pub-x-1",
+        sourcePerformanceId: "snap-x-1",
+        sourceKnowledgeId: "human-only-boundary",
+        capturedAt: NOW.toISOString(),
+        coveragePct: 100,
+        engagementCoveragePct: 100,
+        status: "OBSERVED",
+        relativeScore: 95,
+        baselineSampleSize: 10,
+      },
+    ],
+  });
+  assert.equal(opportunity.expectedRevenue.known, false);
+  assert.equal(opportunity.creatorDemand.status, "OBSERVED");
+  assert.equal(opportunity.creatorDemand.score, 95);
+  assert.ok(opportunity.rankingScore > opportunity.score);
 });
 
 test("candidate/rejected等の未昇格KnowledgeはOpportunityにしない", () => {

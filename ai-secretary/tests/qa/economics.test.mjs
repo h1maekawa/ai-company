@@ -6,6 +6,9 @@ const OUT = path.join(process.env.QA_DIST, "out", "app", "lib", "company");
 const revenueStore = await import(path.join(OUT, "revenueStore.js"));
 const costs = await import(path.join(OUT, "businessCost.js"));
 const economics = await import(path.join(OUT, "economics.js"));
+const evidenceEngine = await import(
+  path.join(process.env.QA_DIST, "out", "app", "lib", "content", "evidence", "engine.js")
+);
 const NOW = new Date("2026-09-19T00:00:00Z");
 
 const revenue = (over = {}) =>
@@ -238,4 +241,28 @@ test("Direct RevenueとAssisted Revenueを合計を崩さず分離できる", ()
   assert.equal(outcome.directRevenueYen, 70_000);
   assert.equal(outcome.assistedRevenueYen, 30_000);
   assert.equal(outcome.revenueYen, 100_000);
+});
+
+test("Assisted Contributorを追加してもEconomic Revenue総額は増えない", () => {
+  const entries = [revenue({ amountYen: 1_000 })];
+  const before = economics.projectEconomicOutcome({
+    revenueEntries: entries,
+    costEntries: [],
+    costKnown: true,
+  });
+  const referenced = evidenceEngine.referencedRevenueIds([
+    {
+      companyRevenueId: entries[0].id,
+      sourcePublishedContentId: "pub-x",
+      targetPublishedContentId: "pub-note",
+    },
+  ]);
+  const after = economics.projectEconomicOutcome({
+    revenueEntries: entries,
+    costEntries: [],
+    costKnown: true,
+  });
+  assert.deepEqual(referenced, [entries[0].id]);
+  assert.equal(before.revenueYen, 1_000);
+  assert.equal(after.revenueYen, 1_000);
 });

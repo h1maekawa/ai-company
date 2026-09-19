@@ -33,6 +33,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       id: `pub_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
       channel,
       contentId,
+      sourceKnowledgeId: body.sourceKnowledgeId,
+      opportunityId: body.opportunityId,
       title,
       bodySummary: body.bodySummary,
       url: body.url || undefined,
