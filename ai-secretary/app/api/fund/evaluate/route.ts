@@ -152,9 +152,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const stored = await appendRecommendation(recommendation);
 
+    // API境界でも固定値を明示し、レスポンスだけを扱う将来のAgentにも
+    // 証券注文権限が一切ないことを機械的に伝える。
+    const apiRecommendation = {
+      ...stored,
+      executionAuthority: "HUMAN_ONLY" as const,
+      aiExecutionAllowed: false as const,
+    };
+
     return NextResponse.json({
       success: true,
-      recommendation: stored,
+      recommendation: apiRecommendation,
       market: {
         provider: market.provider,
         env: market.env,

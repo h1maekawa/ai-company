@@ -32,6 +32,10 @@ export interface FundRecommendation {
   ticker: string;
   horizon: Horizon;
   decision: FundDecision;
+  /** 証券注文を含む最終的な投資判断・実行は常に人間のみが行う */
+  executionAuthority: "HUMAN_ONLY";
+  /** AIは分析・候補提示まで。人間の承認後であっても注文を実行しない */
+  aiExecutionAllowed: false;
   score: number;
   confidence: Confidence;
   maxBuyJpy: number;
@@ -458,6 +462,8 @@ export function evaluate(
     ticker: input.ticker.toUpperCase(),
     horizon: input.horizon,
     score,
+    executionAuthority: "HUMAN_ONLY" as const,
+    aiExecutionAllowed: false as const,
     confidence: (input.capacity.confidence ?? "low") as Confidence,
     maxBuyJpy: sizing.maxBuyJpy,
     maxShares: sizing.maxShares,
