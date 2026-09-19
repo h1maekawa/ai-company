@@ -30,7 +30,13 @@ export type RevenueEntry = RevenueAttribution & {
   missionId?: string;
   /** どのOpportunityから生まれたか（§30） */
   opportunityId?: string;
+  /** PublishedContent等のID。Content本文は複製せず参照だけを持つ */
+  contentId?: string;
+  /** Knowledge正本への参照。本文はRevenue Ledgerへ保存しない */
+  sourceKnowledgeId?: string;
   businessId?: string;
+  /** X等の間接貢献を将来区別する。未指定の既存Entryはdirectとして扱う */
+  attributionType?: "direct" | "assisted";
   note?: string;
   createdAt: string;
 };
@@ -180,7 +186,10 @@ export function effectiveEntries(entries: RevenueEntry[]): RevenueEntry[] {
     .filter((entry) => entry.kind === "revenue")
     .filter((entry) => !reversed.has(entry.id))
     // 修正があれば修正後の値を使う
-    .map((entry) => correctedBy.get(entry.id) ?? entry);
+    .map((entry) => {
+      const correction = correctedBy.get(entry.id);
+      return correction ? { ...entry, ...correction } : entry;
+    });
 }
 
 export function createRevenueEntry(

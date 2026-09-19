@@ -152,7 +152,7 @@ export async function saveLedger(file: LedgerFile): Promise<LedgerFile> {
     `Conversion: ${file.conversions.length}件 / RevenueEvent: ${file.revenueEvents.length}件`,
     `累計Revenue（記録通貨混在の単純合計・目安）: ${totalRevenue}`,
     "",
-    "> Revenueは manual / 正式API / import のみを記録します。AIが金額を生成することはありません。",
+    "> ContentチャネルのRevenue evidenceです。manual / 正式API / import のみを記録し、会社全体の会計SSOTにはCompany Revenue Ledgerを使用します。",
     "",
     "## 直近のRevenueEvent",
     file.revenueEvents
@@ -165,7 +165,7 @@ export async function saveLedger(file: LedgerFile): Promise<LedgerFile> {
     MONETIZATION_PATHS.ledger,
     buildDoc(
       "note_monetization_ledger",
-      "Conversion・Revenueの正データです。AIは生成せず、本人入力・正式API・importのみを記録します。",
+      "ContentチャネルのConversion・Revenue evidenceです。AIは生成せず、会社全体の会計SSOTにはCompany Revenue Ledgerを使用します。",
       human,
       file
     )

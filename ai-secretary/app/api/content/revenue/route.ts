@@ -12,7 +12,7 @@ import { RevenueEvent } from "@/app/lib/content/monetization/types";
 
 export const dynamic = "force-dynamic";
 
-/** GET ?period=today|week|month|all: Revenueの正データ・集計・Attribution */
+/** GET ?period=today|week|month|all: Contentチャネル証跡・集計・Attribution */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const period = (req.nextUrl.searchParams.get("period") ?? "all") as "today" | "week" | "month" | "all";
@@ -55,6 +55,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const event: RevenueEvent = {
       id: `rev_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+      companyRevenueId: body.companyRevenueId,
       publishedContentId,
       offerId: body.offerId,
       ctaId: body.ctaId,
