@@ -7,17 +7,18 @@ import {
   loadLearningCandidates,
   loadLearningDecisions,
 } from "@/app/lib/fund/learning/store";
+import { loadInvestmentTransactions } from "@/app/lib/fund/transactions/store";
 
 export const dynamic = "force-dynamic";
 
 /** Recommendation / Human Fact / Outcome / AI Learning Candidateのread model。 */
 export async function GET(): Promise<NextResponse> {
   try {
-    const [decisions, recommendations, outcomes, candidates, learningDecisions] = await Promise.all([
-      loadDecisions(), loadRecommendations(), loadDecisionOutcomes(), loadLearningCandidates(), loadLearningDecisions(),
+    const [decisions, recommendations, outcomes, candidates, learningDecisions, transactions] = await Promise.all([
+      loadDecisions(), loadRecommendations(), loadDecisionOutcomes(), loadLearningCandidates(), loadLearningDecisions(), loadInvestmentTransactions(),
     ]);
     const learnings = effectiveInvestmentLearnings(candidates, learningDecisions);
-    const reviews = buildInvestmentDecisionReviews({ recommendations, decisions, outcomes, learnings });
+    const reviews = buildInvestmentDecisionReviews({ recommendations, decisions, outcomes, transactions, learnings });
     return NextResponse.json({
       success: true,
       reviews,
@@ -25,6 +26,7 @@ export async function GET(): Promise<NextResponse> {
         decisions: decisions.length,
         recommendations: recommendations.length,
         outcomes: outcomes.length,
+        transactions: transactions.length,
         learningCandidates: candidates.length,
         approvedLearnings: learnings.filter((item) => item.status === "approved").length,
       },
