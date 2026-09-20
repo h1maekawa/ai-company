@@ -16,6 +16,12 @@ import {
 } from "./policy";
 import { FundRecommendation } from "./engine";
 import { AllocationSummary, Holding, extractHoldingsJson } from "./rakutenCsv";
+import type {
+  HumanDecisionDisposition,
+  HumanDecisionReasonTag,
+  IntendedInvestmentAction,
+  RecommendationDecisionSnapshot,
+} from "./learning/types";
 
 const PATHS = {
   policy: "memory/personal/fund/policy.md",
@@ -26,7 +32,6 @@ const PATHS = {
 } as const;
 
 const MAX_STORED_RECOMMENDATIONS = 100;
-const MAX_STORED_DECISIONS = 200;
 
 // ─── 汎用jsonブロック入出力 ─────────────────────────────────
 
@@ -178,7 +183,15 @@ export interface StoredDecision {
   id: string;
   recommendationId: string | null;
   ticker: string;
-  action: DecisionAction;
+  /** 旧UI/データ互換用。新規Decision Semanticsの正本はdisposition。 */
+  action: DecisionAction | null;
+  disposition?: HumanDecisionDisposition;
+  reason?: string | null;
+  reasonTags?: HumanDecisionReasonTag[];
+  intendedAction?: IntendedInvestmentAction | null;
+  /** 理由は本人入力・確認済みFactだけを保存する。 */
+  reasonSource?: "HUMAN_CONFIRMED";
+  recommendationSnapshot?: RecommendationDecisionSnapshot;
   note: string | null;
   amountJpy: number | null;
   shares: number | null;
@@ -193,7 +206,12 @@ export async function loadDecisions(): Promise<StoredDecision[]> {
 export async function appendDecision(input: {
   recommendationId?: string | null;
   ticker: string;
-  action: DecisionAction;
+  action?: DecisionAction | null;
+  disposition?: HumanDecisionDisposition;
+  reason?: string | null;
+  reasonTags?: HumanDecisionReasonTag[];
+  intendedAction?: IntendedInvestmentAction | null;
+  recommendationSnapshot?: RecommendationDecisionSnapshot;
   note?: string | null;
   amountJpy?: number | null;
   shares?: number | null;
@@ -204,13 +222,20 @@ export async function appendDecision(input: {
     id: `dec-${Date.now()}-${input.ticker.toUpperCase()}`,
     recommendationId: input.recommendationId ?? null,
     ticker: input.ticker.toUpperCase(),
-    action: input.action,
+    action: input.action ?? null,
+    disposition: input.disposition,
+    reason: input.reason ?? input.note ?? null,
+    reasonTags: input.reasonTags ?? [],
+    intendedAction: input.intendedAction ?? null,
+    reasonSource: input.disposition ? "HUMAN_CONFIRMED" : undefined,
+    recommendationSnapshot: input.recommendationSnapshot,
     note: input.note ?? null,
     amountJpy: input.amountJpy ?? null,
     shares: input.shares ?? null,
     decidedAt: new Date().toISOString(),
   };
-  const next = [stored, ...list].slice(0, MAX_STORED_DECISIONS);
+  // Decision Learningの監査履歴は削除・上書き・件数truncateをしない。
+  const next = [stored, ...list];
   await writeJsonFile(
     PATHS.decisions,
     "Fund OS — 本人判断ログ",
