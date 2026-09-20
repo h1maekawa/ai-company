@@ -60,3 +60,6 @@ Phase 10-AではProductionの `REAL_MODEL_CANARY_ENABLED=true` だけを有効�
 APP_BASE_URL=https://ai-company-ilqd.vercel.app \
 SMOKE_SESSION_COOKIE='session=...' npm run smoke:production
 ```
+# Autonomous Engineering Worker
+
+The optional, local-only Engineering Runtime is documented in [docs/engineering-worker.md](docs/engineering-worker.md). It consumes only human-approved GitHub issues, creates worker branches and pull requests, and always stops for human review. It cannot merge, deploy production, or modify protected financial/security boundaries.

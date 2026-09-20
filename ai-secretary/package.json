@@ -18,7 +18,12 @@
     "test:grill": "bash scripts/test-grill.sh",
     "bench:grill": "bash scripts/bench-grill.sh",
     "test": "npm run test:architecture && npm run test:maemichi && npm run test:fund && npm run test:content && npm run test:knowledge && npm run test:qa && npm run test:grill",
-    "test:qa": "bash scripts/test-qa.sh"
+    "test:qa": "bash scripts/test-qa.sh",
+    "engineering:once": "bash scripts/run-engineering.sh once",
+    "engineering:daemon": "bash scripts/run-engineering.sh daemon",
+    "engineering:status": "bash scripts/run-engineering.sh status",
+    "engineering:doctor": "bash scripts/run-engineering.sh doctor",
+    "test:engineering": "bash scripts/test-engineering.sh"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
