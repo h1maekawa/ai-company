@@ -1,4 +1,5 @@
 import { buildFunnel, deriveMetrics } from "../monetization/metrics";
+import { latestSnapshotByContent } from "../monetization/metrics";
 import type {
   PerformanceSnapshot,
   PublishedContent,
@@ -112,6 +113,26 @@ export function createDemandEvidence(input: {
       : undefined,
     baselineSampleSize: baseline.length,
   };
+}
+
+/** Production RouteとEvidence APIが共有するPublished X→Demand変換。 */
+export function buildCreatorDemandEvidence(
+  published: PublishedContent[],
+  snapshots: PerformanceSnapshot[]
+): CreatorDemandEvidence[] {
+  const xPublished = published.filter(
+    (content) => content.channel === "x" && content.status === "published"
+  );
+  const latest = latestSnapshotByContent(snapshots);
+  const baseline = xPublished
+    .map((content) => latest.get(content.id))
+    .filter((snapshot): snapshot is PerformanceSnapshot => Boolean(snapshot));
+  return xPublished.flatMap((content) => {
+    const snapshot = latest.get(content.id);
+    return snapshot
+      ? [createDemandEvidence({ published: content, snapshot, baselineSnapshots: baseline })]
+      : [];
+  });
 }
 
 export function buildRelationFunnel(input: {

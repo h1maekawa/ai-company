@@ -54,11 +54,12 @@ export function questPriority(
 ): number {
   const effort = opportunity.estimatedEffortMinutes ?? 120;
   const quickness = Math.max(0, 1 - effort / 480);
+  const decisionScore = opportunity.rankingScore ?? opportunity.score;
 
   if (mode === "FIRST_REVENUE_MODE") {
     // 速さと既存資産の活用度を重視。金額見込みは参考程度
     return Math.round(
-      (quickness * 0.5 + opportunity.existingAssetMatch * 0.4 + (opportunity.score / 100) * 0.1) *
+      (quickness * 0.5 + opportunity.existingAssetMatch * 0.4 + (decisionScore / 100) * 0.1) *
         100
     );
   }
@@ -68,7 +69,7 @@ export function questPriority(
     ? Math.min(1, (opportunity.expectedRevenue.minYen + opportunity.expectedRevenue.maxYen) / 2 / 100_000)
     : 0;
   return Math.round(
-    (revenue * 0.4 + (opportunity.score / 100) * 0.3 + opportunity.automationPotential * 0.3) * 100
+    (revenue * 0.4 + (decisionScore / 100) * 0.3 + opportunity.automationPotential * 0.3) * 100
   );
 }
 

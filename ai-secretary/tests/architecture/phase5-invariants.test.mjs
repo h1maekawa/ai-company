@@ -146,6 +146,35 @@ test("【重要】Demand EvidenceはPerformance参照とCoverageを必須にす�
   assert.match(types, /INSUFFICIENT_DATA/);
 });
 
+test("【重要】Opportunity APIはDemandとEconomic Evidenceを本番Rankingへ接続する", () => {
+  const route = read("app/api/company/opportunities/route.ts");
+  for (const required of [
+    "loadPublishedContent",
+    "loadPerformance",
+    "buildCreatorDemandEvidence",
+    "demandEvidence",
+    "loadBusinessCostEntries",
+    "applyCreatorDecisionRanking",
+  ]) {
+    assert.match(route, new RegExp(required), `${required} がProduction routeにありません`);
+  }
+  assert.match(route, /\.catch\(\(\) => \[\]\)/,
+    "Demand source不在時にOpportunity APIがfail-softになっていません");
+});
+
+test("【重要】Creator Economic Rankingは確認済みLedgerだけを相対評価する", () => {
+  const source = read("app/lib/company/opportunity/creatorRanking.ts");
+  assert.match(source, /MIN_ECONOMIC_RANKING_SAMPLES = 5/);
+  assert.match(source, /projectEconomicOutcome/);
+  assert.match(source, /status === "CONFIRMED" && enoughSamples/);
+  assert.match(source, /withoutCreatorDecisionReadModel/);
+});
+
+test("Money QuestはCreator Rankingを使い、未設定なら既存Scoreへ戻る", () => {
+  const source = read("app/lib/company/opportunity/moneyQuest.ts");
+  assert.match(source, /opportunity\.rankingScore \?\? opportunity\.score/);
+});
+
 test("【重要】Content EvidenceのWrite APIはProduction Guardと冪等性を通る", () => {
   const route = read("app/api/content/evidence/route.ts");
   assert.match(route, /assertProductionMutationAllowed\(\)/);
