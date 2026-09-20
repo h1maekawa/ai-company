@@ -7,6 +7,7 @@ import {
   type ReviewHumanDecision,
   type ReviewRecommendation,
 } from "./types";
+import type { InvestmentTransaction } from "../transactions/types";
 
 export function createInvestmentDecisionOutcome(input: {
   id: string;
@@ -50,6 +51,7 @@ export function buildInvestmentDecisionReviews(input: {
   recommendations: ReviewRecommendation[];
   decisions: ReviewHumanDecision[];
   outcomes: InvestmentDecisionOutcome[];
+  transactions?: InvestmentTransaction[];
   learnings: InvestmentLearning[];
 }): InvestmentDecisionReview[] {
   const recById = new Map(input.recommendations.map((item) => [item.id, item]));
@@ -61,12 +63,14 @@ export function buildInvestmentDecisionReviews(input: {
       .filter((item) => item.decisionId === decision.id)
       .sort((a, b) => a.observedAt.localeCompare(b.observedAt));
     const learnings = input.learnings.filter((item) => item.sourceDecisionIds.includes(decision.id));
+    const transactions = (input.transactions ?? []).filter((item) => item.decisionId === decision.id);
     const latest = outcomes[outcomes.length - 1];
     return {
       recommendation,
       humanDecision: decision,
       decision,
       outcomes,
+      transactions,
       learnings,
       comparison: {
         recommendationDirection: recommendation?.decision ?? null,

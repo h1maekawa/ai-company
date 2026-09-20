@@ -1,5 +1,6 @@
 import type { Confidence, FundDecision } from "../engine";
 import type { Horizon } from "../policy";
+import type { InvestmentTransaction } from "../transactions/types";
 
 export type LegacyDecisionAction = "acknowledged" | "bought" | "skipped" | "trimmed" | "sold";
 
@@ -76,6 +77,7 @@ export type InvestmentDecisionReview = {
   /** 既存UI contractの互換alias。 */
   decision: ReviewHumanDecision;
   outcomes: InvestmentDecisionOutcome[];
+  transactions: InvestmentTransaction[];
   learnings: InvestmentLearning[];
   comparison: {
     recommendationDirection: FundDecision | null;
