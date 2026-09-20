@@ -1,35 +1,32 @@
 import { NextResponse } from "next/server";
+import { loadDecisions, loadRecommendations } from "@/app/lib/fund/store";
+import { buildInvestmentDecisionReviews } from "@/app/lib/fund/learning/engine";
 import {
-  loadDecisions,
-  loadRecommendations,
-} from "@/app/lib/fund/store";
+  effectiveInvestmentLearnings,
+  loadDecisionOutcomes,
+  loadLearningCandidates,
+  loadLearningDecisions,
+} from "@/app/lib/fund/learning/store";
 
-/**
- * GET /api/fund/reviews — 振り返り用データ。
- * 本人判断ログと対応するAI提案を突き合わせて返す（§15, §16）。
- * 1週間/1か月/3か月/6か月後の結果記録はPhase 3で拡張する。
- */
+export const dynamic = "force-dynamic";
+
+/** Recommendation / Human Fact / Outcome / AI Learning Candidateのread model。 */
 export async function GET(): Promise<NextResponse> {
   try {
-    const [decisions, recommendations] = await Promise.all([
-      loadDecisions(),
-      loadRecommendations(),
+    const [decisions, recommendations, outcomes, candidates, learningDecisions] = await Promise.all([
+      loadDecisions(), loadRecommendations(), loadDecisionOutcomes(), loadLearningCandidates(), loadLearningDecisions(),
     ]);
-
-    const recById = new Map(recommendations.map((r) => [r.id, r]));
-    const reviews = decisions.map((d) => ({
-      decision: d,
-      recommendation: d.recommendationId
-        ? (recById.get(d.recommendationId) ?? null)
-        : null,
-    }));
-
+    const learnings = effectiveInvestmentLearnings(candidates, learningDecisions);
+    const reviews = buildInvestmentDecisionReviews({ recommendations, decisions, outcomes, learnings });
     return NextResponse.json({
       success: true,
       reviews,
       counts: {
         decisions: decisions.length,
         recommendations: recommendations.length,
+        outcomes: outcomes.length,
+        learningCandidates: candidates.length,
+        approvedLearnings: learnings.filter((item) => item.status === "approved").length,
       },
     });
   } catch (error) {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveVaultFile, getVaultFile } from "@/app/lib/vault";
 
+// 既存互換のlegacy narrative log。Decision Learningの構造化SSOTには使用しない。
+
 interface FundLogRequest {
   ticker: string;
   action: "buy" | "sell" | "hold" | "review";
