@@ -22,10 +22,34 @@ async function github(path: string, init?: RequestInit) {
 export async function GET() {
   if (!token()) return NextResponse.json({ available: false, items: null, reason: "GITHUB_CREDENTIAL_UNAVAILABLE" });
   try {
-    const response = await github("/issues?state=open&labels=ai-engineering&per_page=30");
-    if (!response.ok) return NextResponse.json({ available: false, items: null, reason: "GITHUB_UNAVAILABLE" });
-    const issues = await response.json() as Array<Record<string, unknown>>;
-    return NextResponse.json({ available: true, items: issues.filter((item) => !item.pull_request).map((item) => ({ issueNumber: item.number, title: item.title, status: "QUEUED", labels: item.labels, htmlUrl: item.html_url })) });
+    const [issueResponse, pullResponse, runResponse] = await Promise.all([
+      github("/issues?state=open&labels=ai-engineering&per_page=100"),
+      github("/pulls?state=open&per_page=100"),
+      github("/actions/runs?per_page=100"),
+    ]);
+    if (!issueResponse.ok) return NextResponse.json({ available: false, items: null, reason: "GITHUB_UNAVAILABLE" });
+    const issues = (await issueResponse.json() as Array<Record<string, unknown>>).filter((item) => !item.pull_request);
+    const pulls = pullResponse.ok ? await pullResponse.json() as Array<Record<string, unknown>> : null;
+    const runsPayload = runResponse.ok ? await runResponse.json() as { workflow_runs?: Array<Record<string, unknown>> } : null;
+    const labelNames = (issue: Record<string, unknown>) => (Array.isArray(issue.labels) ? issue.labels : []).map((label) => typeof label === "string" ? label : String((label as Record<string, unknown>).name ?? ""));
+    const status = (issue: Record<string, unknown>) => { const labels = labelNames(issue); if (labels.includes("blocked")) return "BLOCKED"; if (labels.includes("ai-running")) return "RUNNING"; return "QUEUED"; };
+    const relevantPulls = pulls?.filter((pull) => String((pull.head as Record<string, unknown> | undefined)?.ref ?? "").startsWith("ai/issue-")) ?? null;
+    const relevantRuns = runsPayload?.workflow_runs?.filter((run) => String(run.head_branch ?? "").startsWith("ai/issue-")) ?? null;
+    const timestamps = [...issues.map((item) => String(item.updated_at ?? "")), ...(relevantPulls ?? []).map((item) => String(item.updated_at ?? "")), ...(relevantRuns ?? []).map((item) => String(item.updated_at ?? item.run_started_at ?? ""))].filter(Boolean).sort();
+    const lastActivity = timestamps[timestamps.length - 1] ?? null;
+    return NextResponse.json({
+      available: true,
+      items: issues.map((item) => ({ issueNumber: item.number, title: item.title, status: status(item), labels: item.labels, htmlUrl: item.html_url, updatedAt: item.updated_at })),
+      summary: {
+        queued: issues.filter((item) => status(item) === "QUEUED").length,
+        running: issues.filter((item) => status(item) === "RUNNING").length,
+        blocked: issues.filter((item) => status(item) === "BLOCKED").length,
+        prReady: relevantPulls ? relevantPulls.filter((pull) => pull.draft !== true).length : null,
+        ciSuccess: relevantRuns ? relevantRuns.filter((run) => run.conclusion === "success").length : null,
+        ciFailure: relevantRuns ? relevantRuns.filter((run) => run.conclusion === "failure").length : null,
+        lastActivity,
+      },
+    });
   } catch { return NextResponse.json({ available: false, items: null, reason: "GITHUB_UNAVAILABLE" }); }
 }
 

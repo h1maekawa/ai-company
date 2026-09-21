@@ -13,6 +13,7 @@ import { GET as execution } from "@/app/api/company/execution/route";
 import { GET as knowledge } from "@/app/api/knowledge/dashboard/route";
 import { GET as planning } from "@/app/api/planning/route";
 import { GET as engineering } from "@/app/api/engineering/requests/route";
+import { loadPortfolio } from "@/app/lib/investing/portfolio";
 
 export const dynamic = "force-dynamic";
 const json = async (promise: Promise<Response>) => { try { const response = await promise; return response.ok ? response.json() : null; } catch { return null; } };
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const id = params.id as DepartmentId; const origin = req.nextUrl.origin;
   let data: Record<string, unknown> = {};
   if (id === "creator") { const [a,b,c] = await Promise.all([json(content(request(`${origin}/api/content/dashboard?period=month`))), json(economics(request(`${origin}/api/company/economics`))), json(opportunities())]); data = { content:a, economics:b, opportunities:c }; }
-  if (id === "fund") { const [a,b,c,d,e] = await Promise.all([json(recommendations()), json(decisions()), json(transactions()), json(performance()), json(learning())]); data = { recommendations:a, decisions:b, transactions:c, performance:d, learning:e }; }
+  if (id === "fund") { const [a,b,c,d,e,portfolio] = await Promise.all([json(recommendations()), json(decisions()), json(transactions()), json(performance()), json(learning()), loadPortfolio().catch(() => null)]); data = { recommendations:a, decisions:b, transactions:c, performance:d, learning:e, portfolio }; }
   if (id === "operations") { const [a,b] = await Promise.all([json(metrics(request(`${origin}/api/company/metrics?days=14`))), json(execution())]); data = { metrics:a, execution:b }; }
   if (id === "knowledge") data = { knowledge: await json(knowledge(request(`${origin}/api/knowledge/dashboard`))) };
   if (id === "planning") { const [a,b] = await Promise.all([json(planning(request(`${origin}/api/planning`))), json(execution())]); data = { planning:a, execution:b }; }

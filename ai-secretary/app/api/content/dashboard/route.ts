@@ -31,6 +31,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const snapshots = performance.snapshots ?? [];
     const latest = latestSnapshotByContent(snapshots);
+    const dataAsOf = snapshots.reduce<string | null>(
+      (current, snapshot) => !current || snapshot.capturedAt > current ? snapshot.capturedAt : current,
+      null,
+    );
 
     let noteViews = 0;
     let xImpressions = 0;
@@ -93,6 +97,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       topContent,
       topOffer,
       ctaCount: ctas.length,
+      dataAsOf,
     });
   } catch (error) {
     console.error("[api/content/dashboard] GET失敗:", error);

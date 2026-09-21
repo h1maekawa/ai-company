@@ -46,6 +46,7 @@ export async function createManualMission(input: {
   title?: unknown;
   description?: unknown;
   idempotencyKey?: string;
+  routingContext?: ExecutionMission["routingContext"];
 }) {
   const validated = validateManualMissionInput(input);
   if (!validated.ok) return fail(400, validated.error);
@@ -57,7 +58,7 @@ export async function createManualMission(input: {
   if (!(await store.claimIdempotency("manual-mission-create", key)))
     return fail(409, "DUPLICATE_REQUEST_IN_PROGRESS");
   return executionTransaction(async () => {
-    const mission = createManualMissionRecord(validated);
+    const mission = createManualMissionRecord({ ...validated, routingContext: input.routingContext });
     const state = await loadExecutionState();
     await saveExecutionState({ ...state, missions: [...state.missions, mission] });
     const data = { mission };
@@ -112,9 +113,11 @@ async function startMissionOperation(input: {
       ),
     },
     workloads: computeWorkloads(state.missions),
-    requiredAgents: opportunity?.requiredAgents ?? [],
+    requiredAgents: mission.routingContext?.requiredAgentId
+      ? [mission.routingContext.requiredAgentId]
+      : opportunity?.requiredAgents ?? [],
     requiredSkills: opportunity?.requiredSkills ?? [],
-    departmentId: "personal",
+    departmentId: mission.routingContext?.departmentId ?? "personal",
     routerAgentId: "executive-assistant",
   });
 

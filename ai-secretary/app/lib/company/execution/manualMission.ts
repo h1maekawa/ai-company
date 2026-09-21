@@ -22,7 +22,7 @@ export function validateManualMissionInput(input: ManualMissionInput): ManualMis
 }
 
 export function createManualMissionRecord(
-  input: { title: string; description: string; now?: Date; id?: string },
+  input: { title: string; description: string; now?: Date; id?: string; routingContext?: ExecutionMission["routingContext"] },
 ): ExecutionMission {
   return {
     id: input.id ?? `mission_manual_${randomUUID()}`,
@@ -37,5 +37,6 @@ export function createManualMissionRecord(
     version: 0,
     history: [],
     actionRequestIds: [],
+    routingContext: input.routingContext,
   };
 }
