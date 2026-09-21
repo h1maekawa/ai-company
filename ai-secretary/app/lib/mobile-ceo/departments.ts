@@ -64,6 +64,26 @@ export const DIRECTIVE_ROUTING: Record<Exclude<DepartmentId, "engineering">, { d
   knowledge: { departmentId: "executive", requiredAgentId: "executive-inbox", missionType: "KNOWLEDGE_CONTEXT", constraints: ["CAPTURE_OR_RESEARCH_ONLY", "PROMOTION_REQUIRES_HUMAN_APPROVAL"] },
   planning: { departmentId: "personal", requiredAgentId: "personal-morning", missionType: "PLANNING_CONTEXT", constraints: ["INTERNAL_ONLY"] },
 };
+export type DirectiveRouting = (typeof DIRECTIVE_ROUTING)[Exclude<DepartmentId, "engineering">];
+const CREATOR_SPECIALISTS = {
+  research: { requiredAgentId: "creator-research", missionType: "CREATOR_RESEARCH" },
+  content: { requiredAgentId: "creator-content", missionType: "CREATOR_DRAFT" },
+  analytics: { requiredAgentId: "creator-kpi", missionType: "CREATOR_KPI_ANALYSIS" },
+} as const;
+
+/** 複数の意図語を採点し、同点や曖昧な依頼はLeadへ戻す決定論的router。 */
+export function routeCreatorDirective(instruction: string, goal = ""): DirectiveRouting {
+  const text = `${instruction} ${goal}`.toLowerCase();
+  const rules = {
+    research: [/調査/u, /リサーチ/u, /競合/u, /市場/u, /顧客/u, /トレンド/u, /根拠/u, /source/u],
+    content: [/下書き/u, /記事/u, /投稿案/u, /構成/u, /タイトル/u, /note/u, /x(?:\s|の)?文/u, /draft/u],
+    analytics: [/kpi/u, /分析/u, /数値/u, /収益/u, /roi/u, /ctr/u, /rpm/u, /成果/u, /実績/u],
+  } as const;
+  const scores = Object.entries(rules).map(([kind, patterns]) => ({ kind: kind as keyof typeof CREATOR_SPECIALISTS, score: patterns.filter((pattern) => pattern.test(text)).length })).sort((a, b) => b.score - a.score);
+  if (scores[0].score === 0 || scores[0].score === scores[1].score) return DIRECTIVE_ROUTING.creator;
+  const specialist = CREATOR_SPECIALISTS[scores[0].kind];
+  return { ...DIRECTIVE_ROUTING.creator, ...specialist };
+}
 export function draftDirective(input: { department: DepartmentId; instruction: string; goal?: string; priority?: "A"|"B"|"C"; deadline?: string|null; targetMetric?: DepartmentDirectiveDraft["targetMetric"] }): DepartmentDirectiveDraft {
   const instruction = input.instruction.trim(); if (!instruction) throw new Error("INSTRUCTION_REQUIRED");
   const engineering = input.department === "engineering"; const fund = input.department === "fund";

@@ -67,7 +67,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description:
       "noteのアイデアや話した内容を、下書きとして扱いやすいMarkdown構成メモへ整形する。/api/note/generate（LLMによる本文自動生成）とは別物の軽量フォーマッタ。",
     category: "format",
-    allowedSecretaries: ["personal-note", "executive-assistant", "personal-morning"],
+    allowedSecretaries: ["personal-note", "creator-content", "executive-assistant", "personal-morning"],
     inputSchemaDescription:
       "title・theme・targetReader・hook（冒頭フック）・bodyMemo・cta・paidPartIdea",
     outputSchemaDescription:
@@ -94,7 +94,7 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     description:
       "cc-secretaryの「アイデア [タイトル]」を参考に、新規アイデアファイル（memory/personal/ideas/）を作成する。",
     category: "generation",
-    allowedSecretaries: ["personal-note"],
+    allowedSecretaries: ["personal-note", "creator-research"],
     inputSchemaDescription: "title・概要・課題背景（任意）",
     outputSchemaDescription: "アイデアテンプレート形式のMarkdown（概要/課題・背景/解決策/ネクストステップ）",
     status: "planned",
@@ -119,6 +119,26 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     allowedSecretaries: ["personal-note"],
     inputSchemaDescription: "topic・ポイント（任意）・詳細（任意）",
     outputSchemaDescription: "ナレッジテンプレート形式のMarkdown（ポイント/詳細/参考リンク/メモ）",
+    status: "planned",
+  },
+  {
+    id: "knowledge-candidate-create",
+    name: "Knowledge Candidate Create",
+    description: "調査やKPIから再利用可能な学びを正式KnowledgeではなくCandidateとして保存し、人間レビューへ送る。",
+    category: "format",
+    allowedSecretaries: ["creator-research", "creator-kpi"],
+    inputSchemaDescription: "根拠Fact・解釈・出典・候補Domain",
+    outputSchemaDescription: "Human Review必須のKnowledge Candidate",
+    status: "planned",
+  },
+  {
+    id: "content-kpi-analysis",
+    name: "Content KPI Analysis",
+    description: "既存Content/Revenue SSOTの観測値を分析し、Factと解釈を分離した改善候補を返す。",
+    category: "research",
+    allowedSecretaries: ["creator-kpi"],
+    inputSchemaDescription: "Content Metrics・Revenue facts・観測時刻",
+    outputSchemaDescription: "Fact・Interpretation・不足データ・改善候補",
     status: "planned",
   },
   {

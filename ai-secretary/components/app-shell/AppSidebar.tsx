@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ADMIN_NAV, DEPARTMENT_NAV, PRIMARY_NAV, isNavActive, type AppNavItem } from "@/app/lib/config/navigation";
+import { ADMIN_NAV, BUSINESS_DEPARTMENT_NAV, KNOWLEDGE_NAV, PRIMARY_NAV, WORK_NAV, isNavActive, type AppNavItem } from "@/app/lib/config/navigation";
 import { OPEN_MEMO_EVENT } from "./WorkspaceOverlays";
 
 /**
@@ -29,10 +29,15 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
         <div className="mt-6">
           <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">事業部</p>
           <div className="space-y-1">
-            {DEPARTMENT_NAV.map((item) => (
+            {BUSINESS_DEPARTMENT_NAV.map((item) => (
               <SidebarLink key={item.id} item={item} pathname={pathname} onNavigate={onNavigate} />
             ))}
           </div>
+        </div>
+
+        <div className="mt-5 space-y-1">
+          <SidebarLink item={KNOWLEDGE_NAV} pathname={pathname} onNavigate={onNavigate} />
+          {WORK_NAV.map((item) => <SidebarLink key={item.id} item={item} pathname={pathname} onNavigate={onNavigate} />)}
         </div>
 
         <div className="mt-auto pt-6">

@@ -16,7 +16,7 @@ const exists = (relative) => fs.existsSync(path.join(ROOT, relative));
 
 const NAVIGATION = "app/lib/config/navigation.ts";
 
-test("desktop navigation uses Home/Assistant plus the six Department registry entries", () => {
+test("desktop navigation uses Home/Assistant, five business Departments and top-level Knowledge", () => {
   const source = read(NAVIGATION);
   const primary = source.slice(
     source.indexOf("export const PRIMARY_NAV"),
@@ -28,6 +28,8 @@ test("desktop navigation uses Home/Assistant plus the six Department registry en
     assert.match(source, new RegExp(`id: "${id}"[\\s\\S]{0,180}href: "/ceo/departments/${id}"`));
   }
   assert.match(source, /export const ADMIN_NAV: AppNavItem = \{[\s\S]*href: "\/admin"/);
+  assert.match(source, /BUSINESS_DEPARTMENT_IDS = \["creator", "fund", "operations", "planning", "engineering"\]/);
+  assert.match(source, /KNOWLEDGE_NAV[\s\S]*href: "\/knowledge"/);
 });
 
 test("primary navigation points at the existing routes", () => {
@@ -57,7 +59,8 @@ test("admin holds the non-daily areas instead of the sidebar", () => {
 test("sidebar renders only the shared navigation config", () => {
   const sidebar = read("components/app-shell/AppSidebar.tsx");
   assert.match(sidebar, /from "@\/app\/lib\/config\/navigation"/);
-  assert.match(sidebar, /DEPARTMENT_NAV\.map/);
+  assert.match(sidebar, /BUSINESS_DEPARTMENT_NAV\.map/);
+  assert.match(sidebar, /KNOWLEDGE_NAV/);
   // ナビ項目をコンポーネント側に直書きしない（増殖の原因になる）
   assert.doesNotMatch(sidebar, /href="\/(knowledge|connections|content|grill)/);
 });
