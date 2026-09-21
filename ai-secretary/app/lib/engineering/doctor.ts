@@ -14,13 +14,14 @@ export async function runEngineeringDoctor(input: {
 }): Promise<DoctorCheck[]> {
   const { config, runner, credentials } = input;
   const launchEnv = launchAgentCompatibleEnvironment(input.processEnv);
+  const authLabel = config.agentAuthMode === "chatgpt" ? "Codex ChatGPT authentication" : "Coding agent credential";
   const checks: Array<[string, () => Promise<boolean>]> = [
     ["Git installed", async () => (await runner.run("git", ["--version"], { cwd: process.cwd(), env: launchEnv })).code === 0],
     ["Node installed", async () => (await runner.run("node", ["--version"], { cwd: process.cwd(), env: launchEnv })).code === 0],
     ["npm installed", async () => (await runner.run("npm", ["--version"], { cwd: process.cwd(), env: launchEnv })).code === 0],
     ["GitHub authentication", async () => (await runner.run("gh", ["auth", "status"], { cwd: config.repoDir, env: launchEnv })).code === 0],
     ["Coding agent executable", async () => (await runner.run("which", [config.agentCommand], { cwd: process.cwd(), env: launchEnv })).code === 0],
-    ["Coding agent credential", async () => credentials.checkAvailability()],
+    [authLabel, async () => credentials.checkAvailability()],
     ["LaunchAgent-compatible authentication", async () => {
       const github = await runner.run("gh", ["auth", "status"], { cwd: config.repoDir, env: launchEnv });
       return github.code === 0 && await credentials.checkAvailability();

@@ -96,6 +96,9 @@ export class EngineeringWorker {
       await state.updateTask(task);
       return this.finishAudit(audit, "BLOCKED", task.failureReason);
     }
+    if (!await this.deps.agent.checkAvailability()) {
+      return this.finishAudit(audit, "BLOCKED", "AGENT_CREDENTIAL_UNAVAILABLE");
+    }
     if (config.dryRun) {
       try {
         const plan = await this.deps.agent.run({ task: touch(task, "PLANNING", this.now(), config.leaseMs, "dry-run-plan"), worktree: config.repoDir, stage: "plan" });

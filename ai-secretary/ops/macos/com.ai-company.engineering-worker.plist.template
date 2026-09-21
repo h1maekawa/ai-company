@@ -20,6 +20,10 @@
     <string>__WORKSPACE_DIR__</string>
     <key>ENGINEERING_REPO_DIR</key>
     <string>__REPO_DIR__</string>
+    <key>ENGINEERING_AGENT_AUTH_MODE</key>
+    <string>__AGENT_AUTH_MODE__</string>
+    <key>ENGINEERING_CODEX_HOME</key>
+    <string>__CODEX_HOME__</string>
     <key>ENGINEERING_WORKER_ENABLED</key>
     <string>true</string>
     <key>PATH</key>

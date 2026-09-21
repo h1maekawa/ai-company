@@ -53,6 +53,25 @@ The service/account values are non-secret identifiers. Supported credential name
 
 The agent command is one executable, while `ENGINEERING_AGENT_ARGS_JSON` is a JSON string array. Issue title/body is passed over stdin inside explicit untrusted-data delimiters; it is never interpolated into a shell command. The child gets the worktree as cwd, an isolated HOME under that worktree, and an allowlisted environment without GitHub credentials.
 
+## ChatGPT authentication mode
+
+For a single-user local macOS worker, use Codex ChatGPT OAuth without injecting an API key:
+
+```bash
+export ENGINEERING_AGENT_AUTH_MODE=chatgpt
+export ENGINEERING_CODEX_HOME="$HOME/ai-company-worker/codex-home"
+mkdir -p "$ENGINEERING_CODEX_HOME"
+chmod 700 "$ENGINEERING_CODEX_HOME"
+cat > "$ENGINEERING_CODEX_HOME/config.toml" <<'EOF'
+forced_login_method = "chatgpt"
+cli_auth_credentials_store = "keyring"
+EOF
+CODEX_HOME="$ENGINEERING_CODEX_HOME" codex login
+CODEX_HOME="$ENGINEERING_CODEX_HOME" codex login status
+```
+
+In `chatgpt` mode the coding-agent process receives `CODEX_HOME` but no provider API key, GitHub token, or OAuth token. The existing `api_key` mode remains available for server/CI use and continues to use the macOS Keychain provider.
+
 ## Credential lifecycle
 
 The helper invokes the macOS `security` secure prompt with `-w` as its final option. The secret is entered into that prompt, not passed as a command argument or stored in shell history/a file.

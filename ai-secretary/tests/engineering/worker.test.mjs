@@ -95,13 +95,32 @@ test("macOS Keychain provider loads one credential without shell profiles", asyn
   assert.equal(calls[0].options.env.GITHUB_TOKEN, undefined);
 });
 
+test("Codex ChatGPT provider checks login status with CODEX_HOME and strips token env", async () => {
+  const calls = [];
+  const runner = { async run(command, args, options) { calls.push({ command, args, options }); return { code: 0, stdout: "Logged in using ChatGPT\n", stderr: "" }; } };
+  const provider = new credentials.CodexChatGptCredentialProvider(runner, "codex", "/worker/codex-home", "/workspace", {
+    HOME: "/worker",
+    PATH: "/usr/bin",
+    OPENAI_API_KEY: "must-not-pass",
+    CODEX_API_KEY: "must-not-pass",
+    CODEX_ACCESS_TOKEN: "must-not-pass",
+    GH_TOKEN: "must-not-pass",
+    GITHUB_TOKEN: "must-not-pass",
+  });
+  assert.equal(await provider.checkAvailability(), true);
+  assert.equal(calls[0].command, "codex");
+  assert.deepEqual(calls[0].args, ["login", "status"]);
+  assert.equal(calls[0].options.env.CODEX_HOME, "/worker/codex-home");
+  for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]) assert.equal(calls[0].options.env[key], undefined);
+});
+
 test("coding agent receives only its credential and keeps isolated HOME", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-agent-test-"));
   try {
     let invocation;
     const runner = { async run(command, args, options) { invocation = { command, args, options }; return { code: 0, stdout: "keychain-secret", stderr: "" }; } };
     const provider = { async loadAgentCredentials() { return { OPENAI_API_KEY: "keychain-secret" }; }, async checkAvailability() { return true; } };
-    const config = { agentCommand: "codex", agentArgs: ["exec", "-"], agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const config = { agentCommand: "codex", agentArgs: ["exec", "-"], agentAuthMode: "api_key", codexHome: "/unused", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
     const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider);
     const task = worker.normalizeIssue(issue(), "owner/repo");
     const result = await adapter.run({ task, worktree: directory, stage: "plan" });
@@ -114,18 +133,33 @@ test("coding agent receives only its credential and keeps isolated HOME", async 
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("ChatGPT mode passes CODEX_HOME and no API or GitHub credentials", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-chatgpt-agent-test-"));
+  try {
+    let invocation;
+    const runner = { async run(command, args, options) { invocation = { command, args, options }; return { code: 0, stdout: "ok", stderr: "" }; } };
+    const provider = { async loadAgentCredentials() { return {}; }, async checkAvailability() { return true; } };
+    const config = { agentCommand: "codex", agentArgs: ["exec", "-"], agentAuthMode: "chatgpt", codexHome: "/worker/codex-home", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider);
+    await adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: directory, stage: "plan" });
+    assert.equal(invocation.options.env.CODEX_HOME, "/worker/codex-home");
+    assert.equal(invocation.options.env.HOME, path.join(directory, ".engineering-agent-home"));
+    for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]) assert.equal(invocation.options.env[key], undefined);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("missing or over-broad agent credentials fail closed before spawn", async () => {
   let spawned = false;
   const runner = { async run() { spawned = true; return { code: 0, stdout: "", stderr: "" }; } };
   const unavailable = { async loadAgentCredentials() { throw new Error("Keychain detail must not escape"); }, async checkAvailability() { return false; } };
-  const config = { agentCommand: "codex", agentArgs: [], agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+  const config = { agentCommand: "codex", agentArgs: [], agentAuthMode: "api_key", codexHome: "/unused", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
   const adapter = new adapters.CommandCodingAgentAdapter(config, runner, unavailable);
   await assert.rejects(() => adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: "/tmp", stage: "plan" }), /AGENT_CREDENTIAL_UNAVAILABLE/);
   assert.equal(spawned, false);
 });
 
 test("doctor reports availability only and never credential values", async () => {
-  const config = { repoDir: "/repo", workspaceDir: "/workspace", agentCommand: "codex" };
+  const config = { repoDir: "/repo", workspaceDir: "/workspace", agentCommand: "codex", agentAuthMode: "api_key" };
   const runner = { async run() { return { code: 0, stdout: "super-secret", stderr: "" }; } };
   const provider = { async loadAgentCredentials() { return { OPENAI_API_KEY: "super-secret" }; }, async checkAvailability() { return true; } };
   const checks = await doctor.runEngineeringDoctor({ config, runner, credentials: provider, processEnv: { HOME: "/worker", PATH: "/usr/bin" } });
@@ -133,6 +167,16 @@ test("doctor reports availability only and never credential values", async () =>
   assert.match(output, /PASS Coding agent credential/);
   assert.match(output, /PASS LaunchAgent-compatible authentication/);
   assert.doesNotMatch(output, /super-secret|OPENAI_API_KEY/);
+});
+
+test("doctor labels ChatGPT authentication without exposing auth output", async () => {
+  const config = { repoDir: "/repo", workspaceDir: "/workspace", agentCommand: "codex", agentAuthMode: "chatgpt" };
+  const runner = { async run() { return { code: 0, stdout: "opaque-auth-output", stderr: "" }; } };
+  const provider = { async loadAgentCredentials() { return {}; }, async checkAvailability() { return true; } };
+  const checks = await doctor.runEngineeringDoctor({ config, runner, credentials: provider, processEnv: { HOME: "/worker", PATH: "/usr/bin" } });
+  const output = doctor.formatDoctorChecks(checks);
+  assert.match(output, /PASS Codex ChatGPT authentication/);
+  assert.doesNotMatch(output, /opaque-auth-output/);
 });
 
 test("stale leases are recoverable while terminal tasks are not", () => {
@@ -155,10 +199,10 @@ test("durable claim prevents the same issue from being claimed twice", async () 
 
 test("kill switch blocks before issue claim and dry-run never mutates GitHub", async () => {
   const calls = [];
-  const baseConfig = { enabled: false, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "agent", agentArgs: [], agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
+  const baseConfig = { enabled: false, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "agent", agentArgs: [], agentAuthMode: "api_key", codexHome: "/tmp/codex-home", agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
   const memoryState = { tasks: {}, async countRunsToday() { return 0; }, async read() { return { version: 1, tasks: this.tasks }; }, async claimTask(task) { if (this.tasks[String(task.issueNumber)]) return false; this.tasks[String(task.issueNumber)] = task; return true; }, async updateTask(task) { this.tasks[String(task.issueNumber)] = task; }, async appendAudit() {}, async updateHeartbeat() {} };
   const github = { async listReadyIssues() { calls.push("list"); return [issue()]; }, async addLabel() { calls.push("claim"); }, async removeLabel() {}, async comment() {}, async createPullRequest() { return 1; }, async addPullRequestLabels() {}, async getCiStatus() { return "SUCCESS"; }, async getCiFailureSummary() { return ""; } };
-  const agent = { async run() { calls.push("agent"); return { ok: true, output: "plan" }; } };
+  const agent = { async checkAvailability() { calls.push("auth"); return true; }, async run() { calls.push("agent"); return { ok: true, output: "plan" }; } };
   const runner = { async run() { throw new Error("must not execute"); } };
   const disabled = new worker.EngineeringWorker({ config: baseConfig, state: memoryState, github, agent, runner });
   assert.equal((await disabled.runOnce()).failureReason, "KILL_SWITCH_DISABLED");
@@ -166,5 +210,18 @@ test("kill switch blocks before issue claim and dry-run never mutates GitHub", a
   const dry = new worker.EngineeringWorker({ config: { ...baseConfig, enabled: true, dryRun: true }, state: memoryState, github, agent, runner });
   const result = await dry.runOnce();
   assert.equal(result.status, "DRY_RUN");
-  assert.deepEqual(calls, ["list", "agent"]);
+  assert.deepEqual(calls, ["list", "auth", "agent"]);
+});
+
+test("unavailable coding-agent auth blocks before GitHub mutation", async () => {
+  const calls = [];
+  const config = { enabled: true, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "codex", agentArgs: [], agentAuthMode: "chatgpt", codexHome: "/tmp/codex-home", agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
+  const memoryState = { tasks: {}, async countRunsToday() { return 0; }, async read() { return { version: 1, tasks: this.tasks }; }, async claimTask() { calls.push("state-claim"); return true; }, async updateTask() {}, async appendAudit() {}, async updateHeartbeat() {} };
+  const github = { async listReadyIssues() { calls.push("list"); return [issue()]; }, async addLabel() { calls.push("claim"); }, async removeLabel() {}, async comment() { calls.push("comment"); }, async createPullRequest() { return 1; }, async addPullRequestLabels() {}, async getCiStatus() { return "SUCCESS"; }, async getCiFailureSummary() { return ""; } };
+  const agent = { async checkAvailability() { calls.push("auth"); return false; }, async run() { calls.push("agent"); return { ok: true, output: "plan" }; } };
+  const runner = { async run() { throw new Error("must not execute"); } };
+  const result = await new worker.EngineeringWorker({ config, state: memoryState, github, agent, runner }).runOnce();
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.failureReason, "AGENT_CREDENTIAL_UNAVAILABLE");
+  assert.deepEqual(calls, ["list", "auth"]);
 });
