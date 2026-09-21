@@ -30,6 +30,10 @@ export type EmployeeAgent = {
   riskLevel: RiskLevel;
   /** できること（§24）。宣言であって実行時強制ではない点に注意 */
   permissions: AgentPermissions;
+  /** Department画面で使う役割。組織Registryから導出し、別の社員台帳は作らない。 */
+  departmentRole?: "lead" | "research" | "execution" | "analytics" | "review" | "specialist";
+  /** 正式Knowledgeへの権限ではなく、参照範囲とCandidate作成可否の宣言。 */
+  knowledgeAccess?: { mode: "read" | "candidate"; domains: string[] };
   /**
    * Phase2 Foundation: このSecretaryが利用できるSkill IDの一覧（任意フィールド）。
    * 実際にSkillを使えるかどうかは app/lib/skills/registry.ts 側の
@@ -230,14 +234,19 @@ AI会社をより良くすることです。
       },
       {
         id: "personal-note",
-        name: "Note事業秘書",
-        kind: "employee",
+        name: "Creator Lead",
+        kind: "manager",
         riskLevel: "R2",
         // 下書きまで作る。公開は人の承認後にしか行わないため publish.publish は false
         permissions: permissions({ web: { search: true }, vault: { read: true, write: true }, publish: { draft: true }, notify: { slack: true } }),
-        role: "Note / X / まえみち編集・運用",
+        role: "Note / X 事業 Lead・Orchestrator",
+        departmentRole: "lead",
+        knowledgeAccess: { mode: "candidate", domains: ["content", "marketing", "customer", "strategy"] },
         company: "personal",
-        prompt: `あなたはNote / X / まえみち事業の編集・運用AI（personal-note）です。
+        prompt: `あなたはNote / X / まえみち事業のLead / Orchestrator（personal-note）です。
+
+調査はcreator-research、下書き制作はcreator-content、KPI分析はcreator-kpiへ委任します。
+自分を含む全員が外部公開を実行してはいけません。正式Knowledgeへの昇格は必ず人間が行います。
 
 ## 安定した役割
 - リサーチ、本人の視点、AI下書き、本人が公開した成果物、公開後の学びを区別する
@@ -276,6 +285,54 @@ AI会社をより良くすることです。
           "personal-research-create",
           "personal-knowledge-save"
         ]
+      },
+      {
+        id: "creator-content",
+        name: "Content Creator",
+        kind: "employee",
+        riskLevel: "R2",
+        permissions: permissions({ vault: { read: true, write: true }, publish: { draft: true } }),
+        role: "Note / X 下書き制作",
+        departmentRole: "execution",
+        knowledgeAccess: { mode: "read", domains: ["content", "marketing", "customer", "strategy"] },
+        company: "personal",
+        prompt: `あなたはCreator Departmentの下書き制作担当です。確認済みFactと本人の見解とAI提案を区別し、Note/XのDraftだけを作成します。publish.publish権限はなく、外部公開・予約投稿・送信は絶対に行いません。正式Knowledgeは参照のみです。`,
+        memoryScope: ["memory/personal/profile.md", "memory/personal/note/", "memory/knowledge/content/", "memory/knowledge/marketing/", "memory/knowledge/customer/", "memory/knowledge/strategy/"],
+        saveCategory: "content",
+        priority: 2,
+        skillIds: ["note-draft-format"]
+      },
+      {
+        id: "creator-research",
+        name: "Creator Researcher",
+        kind: "employee",
+        riskLevel: "R2",
+        permissions: permissions({ web: { search: true }, vault: { read: true, write: true } }),
+        role: "市場・顧客・テーマ調査",
+        departmentRole: "research",
+        knowledgeAccess: { mode: "candidate", domains: ["content", "marketing", "customer", "strategy"] },
+        company: "personal",
+        prompt: `あなたはCreator Departmentの調査担当です。出典、観測Fact、解釈、不足情報を分離します。成果はResearch ArtifactまたはKnowledge Candidateまでです。正式Knowledgeへの昇格、コンテンツの外部公開は行いません。`,
+        memoryScope: ["memory/personal/profile.md", "memory/personal/note/", "memory/personal/research/", "memory/knowledge/content/", "memory/knowledge/marketing/", "memory/knowledge/customer/", "memory/knowledge/strategy/"],
+        saveCategory: "research",
+        priority: 2,
+        skillIds: ["personal-research-create", "knowledge-candidate-create"]
+      },
+      {
+        id: "creator-kpi",
+        name: "Creator KPI Analyst",
+        kind: "employee",
+        riskLevel: "R1",
+        permissions: permissions({ vault: { read: true, write: true } }),
+        role: "Creator KPI・収益分析",
+        departmentRole: "analytics",
+        knowledgeAccess: { mode: "candidate", domains: ["content", "marketing", "strategy"] },
+        company: "personal",
+        prompt: `あなたはCreator DepartmentのKPI分析担当です。既存Content MetricsとRevenue SSOTだけを使用し、UNKNOWNを0にせず、観測Factと解釈・提案を分離します。再利用可能な学びはKnowledge Candidateまで作成できますが、正式Knowledge化や戦略の自動変更、外部公開は行いません。`,
+        memoryScope: ["memory/personal/note/kpi.md", "memory/personal/note/business-strategy.md", "memory/knowledge/content/", "memory/knowledge/marketing/", "memory/knowledge/strategy/"],
+        saveCategory: "analytics",
+        priority: 2,
+        skillIds: ["content-kpi-analysis", "knowledge-candidate-create"]
       },
       {
         id: "personal-finance",

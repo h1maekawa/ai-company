@@ -3,7 +3,7 @@ import { createManualMission } from "@/app/lib/company/execution/service";
 import { getExecutionStore } from "@/app/lib/company/execution/store";
 import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtection";
 import { POST as createEngineeringRequest } from "@/app/api/engineering/requests/route";
-import { DIRECTIVE_ROUTING, type DepartmentDirectiveDraft } from "@/app/lib/mobile-ceo/departments";
+import { DIRECTIVE_ROUTING, routeCreatorDirective, type DepartmentDirectiveDraft } from "@/app/lib/mobile-ceo/departments";
 
 export async function POST(req: NextRequest) {
   if (!isSameOriginMutation(req)) return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     const response = await createEngineeringRequest(engineeringReq); const payload = await response.json(); if (!response.ok) return NextResponse.json(payload, { status: response.status });
     const result = { directive: { ...d, status: "ROUTED", approvedByHuman: true }, route: "ENGINEERING_REQUEST", result: payload }; await store.completeIdempotency("department-directive", key, result); return NextResponse.json(result);
   }
-  const routing = DIRECTIVE_ROUTING[d.department];
+  const routing = d.department === "creator" ? routeCreatorDirective(d.instruction, d.goal) : DIRECTIVE_ROUTING[d.department];
   const mission = await createManualMission({ title: `[${routing.missionType}] ${d.instruction.slice(0,90)}`, description: `${d.goal || d.instruction}\nPriority: ${d.priority}\nConstraints: ${routing.constraints.join(", ")}`, idempotencyKey: `${d.id}:mission`, routingContext: routing });
   if (!mission.ok) return NextResponse.json({ error: mission.error }, { status: mission.status });
   const result = { directive: { ...d, status: "MISSION_CREATED", approvedByHuman: true }, route: routing.missionType, mission: mission.data.mission }; await store.completeIdempotency("department-directive", key, result); return NextResponse.json(result);

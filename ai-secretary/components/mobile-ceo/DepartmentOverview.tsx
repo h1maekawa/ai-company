@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { DEPARTMENT_NAV, type NavigationDepartmentId } from "@/app/lib/config/navigation";
+import { BUSINESS_DEPARTMENT_NAV, DEPARTMENT_NAV, KNOWLEDGE_NAV, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 import type { DepartmentMetric, DepartmentReadModel } from "@/app/lib/mobile-ceo/departments";
 
 type DepartmentMap = Partial<Record<NavigationDepartmentId, DepartmentReadModel | null>>;
@@ -68,7 +68,7 @@ export function DepartmentOverview() {
     });
     return [...approvals, ...departmentAttention, ...systemAttention].slice(0, 5);
   }, [approvals, departments, systemAttention]);
-  const currentWork = useMemo(() => DEPARTMENT_NAV.flatMap((item) => (departments[item.id]?.currentWork ?? []).slice(0, 1).map((title) => ({ id: `${item.id}:${title}`, title, label: item.label, href: item.href }))).slice(0, 3), [departments]);
+  const currentWork = useMemo(() => BUSINESS_DEPARTMENT_NAV.flatMap((item) => (departments[item.id]?.currentWork ?? []).slice(0, 1).map((title) => ({ id: `${item.id}:${title}`, title, label: item.label, href: item.href }))).slice(0, 3), [departments]);
 
   return (
     <div className="space-y-7">
@@ -89,7 +89,7 @@ export function DepartmentOverview() {
       <section aria-labelledby="departments-title">
         <h2 id="departments-title" className="text-base font-semibold text-white">事業部</h2>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {DEPARTMENT_NAV.map((item) => {
+          {BUSINESS_DEPARTMENT_NAV.map((item) => {
             const model = departments[item.id];
             const metrics = model ? allMetrics(model) : [];
             const selected = item.homeMetrics.map((key) => metrics.find((metric) => metric.metric === key));
@@ -105,6 +105,10 @@ export function DepartmentOverview() {
             );
           })}
         </div>
+      </section>
+      <section aria-labelledby="knowledge-title">
+        <h2 id="knowledge-title" className="text-base font-semibold text-white">全社共有基盤</h2>
+        <Link href={KNOWLEDGE_NAV.href} className="mt-3 flex min-h-16 items-center justify-between rounded-2xl border border-violet-500/25 bg-violet-500/[0.07] p-4"><span><strong>{KNOWLEDGE_NAV.icon} {KNOWLEDGE_NAV.label}</strong><span className="mt-1 block text-sm text-slate-400">{KNOWLEDGE_NAV.description}</span></span><span aria-hidden>→</span></Link>
       </section>
     </div>
   );

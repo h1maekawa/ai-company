@@ -103,7 +103,10 @@ export async function POST(req: NextRequest) {
     let targetSecretaryId: string;
     let routedIntent = "";
     if (departmentId) {
-      targetSecretaryId = DEPARTMENT_NAV_BY_ID[departmentId].secretaryId ?? "executive-assistant";
+      const department = DEPARTMENT_NAV_BY_ID[departmentId];
+      targetSecretaryId = secretaryId && department.employeeIds.includes(secretaryId) && findSecretary(secretaryId)
+        ? secretaryId
+        : department.secretaryId ?? "executive-assistant";
     } else if (secretaryId && findSecretary(secretaryId)) {
       targetSecretaryId = secretaryId;
     } else {
