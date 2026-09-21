@@ -7,6 +7,9 @@ build/
 .next/
 .vercel
 .env*
+.engineering-worker/
+.engineering-agent-home/
+.tmp/
 
 # Obsidian
 .obsidian/workspace.json
