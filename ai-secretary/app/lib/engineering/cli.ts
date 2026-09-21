@@ -1,40 +1,26 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { loadEngineeringConfig } from "./config";
 import { CommandCodingAgentAdapter, GhCliAdapter, SafeCommandRunner } from "./adapters";
 import { EngineeringStateStore } from "./stateStore";
-import { checkWorkspaceWritable, EngineeringWorker } from "./worker";
+import { EngineeringWorker } from "./worker";
+import { MacOsKeychainCredentialProvider } from "./credentials";
+import { formatDoctorChecks, runEngineeringDoctor } from "./doctor";
 
 async function createWorker() {
   const config = loadEngineeringConfig();
   const runner = new SafeCommandRunner();
   const state = new EngineeringStateStore(config.stateDir, config.logsDir);
+  const credentials = new MacOsKeychainCredentialProvider(runner, config.agentCredentialName, config.keychainService, config.keychainAccount, config.workspaceDir);
   await Promise.all([config.stateDir, config.logsDir, config.worktreesDir, config.artifactsDir].map((directory) => mkdir(directory, { recursive: true, mode: 0o700 })));
-  return { config, runner, state, worker: new EngineeringWorker({ config, runner, state, github: new GhCliAdapter(config, runner), agent: new CommandCodingAgentAdapter(config, runner) }) };
+  return { config, runner, state, credentials, worker: new EngineeringWorker({ config, runner, state, github: new GhCliAdapter(config, runner), agent: new CommandCodingAgentAdapter(config, runner, credentials) }) };
 }
 
 async function doctor(): Promise<number> {
-  const { config, runner } = await createWorker();
-  const checks: Array<[string, () => Promise<boolean>]> = [
-    ["git installed", async () => (await runner.run("git", ["--version"], { cwd: process.cwd() })).code === 0],
-    ["node installed", async () => (await runner.run("node", ["--version"], { cwd: process.cwd() })).code === 0],
-    ["npm installed", async () => (await runner.run("npm", ["--version"], { cwd: process.cwd() })).code === 0],
-    ["GitHub authentication available", async () => (await runner.run("gh", ["auth", "status"], { cwd: process.cwd() })).code === 0],
-    ["repository accessible", async () => (await runner.run("git", ["rev-parse", "--is-inside-work-tree"], { cwd: config.repoDir })).code === 0],
-    ["main fetch possible", async () => (await runner.run("git", ["fetch", "--dry-run", "origin", "main"], { cwd: config.repoDir })).code === 0],
-    ["agent command available", async () => (await runner.run("which", [config.agentCommand], { cwd: process.cwd() })).code === 0],
-    ["workspace writable", async () => checkWorkspaceWritable(config.workspaceDir)],
-    ["required repository configured", async () => Boolean(config.repository)],
-  ];
-  let ok = true;
-  for (const [name, check] of checks) {
-    let passed = false;
-    try { passed = await check(); } catch { passed = false; }
-    console.log(`${passed ? "PASS" : "FAIL"} ${name}`);
-    ok &&= passed;
-  }
-  console.log(`INFO GITHUB_TOKEN: ${process.env.GITHUB_TOKEN || process.env.GH_TOKEN ? "configured (value hidden)" : "not present; gh credential store may be used"}`);
+  const { config, runner, credentials } = await createWorker();
+  const checks = await runEngineeringDoctor({ config, runner, credentials });
+  console.log(formatDoctorChecks(checks));
   console.log(`INFO mode: ${config.dryRun ? "DRY_RUN" : "LIVE"}; kill switch: ${config.enabled ? "enabled" : "disabled"}`);
-  return ok ? 0 : 1;
+  return checks.every((check) => check.ok) ? 0 : 1;
 }
 
 async function status(): Promise<number> {

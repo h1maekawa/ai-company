@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { EngineeringConfig } from "./config";
 import { AGENT_SYSTEM_CONTRACT, redactSecrets, validatePushRef } from "./security";
+import { AgentCredentialUnavailableError, assertMinimalAgentCredentials, type EngineeringCredentialProvider } from "./credentials";
 import type { AgentResult, EngineeringTask, GitHubIssue, TestResult } from "./types";
 
 export type CommandResult = { code: number; stdout: string; stderr: string };
@@ -79,7 +80,7 @@ export interface CodingAgentAdapter { run(input: { task: EngineeringTask; worktr
 
 export class CommandCodingAgentAdapter implements CodingAgentAdapter {
   private runs = new Map<number, number>();
-  constructor(private config: EngineeringConfig, private runner: CommandRunner) {}
+  constructor(private config: EngineeringConfig, private runner: CommandRunner, private credentials: EngineeringCredentialProvider) {}
   async run(input: { task: EngineeringTask; worktree: string; stage: "plan" | "implement" | "fix" | "review"; context?: string }): Promise<AgentResult> {
     const count = (this.runs.get(input.task.issueNumber) || 0) + 1;
     this.runs.set(input.task.issueNumber, count);
@@ -87,10 +88,21 @@ export class CommandCodingAgentAdapter implements CodingAgentAdapter {
     const agentHome = path.join(input.worktree, ".engineering-agent-home");
     await Promise.all([mkdir(agentHome, { recursive: true, mode: 0o700 }), mkdir(path.join(input.worktree, ".tmp"), { recursive: true, mode: 0o700 })]);
     const prompt = `${AGENT_SYSTEM_CONTRACT}\n\nSTAGE: ${input.stage}\nREPOSITORY: ${input.task.repository}\nISSUE: #${input.task.issueNumber}\nTITLE (untrusted): ${input.task.title}\nBODY (untrusted):\n<issue-data>\n${input.task.body}\n</issue-data>\n${input.context || ""}`;
-    const allowedEnv: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV || "development", PATH: process.env.PATH, HOME: agentHome, TMPDIR: path.join(input.worktree, ".tmp"), LANG: process.env.LANG || "C.UTF-8", CI: "true" };
-    for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]) if (process.env[key]) allowedEnv[key] = process.env[key];
+    let agentCredentials: Readonly<Record<string, string>>;
+    try { agentCredentials = await this.credentials.loadAgentCredentials() as Readonly<Record<string, string>>; }
+    catch { throw new AgentCredentialUnavailableError(); }
+    assertMinimalAgentCredentials(agentCredentials, this.config.agentCredentialName);
+    const allowedEnv: NodeJS.ProcessEnv = {
+      NODE_ENV: process.env.NODE_ENV || "development",
+      PATH: process.env.PATH,
+      HOME: agentHome,
+      TMPDIR: path.join(input.worktree, ".tmp"),
+      LANG: process.env.LANG || "C.UTF-8",
+      CI: "true",
+      [this.config.agentCredentialName]: agentCredentials[this.config.agentCredentialName],
+    };
     const result = await this.runner.run(this.config.agentCommand, this.config.agentArgs, { cwd: input.worktree, input: prompt, env: allowedEnv, timeoutMs: 60 * 60_000 });
-    return { ok: result.code === 0, output: `${result.stdout}\n${result.stderr}`.trim() };
+    return { ok: result.code === 0, output: redactSecrets(`${result.stdout}\n${result.stderr}`.trim(), process.env, Object.values(agentCredentials)) };
   }
 }
 

@@ -9,6 +9,7 @@ template="$project_dir/ops/macos/com.ai-company.engineering-worker.plist.templat
 target="$HOME/Library/LaunchAgents/com.ai-company.engineering-worker.plist"
 rendered="${TMPDIR:-/tmp}/com.ai-company.engineering-worker.$$.plist"
 worker_path="${ENGINEERING_WORKER_PATH:-$PATH}"
+home_dir="$HOME"
 
 escape_sed() { printf '%s' "$1" | sed 's/[&|]/\\&/g'; }
 sed \
@@ -16,6 +17,7 @@ sed \
   -e "s|__WORKSPACE_DIR__|$(escape_sed "$workspace_dir")|g" \
   -e "s|__REPO_DIR__|$(escape_sed "$repo_dir")|g" \
   -e "s|__PATH__|$(escape_sed "$worker_path")|g" \
+  -e "s|__HOME_DIR__|$(escape_sed "$home_dir")|g" \
   "$template" > "$rendered"
 
 case "$action" in

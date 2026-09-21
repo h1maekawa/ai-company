@@ -26,7 +26,9 @@ cd "$HOME/ai-company-worker/repo/ai-secretary"
 npm ci
 ```
 
-Recommended fine-grained GitHub token permissions are repository Contents read/write (branches), Issues read/write, Pull requests read/write, and Actions read. Do not grant repository administration, environment-secret administration, organization administration, production deployment, or bypass/merge privileges. Keep tokens and agent credentials in the OS credential store or process environment; never put them in this repository, a committed `.env`, a launchd plist, or logs.
+Recommended fine-grained GitHub token permissions are repository Contents read/write (branches), Issues read/write, Pull requests read/write, and Actions read. Do not grant repository administration, environment-secret administration, organization administration, production deployment, or bypass/merge privileges. Keep tokens and agent credentials in OS credential stores; never put them in this repository, a committed `.env`, a launchd plist, or logs.
+
+GitHub identity and coding-agent identity are separate. The parent worker uses the dedicated worker user's `gh auth` credential for GitHub operations. The coding-agent subprocess never receives `GH_TOKEN`, `GITHUB_TOKEN`, the parent HOME, or GitHub CLI configuration. Its single provider-approved API credential is loaded from the current user's macOS login Keychain immediately before execution.
 
 ## Configuration
 
@@ -38,13 +40,40 @@ export ENGINEERING_WORKSPACE_DIR="$HOME/ai-company-worker"
 export ENGINEERING_REPO_DIR="$HOME/ai-company-worker/repo"
 export ENGINEERING_AGENT_COMMAND=codex
 export ENGINEERING_AGENT_ARGS_JSON='["exec","-"]'
+export ENGINEERING_AGENT_CREDENTIAL_NAME=OPENAI_API_KEY
+export ENGINEERING_KEYCHAIN_SERVICE=ai-company-engineering-worker
+export ENGINEERING_KEYCHAIN_ACCOUNT=OPENAI_API_KEY
 export ENGINEERING_WORKER_ENABLED=true
 export ENGINEERING_DRY_RUN=true
 ```
 
 Optional bounded controls: `ENGINEERING_MAX_TASKS_PER_DAY` (default 3), `ENGINEERING_MAX_AGENT_RUNS_PER_TASK` (6), `ENGINEERING_MAX_FIX_ATTEMPTS` (3), `ENGINEERING_MAX_CI_FIX_ATTEMPTS` (2), `ENGINEERING_MAX_CHANGED_FILES` (30), `ENGINEERING_MAX_DIFF_LINES` (2000), `ENGINEERING_LEASE_MS` (30 minutes), and `ENGINEERING_POLL_INTERVAL_MS` (60 seconds). Concurrency is fixed at one in this foundation.
 
+The service/account values are non-secret identifiers. Supported credential names are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GEMINI_API_KEY`; only the configured one is injected. Do not export the API key from `.zshrc` or `.bash_profile`.
+
 The agent command is one executable, while `ENGINEERING_AGENT_ARGS_JSON` is a JSON string array. Issue title/body is passed over stdin inside explicit untrusted-data delimiters; it is never interpolated into a shell command. The child gets the worktree as cwd, an isolated HOME under that worktree, and an allowlisted environment without GitHub credentials.
+
+## Credential lifecycle
+
+The helper invokes the macOS `security` secure prompt with `-w` as its final option. The secret is entered into that prompt, not passed as a command argument or stored in shell history/a file.
+
+```bash
+cd "$ENGINEERING_REPO_DIR/ai-secretary"
+
+# Initial install (secure Keychain prompt)
+bash ops/macos/manage-engineering-credential.sh install
+
+# Availability only; never prints the value
+bash ops/macos/manage-engineering-credential.sh verify
+
+# Replace the value using another secure prompt
+bash ops/macos/manage-engineering-credential.sh rotate
+
+# Remove this MacBook's local copy
+bash ops/macos/manage-engineering-credential.sh remove
+```
+
+Also revoke or rotate the provider-side API key when retiring or losing the MacBook. Keychain removal only removes the local copy.
 
 ## First run and commands
 
@@ -85,7 +114,7 @@ bash ops/macos/install-engineering-worker.sh render
 bash ops/macos/install-engineering-worker.sh install
 ```
 
-The helper never embeds secrets. Ensure credentials are available through the dedicated user's credential store/agent setup. View status with `launchctl print "gui/$(id -u)/com.ai-company.engineering-worker"`. Disable/uninstall with `bash ops/macos/install-engineering-worker.sh uninstall`; durable state/worktrees are retained for recovery and must be removed manually after review.
+The helper never embeds secrets. Run `engineering:doctor` as the same dedicated macOS user before installation; it verifies both `gh auth` and Keychain retrieval with a launchd-compatible minimal environment that does not load shell profiles. View status with `launchctl print "gui/$(id -u)/com.ai-company.engineering-worker"`. Disable/uninstall with `bash ops/macos/install-engineering-worker.sh uninstall`; durable state/worktrees are retained for recovery and must be removed manually after review.
 
 ## Recovery and kill switch
 
