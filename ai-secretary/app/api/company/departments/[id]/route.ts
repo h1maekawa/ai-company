@@ -23,7 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!DEPARTMENT_IDS.includes(params.id as DepartmentId)) return NextResponse.json({ error: "UNKNOWN_DEPARTMENT" }, { status: 404 });
   const id = params.id as DepartmentId; const origin = req.nextUrl.origin;
   let data: Record<string, unknown> = {};
-  if (id === "creator") { const [a,b,c] = await Promise.all([json(content(request(`${origin}/api/content/dashboard?period=month`))), json(economics(request(`${origin}/api/company/economics`))), json(opportunities())]); data = { content:a, economics:b, opportunities:c }; }
+  if (id === "creator") { const [a,b,c,d] = await Promise.all([json(content(request(`${origin}/api/content/dashboard?period=month`))), json(economics(request(`${origin}/api/company/economics`))), json(opportunities()), json(execution())]); data = { content:a, economics:b, opportunities:c, execution:d }; }
   if (id === "fund") { const [a,b,c,d,e,portfolio] = await Promise.all([json(recommendations()), json(decisions()), json(transactions()), json(performance()), json(learning()), loadPortfolio().catch(() => null)]); data = { recommendations:a, decisions:b, transactions:c, performance:d, learning:e, portfolio }; }
   if (id === "operations") { const [a,b] = await Promise.all([json(metrics(request(`${origin}/api/company/metrics?days=14`))), json(execution())]); data = { metrics:a, execution:b }; }
   if (id === "knowledge") data = { knowledge: await json(knowledge(request(`${origin}/api/knowledge/dashboard`))) };

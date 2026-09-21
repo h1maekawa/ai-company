@@ -32,6 +32,7 @@ import {
 } from "./store";
 import type { PersonalMission } from "../missions";
 import { createManualMissionRecord, validateManualMissionInput } from "./manualMission";
+import { buildKnowledgeContext } from "../../knowledge/router";
 
 export type ServiceResult<T> =
   { ok: true; data: T } | { ok: false; error: string; status: number };
@@ -47,6 +48,13 @@ export async function createManualMission(input: {
   description?: unknown;
   idempotencyKey?: string;
   routingContext?: ExecutionMission["routingContext"];
+  executionPlan?: {
+    steps: Parameters<typeof createExecutionPlan>[0]["steps"];
+    workflowKind?: "CREATOR_MULTI_AGENT";
+    departmentId?: string;
+    leadAgentId?: string;
+    maxParallel?: number;
+  };
 }) {
   const validated = validateManualMissionInput(input);
   if (!validated.ok) return fail(400, validated.error);
@@ -60,8 +68,21 @@ export async function createManualMission(input: {
   return executionTransaction(async () => {
     const mission = createManualMissionRecord({ ...validated, routingContext: input.routingContext });
     const state = await loadExecutionState();
-    await saveExecutionState({ ...state, missions: [...state.missions, mission] });
-    const data = { mission };
+    let storedMission = mission;
+    let plans = state.plans;
+    if (input.executionPlan) {
+      const plan = {
+        ...createExecutionPlan({ missionId: mission.id, traceId: `pending:${mission.id}`, agentId: input.executionPlan.leadAgentId ?? input.routingContext?.requiredAgentId ?? "executive-assistant", objective: mission.title, steps: input.executionPlan.steps, expectedOutputs: ["research artifact", "KPI facts and interpretation", "content draft", "lead review"], expectedArtifacts: ["referenced step outputs"], acceptanceCriteria: [{ id: "integrated", description: "Research・KPI・Draftを参照した統合結果", kind: "min_length", value: 40 }], constraints: ["外部公開しない", "正式Knowledgeへ自動昇格しない", "参照IDを優先する"] }),
+        workflowKind: input.executionPlan.workflowKind,
+        departmentId: input.executionPlan.departmentId,
+        leadAgentId: input.executionPlan.leadAgentId,
+        maxParallel: Math.min(input.executionPlan.maxParallel ?? 1, 2),
+      };
+      storedMission = { ...mission, executionPlanId: plan.id };
+      plans = [...plans, plan];
+    }
+    await saveExecutionState({ ...state, missions: [...state.missions, storedMission], plans });
+    const data = { mission: storedMission };
     await store.completeIdempotency("manual-mission-create", key, data);
     return { ok: true as const, data };
   });
@@ -159,25 +180,36 @@ async function startMissionOperation(input: {
   if (!result.ok) return fail(409, result.error);
 
   // 実行前に計画を出す（§12）。いきなり実行させない
-  const plan = createExecutionPlan({
-    missionId: mission.id,
-    traceId: trace.traceId,
-    agentId: assignment.agentId,
-    objective: mission.title,
-    steps: internalPlanSteps(mission.title).map((step, index) =>
-      index === 0 && opportunity?.requiredSkills.length
-        ? { ...step, requiredSkillId: opportunity.requiredSkills[0] }
-        : step,
-    ),
-    expectedOutputs: ["internal report"],
-    expectedArtifacts: ["internal report"],
-    acceptanceCriteria: [
-      { id: "substantive", description: "内容のある内部レポート", kind: "min_length", value: 40 },
-      { id: "structured", description: "見出しを含む構造化レポート", kind: "has_heading" },
-    ],
-    constraints: ["外部公開しない", "外部Actionを実行しない"],
-    now,
-  });
+  const existingPlan = state.plans.find((item) => item.id === mission.executionPlanId);
+  let plan = existingPlan ? { ...existingPlan, traceId: trace.traceId, agentId: assignment.agentId, updatedAt: now.toISOString() } : createExecutionPlan({
+      missionId: mission.id,
+      traceId: trace.traceId,
+      agentId: assignment.agentId,
+      objective: mission.title,
+      steps: internalPlanSteps(mission.title).map((step, index) =>
+        index === 0 && opportunity?.requiredSkills.length
+          ? { ...step, requiredSkillId: opportunity.requiredSkills[0] }
+          : step,
+      ),
+      expectedOutputs: ["internal report"],
+      expectedArtifacts: ["internal report"],
+      acceptanceCriteria: [
+        { id: "substantive", description: "内容のある内部レポート", kind: "min_length", value: 40 },
+        { id: "structured", description: "見出しを含む構造化レポート", kind: "has_heading" },
+      ],
+      constraints: ["外部公開しない", "外部Actionを実行しない"],
+      now,
+    });
+  if (plan.workflowKind === "CREATOR_MULTI_AGENT") {
+    const knowledge = await buildKnowledgeContext(mission.title, { limit: 5 }).catch(() => ({ hits: [], contextText: "" }));
+    const knowledgeRefs = knowledge.hits.map((hit) => hit.id || hit.path);
+    plan = {
+      ...plan,
+      steps: plan.steps.map((step) => ["creator_research", "creator_content"].includes(step.id) ? { ...step, knowledgeRefs: [...new Set([...(step.knowledgeRefs ?? []), ...knowledgeRefs])] } : step),
+      referenceContext: knowledge.hits.map((hit) => ({ id: hit.id || hit.path, excerpt: hit.snippet.slice(0, 500), source: "knowledge" as const })),
+      updatedAt: now.toISOString(),
+    };
+  }
 
   const withPlan: ExecutionMission = {
     ...result.mission,
@@ -185,7 +217,7 @@ async function startMissionOperation(input: {
   };
   const next: ExecutionState = {
     ...upsertMission(state, withPlan),
-    plans: [...state.plans, plan],
+    plans: existingPlan ? state.plans.map((item) => item.id === plan.id ? plan : item) : [...state.plans, plan],
   };
   await saveExecutionState(next);
   if (opportunity)

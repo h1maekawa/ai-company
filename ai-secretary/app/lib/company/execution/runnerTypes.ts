@@ -31,6 +31,10 @@ export type StepHistory = {
   reason?: string;
   output?: string;
   actionRequestId?: string;
+  agentId?: string;
+  inputRefs?: string[];
+  outputRefs?: string[];
+  knowledgeRefs?: string[];
 };
 export type MissionRun = {
   steps: number;
