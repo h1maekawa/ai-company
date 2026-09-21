@@ -7,6 +7,7 @@ import type { ExecutionMission } from "./mission";
 import type { RunnerState } from "./runnerTypes";
 import type { ContentDraftCandidate } from "./contentHandoff";
 import type { SkillCandidate } from "../evolution/skillCandidates";
+import type { SkillEngineeringHandoff, SkillEngineeringSpecification } from "../evolution/skillEngineering";
 import { LocalExecutionStore } from "../runtime/localExecutionStore";
 import type { ExecutionSnapshot, ExecutionStore, StoreSaveOptions } from "../runtime/runtimeTypes";
 import { assertProductionMutationAllowed, runtimeEnvironment } from "../runtime/environment";
@@ -21,10 +22,12 @@ export type ExecutionState = {
   contentDraftCandidates: ContentDraftCandidate[];
   /** Evidence-backed proposals only; executable Skills remain in the existing Skill Registry. */
   skillCandidates: SkillCandidate[];
+  skillEngineeringSpecifications: SkillEngineeringSpecification[];
+  skillEngineeringHandoffs: SkillEngineeringHandoff[];
 };
 
 export function emptyExecutionState(): ExecutionState {
-  return { missions: [], actionRequests: [], approvals: [], plans: [], contentDraftCandidates: [], skillCandidates: [] };
+  return { missions: [], actionRequests: [], approvals: [], plans: [], contentDraftCandidates: [], skillCandidates: [], skillEngineeringSpecifications: [], skillEngineeringHandoffs: [] };
 }
 
 let singleton: ExecutionStore | undefined;

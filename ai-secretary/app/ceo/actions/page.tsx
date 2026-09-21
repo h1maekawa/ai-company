@@ -2,7 +2,7 @@
 import { useState, type FormEvent } from "react";
 
 const actions = [
-  ["Engineering Request", "人間確認後にai-ready Issueを作成", "engineering"],
+  ["Engineering Request", "人間確認後にIssueを作成（実装開始は別承認）", "engineering"],
   ["Content Idea", "Knowledge候補として保存", "content"],
   ["Knowledge Capture", "知識候補として保存", "knowledge"],
   ["Investment Decision", "既存Fund画面で人間Decisionを記録", "fund"],
