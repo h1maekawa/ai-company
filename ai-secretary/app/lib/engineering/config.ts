@@ -1,6 +1,8 @@
 import path from "node:path";
 import { credentialNameForAgent, type AgentCredentialName } from "./credentials";
 
+export type EngineeringAgentAuthMode = "api_key" | "chatgpt";
+
 export type EngineeringConfig = {
   enabled: boolean;
   dryRun: boolean;
@@ -13,6 +15,8 @@ export type EngineeringConfig = {
   logsDir: string;
   agentCommand: string;
   agentArgs: string[];
+  agentAuthMode: EngineeringAgentAuthMode;
+  codexHome: string;
   agentCredentialName: AgentCredentialName;
   keychainService: string;
   keychainAccount: string;
@@ -44,6 +48,15 @@ function jsonArgs(value: string | undefined): string[] {
 export function loadEngineeringConfig(env: NodeJS.ProcessEnv = process.env): EngineeringConfig {
   const workspaceDir = path.resolve(env.ENGINEERING_WORKSPACE_DIR || path.join(process.cwd(), ".engineering-worker"));
   const agentCommand = env.ENGINEERING_AGENT_COMMAND || "codex";
+  const rawAuthMode = env.ENGINEERING_AGENT_AUTH_MODE || "api_key";
+  if (rawAuthMode !== "api_key" && rawAuthMode !== "chatgpt") {
+    throw new Error("ENGINEERING_AGENT_AUTH_MODE must be api_key or chatgpt");
+  }
+  const agentAuthMode: EngineeringAgentAuthMode = rawAuthMode;
+  const executable = agentCommand.split("/").pop()?.toLowerCase();
+  if (agentAuthMode === "chatgpt" && executable !== "codex") {
+    throw new Error("ENGINEERING_AGENT_AUTH_MODE=chatgpt requires ENGINEERING_AGENT_COMMAND=codex");
+  }
   const agentCredentialName = credentialNameForAgent(agentCommand, env.ENGINEERING_AGENT_CREDENTIAL_NAME);
   return {
     enabled: env.ENGINEERING_WORKER_ENABLED !== "false",
@@ -57,6 +70,8 @@ export function loadEngineeringConfig(env: NodeJS.ProcessEnv = process.env): Eng
     logsDir: path.join(workspaceDir, "logs"),
     agentCommand,
     agentArgs: env.ENGINEERING_AGENT_ARGS_JSON ? jsonArgs(env.ENGINEERING_AGENT_ARGS_JSON) : agentCommand === "codex" ? ["exec", "-"] : [],
+    agentAuthMode,
+    codexHome: path.resolve(env.ENGINEERING_CODEX_HOME || path.join(workspaceDir, "codex-home")),
     agentCredentialName,
     keychainService: env.ENGINEERING_KEYCHAIN_SERVICE || "ai-company-engineering-worker",
     keychainAccount: env.ENGINEERING_KEYCHAIN_ACCOUNT || agentCredentialName,

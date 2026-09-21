@@ -3,14 +3,16 @@ import { loadEngineeringConfig } from "./config";
 import { CommandCodingAgentAdapter, GhCliAdapter, SafeCommandRunner } from "./adapters";
 import { EngineeringStateStore } from "./stateStore";
 import { EngineeringWorker } from "./worker";
-import { MacOsKeychainCredentialProvider } from "./credentials";
+import { CodexChatGptCredentialProvider, MacOsKeychainCredentialProvider } from "./credentials";
 import { formatDoctorChecks, runEngineeringDoctor } from "./doctor";
 
 async function createWorker() {
   const config = loadEngineeringConfig();
   const runner = new SafeCommandRunner();
   const state = new EngineeringStateStore(config.stateDir, config.logsDir);
-  const credentials = new MacOsKeychainCredentialProvider(runner, config.agentCredentialName, config.keychainService, config.keychainAccount, config.workspaceDir);
+  const credentials = config.agentAuthMode === "chatgpt"
+    ? new CodexChatGptCredentialProvider(runner, config.agentCommand, config.codexHome, config.workspaceDir)
+    : new MacOsKeychainCredentialProvider(runner, config.agentCredentialName, config.keychainService, config.keychainAccount, config.workspaceDir);
   await Promise.all([config.stateDir, config.logsDir, config.worktreesDir, config.artifactsDir].map((directory) => mkdir(directory, { recursive: true, mode: 0o700 })));
   return { config, runner, state, credentials, worker: new EngineeringWorker({ config, runner, state, github: new GhCliAdapter(config, runner), agent: new CommandCodingAgentAdapter(config, runner, credentials) }) };
 }

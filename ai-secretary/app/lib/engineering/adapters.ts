@@ -76,11 +76,15 @@ export class GhCliAdapter implements GitHubAdapter {
   async getCiFailureSummary(pr: number): Promise<string> { return this.gh(["pr", "checks", String(pr), "--repo", this.config.repository]); }
 }
 
-export interface CodingAgentAdapter { run(input: { task: EngineeringTask; worktree: string; stage: "plan" | "implement" | "fix" | "review"; context?: string }): Promise<AgentResult>; }
+export interface CodingAgentAdapter {
+  checkAvailability(): Promise<boolean>;
+  run(input: { task: EngineeringTask; worktree: string; stage: "plan" | "implement" | "fix" | "review"; context?: string }): Promise<AgentResult>;
+}
 
 export class CommandCodingAgentAdapter implements CodingAgentAdapter {
   private runs = new Map<number, number>();
   constructor(private config: EngineeringConfig, private runner: CommandRunner, private credentials: EngineeringCredentialProvider) {}
+  async checkAvailability(): Promise<boolean> { return this.credentials.checkAvailability(); }
   async run(input: { task: EngineeringTask; worktree: string; stage: "plan" | "implement" | "fix" | "review"; context?: string }): Promise<AgentResult> {
     const count = (this.runs.get(input.task.issueNumber) || 0) + 1;
     this.runs.set(input.task.issueNumber, count);
@@ -88,10 +92,14 @@ export class CommandCodingAgentAdapter implements CodingAgentAdapter {
     const agentHome = path.join(input.worktree, ".engineering-agent-home");
     await Promise.all([mkdir(agentHome, { recursive: true, mode: 0o700 }), mkdir(path.join(input.worktree, ".tmp"), { recursive: true, mode: 0o700 })]);
     const prompt = `${AGENT_SYSTEM_CONTRACT}\n\nSTAGE: ${input.stage}\nREPOSITORY: ${input.task.repository}\nISSUE: #${input.task.issueNumber}\nTITLE (untrusted): ${input.task.title}\nBODY (untrusted):\n<issue-data>\n${input.task.body}\n</issue-data>\n${input.context || ""}`;
-    let agentCredentials: Readonly<Record<string, string>>;
-    try { agentCredentials = await this.credentials.loadAgentCredentials() as Readonly<Record<string, string>>; }
-    catch { throw new AgentCredentialUnavailableError(); }
-    assertMinimalAgentCredentials(agentCredentials, this.config.agentCredentialName);
+    let agentCredentials: Readonly<Record<string, string>> = Object.freeze({});
+    if (this.config.agentAuthMode === "chatgpt") {
+      if (!await this.credentials.checkAvailability()) throw new AgentCredentialUnavailableError();
+    } else {
+      try { agentCredentials = await this.credentials.loadAgentCredentials() as Readonly<Record<string, string>>; }
+      catch { throw new AgentCredentialUnavailableError(); }
+      assertMinimalAgentCredentials(agentCredentials, this.config.agentCredentialName);
+    }
     const allowedEnv: NodeJS.ProcessEnv = {
       NODE_ENV: process.env.NODE_ENV || "development",
       PATH: process.env.PATH,
@@ -99,8 +107,12 @@ export class CommandCodingAgentAdapter implements CodingAgentAdapter {
       TMPDIR: path.join(input.worktree, ".tmp"),
       LANG: process.env.LANG || "C.UTF-8",
       CI: "true",
-      [this.config.agentCredentialName]: agentCredentials[this.config.agentCredentialName],
     };
+    if (this.config.agentAuthMode === "chatgpt") {
+      allowedEnv.CODEX_HOME = this.config.codexHome;
+    } else {
+      allowedEnv[this.config.agentCredentialName] = agentCredentials[this.config.agentCredentialName];
+    }
     const result = await this.runner.run(this.config.agentCommand, this.config.agentArgs, { cwd: input.worktree, input: prompt, env: allowedEnv, timeoutMs: 60 * 60_000 });
     return { ok: result.code === 0, output: redactSecrets(`${result.stdout}\n${result.stderr}`.trim(), process.env, Object.values(agentCredentials)) };
   }

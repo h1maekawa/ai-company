@@ -68,6 +68,9 @@ test("LaunchAgent remains secret-free and coding agent credentials are isolated"
   assert.doesNotMatch(adapters, /process\.env\[(?:key|"GH_TOKEN"|"GITHUB_TOKEN")\]/);
   assert.match(credentials, /\/usr\/bin\/security/);
   assert.match(credentials, /find-generic-password/);
+  assert.match(credentials, /Logged in using ChatGPT/);
+  assert.match(adapters, /CODEX_HOME/);
+  for (const secretName of ["CODEX_API_KEY", "CODEX_ACCESS_TOKEN"]) assert.doesNotMatch(plist, new RegExp(secretName));
 });
 
 test("credential helper prompts securely and never accepts secret argv", async () => {

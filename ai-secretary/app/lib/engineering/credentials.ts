@@ -32,6 +32,38 @@ export function launchAgentCompatibleEnvironment(env: NodeJS.ProcessEnv = proces
   };
 }
 
+export class CodexChatGptCredentialProvider implements EngineeringCredentialProvider {
+  constructor(
+    private readonly runner: CommandRunner,
+    private readonly command: string,
+    private readonly codexHome: string,
+    private readonly cwd: string,
+    private readonly processEnv: NodeJS.ProcessEnv = process.env,
+  ) {}
+
+  private async assertAvailable(): Promise<void> {
+    const env: NodeJS.ProcessEnv = {
+      ...launchAgentCompatibleEnvironment(this.processEnv),
+      CODEX_HOME: this.codexHome,
+    };
+    for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]) {
+      delete env[key];
+    }
+    const result = await this.runner.run(this.command, ["login", "status"], { cwd: this.cwd, env });
+    const output = `${result.stdout}\n${result.stderr}`;
+    if (result.code !== 0 || !/Logged in using ChatGPT/i.test(output)) throw new AgentCredentialUnavailableError();
+  }
+
+  async loadAgentCredentials(): Promise<Readonly<Partial<Record<AgentCredentialName, string>>>> {
+    await this.assertAvailable();
+    return Object.freeze({});
+  }
+
+  async checkAvailability(): Promise<boolean> {
+    try { await this.assertAvailable(); return true; } catch { return false; }
+  }
+}
+
 export class MacOsKeychainCredentialProvider implements EngineeringCredentialProvider {
   constructor(
     private readonly runner: CommandRunner,
