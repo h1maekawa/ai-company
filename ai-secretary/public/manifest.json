@@ -1,8 +1,8 @@
 {
-  "name": "AI秘書",
-  "short_name": "AI秘書",
-  "description": "あなた専用のAI秘書",
-  "start_url": "/",
+  "name": "AI Company CEO",
+  "short_name": "AI CEO",
+  "description": "AI Company Mobile CEO Control Tower",
+  "start_url": "/ceo",
   "display": "standalone",
   "background_color": "#0f1117",
   "theme_color": "#2563eb",

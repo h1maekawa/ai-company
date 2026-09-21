@@ -2,9 +2,9 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import { Building2, CheckSquare, Home, Menu, Plus, UserRound, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { ADMIN_NAV, PRIMARY_NAV, isNavActive } from "@/app/lib/config/navigation";
+import { isNavActive } from "@/app/lib/config/navigation";
 import { AppSidebar } from "./AppSidebar";
 
 /** チャット・壁打ちは1画面1目的の集中モードなので下部ナビを重ねない（ヘッダーに戻る導線がある） */
@@ -58,44 +58,38 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-/** モバイルは主要5領域を下部タブに常時出す（メニューを開かなくても移動できる） */
+/** CEOが片手で主要判断へ到達できる固定5ナビ。詳細領域はWorkに集約する。 */
 function MobileTabBar({ pathname }: { pathname: string }) {
+  const items = [
+    { label: "Home", href: "/ceo", icon: Home },
+    { label: "Work", href: "/ceo/work", icon: Building2 },
+    { label: "＋", href: "/ceo/actions", icon: Plus, primary: true },
+    { label: "Approvals", href: "/ceo/approvals", icon: CheckSquare },
+    { label: "CEO", href: "/company", icon: UserRound },
+  ];
   return (
     <nav
       aria-label="主要ナビゲーション"
       className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-800 bg-[#0b1020]/95 backdrop-blur lg:hidden"
     >
-      <div className="flex">
-        {PRIMARY_NAV.map((item) => {
+      <div className="mx-auto flex max-w-lg">
+        {items.map((item) => {
           const active = isNavActive(pathname, item.href);
+          const Icon = item.icon;
           return (
             <Link
-              key={item.id}
+              key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] transition-colors ${
-                active ? "text-violet-300" : "text-slate-500"
+              className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] transition-colors ${
+                item.primary ? "text-white" : active ? "text-violet-300" : "text-slate-500"
               }`}
             >
-              <span className="text-base leading-none" aria-hidden>
-                {item.icon}
-              </span>
+              <span className={item.primary ? "-mt-4 rounded-full bg-violet-600 p-3 shadow-lg" : ""}><Icon className="h-5 w-5" aria-hidden /></span>
               <span>{item.label}</span>
             </Link>
           );
         })}
-        <Link
-          href={ADMIN_NAV.href}
-          aria-current={isNavActive(pathname, ADMIN_NAV.href) ? "page" : undefined}
-          className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] transition-colors ${
-            isNavActive(pathname, ADMIN_NAV.href) ? "text-violet-300" : "text-slate-500"
-          }`}
-        >
-          <span className="text-base leading-none" aria-hidden>
-            {ADMIN_NAV.icon}
-          </span>
-          <span>{ADMIN_NAV.label}</span>
-        </Link>
       </div>
     </nav>
   );
