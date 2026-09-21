@@ -99,6 +99,8 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/opportunity/lifecycle.ts",
     "$PWD/app/lib/mobile-ceo/readModel.ts",
     "$PWD/app/lib/mobile-ceo/departments.ts"
+    ,"$PWD/app/lib/notifications/types.ts"
+    ,"$PWD/app/lib/notifications/events.ts"
   ]
 }
 TSCONFIG

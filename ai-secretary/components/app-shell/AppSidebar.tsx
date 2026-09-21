@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ADMIN_NAV, DEPARTMENT_NAV, PRIMARY_NAV, isNavActive, type AppNavItem } from "@/app/lib/config/navigation";
+import { OPEN_MEMO_EVENT } from "./WorkspaceOverlays";
 
 /**
  * DesktopはHome/秘書と全Department、管理を表示する。
@@ -36,6 +37,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
 
         <div className="mt-auto pt-6">
           <div className="mb-3 border-t border-slate-800/80" />
+          <button type="button" onClick={() => { window.dispatchEvent(new Event(OPEN_MEMO_EVENT)); onNavigate?.(); }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-400 hover:bg-white/5 hover:text-white"><span aria-hidden>📝</span><span>メモ</span></button>
           <SidebarLink item={ADMIN_NAV} pathname={pathname} onNavigate={onNavigate} />
         </div>
       </nav>

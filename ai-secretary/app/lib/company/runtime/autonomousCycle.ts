@@ -15,6 +15,9 @@ import { saveReview } from "../reviews/store";
 import { runtimeEnvironment } from "./environment";
 import { runtimeLog } from "./runtimeLog";
 import { autonomousEligibility } from "./autonomousEligibility";
+import { buildNotificationEvents } from "../../notifications/events";
+import { deliverNotifications } from "../../notifications/router";
+import { GET as getEngineeringNotifications } from "../../../api/engineering/requests/route";
 
 const GLOBAL_LEASE = "__autonomous_cycle__";
 const cycleEvent = (type: "CYCLE_STARTED" | "CYCLE_COMPLETED" | "CYCLE_FAILED", cycleId: string, detail?: string) => {
@@ -85,6 +88,9 @@ export async function runAutonomousCycle(options: { store?: ExecutionStore; maxM
       });
     }
     await store.save(attentionSnapshot.state, { expectedVersion: attentionSnapshot.version });
+    const engineeringResponse = await getEngineeringNotifications().catch(() => null);
+    const engineeringNotifications = engineeringResponse?.ok ? await engineeringResponse.json().catch(() => null) : null;
+    await deliverNotifications(buildNotificationEvents(attentionSnapshot.state, engineeringNotifications), store).catch((error) => runtimeLog({ traceId: cycleId, cycleId, event: "notification.delivery", result: "failure", error }));
     const snapshot = await store.load();
     const organization = buildOrganizationSnapshot();
     const pending = (await store.listPendingMissions())

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { DEPARTMENT_NAV_BY_ID } from "@/app/lib/config/navigation";
 import type { DepartmentId, DepartmentMetric, DepartmentReadModel, DepartmentDirectiveDraft } from "@/app/lib/mobile-ceo/departments";
 import { DepartmentChat } from "./DepartmentChat";
+import { EmployeeWorkspace } from "./EmployeeWorkspace";
 import { PageState, Section } from "./MobilePrimitives";
 
 function MetricCard({ item }: { item: DepartmentMetric }) {
@@ -42,5 +43,15 @@ export function DepartmentPage({ id }: { id: DepartmentId }) {
   if (!model && !error) return <PageState>読み込み中…</PageState>;
   if (!model) return <PageState retry={() => void load()}>{error}</PageState>;
   const important = [model.northStar, ...model.outcomes].slice(0, 3);
-  return <div className="space-y-4"><Section title="重要KPI"><div className="grid grid-cols-1 gap-2 sm:grid-cols-3">{important.map((item) => <MetricCard key={item.metric} item={item}/>)}</div><details className="mt-3"><summary className="min-h-11 cursor-pointer py-3 text-sm text-violet-300">詳細KPIを見る</summary><div className="grid grid-cols-2 gap-2">{model.operations.map((item) => <MetricCard key={item.metric} item={item}/>)}</div></details></Section><Section title="現在やっていること">{model.currentWork.length ? <ul className="space-y-2 text-sm">{model.currentWork.map((item) => <li key={item} className="rounded-lg bg-slate-800 p-3">{item}</li>)}</ul> : <p className="text-sm text-slate-400">確認できる進行中データはありません。</p>}</Section><Section title="問題 / 要確認">{model.problems.length ? <ul className="space-y-2 text-sm text-amber-200">{model.problems.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-slate-400">確認済みの問題はありません。</p>}</Section><Section title="AIからの提案">{model.suggestions.length ? model.suggestions.map((item) => <div key={item.suggestion} className="space-y-1 text-sm"><p>{item.observation}</p><p className="text-slate-400">{item.interpretation}</p><p>{item.suggestion}</p></div>) : <p className="text-sm text-slate-400">根拠のある提案はありません。</p>}</Section><DepartmentChat id={id} label={navigation.label} onDirective={setDirectiveSeed}/><DirectiveComposer id={id} label={navigation.label} initialInstruction={directiveSeed}/><Link href={navigation.detailHref} className="flex min-h-11 items-center justify-center rounded-xl border border-slate-700 text-sm text-violet-300">詳細を見る</Link>{model.executionAuthority === "HUMAN_ONLY" ? <p className="rounded-xl border border-amber-800 p-3 text-xs text-amber-300">HUMAN_ONLY — AIによる証券注文・自動売買は禁止</p> : null}</div>;
+  return <div className="space-y-4">
+    {model.problems.length ? <Section title="確認事項"><ul className="space-y-2 text-sm text-amber-200">{model.problems.map((item) => <li key={item}>{item}</li>)}</ul></Section> : null}
+    {model.currentWork.length ? <Section title="現在の仕事"><ul className="space-y-2 text-sm">{model.currentWork.map((item) => <li key={item} className="rounded-lg bg-slate-800 p-3">{item}</li>)}</ul></Section> : null}
+    <EmployeeWorkspace departmentId={id}/>
+    <Section title="必要なKPI"><div className="grid grid-cols-1 gap-2 sm:grid-cols-3">{important.map((item) => <MetricCard key={item.metric} item={item}/>)}</div><details className="mt-3"><summary className="min-h-11 cursor-pointer py-3 text-sm text-violet-300">詳細を見る</summary><div className="grid grid-cols-2 gap-2">{model.operations.map((item) => <MetricCard key={item.metric} item={item}/>)}</div></details></Section>
+    {model.suggestions.length ? <Section title="AIからの提案">{model.suggestions.map((item) => <div key={item.suggestion} className="space-y-1 text-sm"><p>{item.observation}</p><p className="text-slate-400">{item.interpretation}</p><p>{item.suggestion}</p></div>)}</Section> : null}
+    <DepartmentChat id={id} label={navigation.label} onDirective={setDirectiveSeed}/>
+    <DirectiveComposer id={id} label={navigation.label} initialInstruction={directiveSeed}/>
+    <Link href={navigation.detailHref} className="flex min-h-11 items-center justify-center rounded-xl border border-slate-700 text-sm text-violet-300">詳細を見る</Link>
+    {model.executionAuthority === "HUMAN_ONLY" ? <p className="rounded-xl border border-amber-800 p-3 text-xs text-amber-300">HUMAN_ONLY — AIによる証券注文・自動売買は禁止</p> : null}
+  </div>;
 }

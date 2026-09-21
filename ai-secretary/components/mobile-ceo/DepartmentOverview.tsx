@@ -43,7 +43,7 @@ export function DepartmentOverview() {
 
     void fetch("/api/company/approvals").then((response) => response.ok ? response.json() : null).then((payload) => {
       if (!active || !payload) return;
-      setApprovals((Array.isArray(payload.pending) ? payload.pending : []).slice(0, 3).map((item: Record<string, unknown>, index: number) => ({ id: `approval-${String(item.id ?? index)}`, title: String(item.title ?? item.actionType ?? "承認待ち"), href: "/ceo/approvals" })));
+      setApprovals((Array.isArray(payload.pending) ? payload.pending : []).slice(0, 3).map((item: Record<string, unknown>, index: number) => ({ id: `approval-${String(item.id ?? index)}`, title: String(item.title ?? item.actionType ?? "承認待ち"), href: `/ceo/approvals#approval-${encodeURIComponent(String(item.id ?? ""))}` })));
     }).catch(() => undefined);
 
     void fetch("/api/system/connections").then((response) => response.ok ? response.json() as Promise<ConnectionHealth> : null).then((payload) => {
@@ -68,6 +68,7 @@ export function DepartmentOverview() {
     });
     return [...approvals, ...departmentAttention, ...systemAttention].slice(0, 5);
   }, [approvals, departments, systemAttention]);
+  const currentWork = useMemo(() => DEPARTMENT_NAV.flatMap((item) => (departments[item.id]?.currentWork ?? []).slice(0, 1).map((title) => ({ id: `${item.id}:${title}`, title, label: item.label, href: item.href }))).slice(0, 3), [departments]);
 
   return (
     <div className="space-y-7">
@@ -82,6 +83,8 @@ export function DepartmentOverview() {
           </ul>
         ) : null}
       </section>
+
+      {currentWork.length ? <section aria-labelledby="current-work-title"><h2 id="current-work-title" className="text-base font-semibold text-white">現在の仕事</h2><ul className="mt-3 space-y-2">{currentWork.map((item) => <li key={item.id}><Link href={item.href} className="flex min-h-11 items-center justify-between rounded-xl border border-slate-800 bg-slate-900/65 px-3 py-2 text-sm"><span className="truncate">{item.title}</span><span className="ml-3 shrink-0 text-xs text-slate-500">{item.label}</span></Link></li>)}</ul></section> : null}
 
       <section aria-labelledby="departments-title">
         <h2 id="departments-title" className="text-base font-semibold text-white">事業部</h2>

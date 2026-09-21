@@ -6,7 +6,7 @@ import type { DepartmentId } from "@/app/lib/mobile-ceo/departments";
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type DirectiveSuggestion = { department: DepartmentId; instruction: string };
 
-export function DepartmentChat({ id, label, onDirective }: { id: DepartmentId; label: string; onDirective: (instruction: string) => void }) {
+export function DepartmentChat({ id, label, secretaryId, onDirective }: { id: DepartmentId; label: string; secretaryId?: string; onDirective: (instruction: string) => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -20,7 +20,7 @@ export function DepartmentChat({ id, label, onDirective }: { id: DepartmentId; l
     setMessages((current) => [...current, { role: "user", content: message }]);
     setInput(""); setBusy(true); setSuggestion(null);
     try {
-      const response = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, departmentId: id, history }) });
+      const response = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, departmentId: id, secretaryId, history }) });
       const payload = await response.json();
       setMessages((current) => [...current, { role: "assistant", content: String(payload.reply ?? payload.error ?? "回答を取得できませんでした") }]);
       if (response.ok && payload.directiveSuggestion?.department === id) setSuggestion(payload.directiveSuggestion);
