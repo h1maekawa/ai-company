@@ -11,7 +11,7 @@ import { riskOf, type ActionType } from "./actionTypes";
 
 export type ExecutionStepType = "analysis" | "research" | "generate" | "review" | "action";
 
-export type ExecutionStepStatus = "PENDING" | "RUNNING" | "COMPLETE" | "FAILED";
+export type ExecutionStepStatus = "PENDING" | "RUNNING" | "WAITING" | "COMPLETE" | "BLOCKED" | "FAILED";
 
 export type ExecutionStep = {
   id: string;
@@ -19,6 +19,13 @@ export type ExecutionStep = {
   title: string;
   type: ExecutionStepType;
   requiredSkillId?: string;
+  assignedAgentId?: string;
+  dependsOn?: string[];
+  inputRefs?: string[];
+  outputRefs?: string[];
+  knowledgeRefs?: string[];
+  humanRequired?: boolean;
+  updatedAt?: string;
   /** action ステップのみ。Gatewayへ出すAction */
   actionType?: ActionType;
   payload?: import("./executorTypes").InternalActionPayload;
@@ -30,6 +37,11 @@ export type ExecutionPlan = {
   missionId: string;
   traceId: string;
   agentId: string;
+  leadAgentId?: string;
+  departmentId?: string;
+  workflowKind?: "CREATOR_MULTI_AGENT";
+  maxParallel?: number;
+  referenceContext?: Array<{ id: string; excerpt: string; source: "knowledge" | "step" | "ssot" }>;
   objective: string;
   steps: ExecutionStep[];
   expectedOutputs: string[];
@@ -40,6 +52,7 @@ export type ExecutionPlan = {
   /** 計画に含まれるActionのうち最も高いリスク */
   riskLevel: RiskLevel;
   createdAt: string;
+  updatedAt?: string;
 };
 
 const RISK_ORDER: Record<RiskLevel, number> = { R0: 0, R1: 1, R2: 2, R3: 3, R4: 4 };
@@ -58,7 +71,7 @@ export function createExecutionPlan(input: {
   traceId: string;
   agentId: string;
   objective: string;
-  steps: Omit<ExecutionStep, "id" | "status">[];
+  steps: Array<Omit<ExecutionStep, "id" | "status"> & { id?: string }>;
   expectedOutputs: string[];
   acceptanceCriteria?: import("./reviewer").QualityCriterion[];
   expectedArtifacts?: string[];
@@ -68,8 +81,9 @@ export function createExecutionPlan(input: {
   const now = input.now ?? new Date();
   const steps: ExecutionStep[] = input.steps.map((step, index) => ({
     ...step,
-    id: `step_${index + 1}`,
+    id: step.id ?? `step_${index + 1}`,
     status: "PENDING",
+    updatedAt: now.toISOString(),
   }));
 
   return {
@@ -85,7 +99,18 @@ export function createExecutionPlan(input: {
     constraints: input.constraints,
     riskLevel: planRiskLevel(steps),
     createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
   };
+}
+
+/** Dependencyを満たした実行可能Stepだけを返す。並列数は2以下に固定する。 */
+export function readyExecutionSteps(plan: ExecutionPlan): ExecutionStep[] {
+  const completed = new Set(plan.steps.filter((step) => step.status === "COMPLETE").map((step) => step.id));
+  const limit = Math.min(Math.max(plan.maxParallel ?? 1, 1), 2);
+  return plan.steps
+    .filter((step) => step.status === "PENDING" && (step.dependsOn ?? []).every((id) => completed.has(id)))
+    .sort((a, b) => a.order - b.order)
+    .slice(0, limit);
 }
 
 /**

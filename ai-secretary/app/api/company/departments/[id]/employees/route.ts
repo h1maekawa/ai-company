@@ -19,6 +19,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({
     employees: entries.map((entry) => {
       const live = statuses.find((status) => status.agentId === entry!.config.id);
+      const currentStep = state?.plans.flatMap((plan) => plan.steps.map((step) => ({ plan, step }))).find(({ step }) => step.assignedAgentId === entry!.config.id && ["RUNNING", "WAITING", "BLOCKED"].includes(step.status));
+      const stepMission = currentStep ? state?.missions.find((mission) => mission.id === currentStep.plan.missionId) : undefined;
       return {
         id: entry!.config.id,
         name: entry!.config.name,
@@ -28,9 +30,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         permissions: agents.find((agent) => agent.id === entry!.config.id)?.granted ?? [],
         departmentId: department.id,
         riskLevel: entry!.config.riskLevel,
-        status: live?.status ?? "UNKNOWN",
-        currentMissionId: live?.currentMissionId,
-        currentMissionTitle: live?.currentMissionTitle,
+        status: currentStep?.step.status === "RUNNING" ? "EXECUTING" : currentStep?.step.status === "WAITING" ? "WAITING_APPROVAL" : currentStep?.step.status === "BLOCKED" ? "ERROR" : live?.status ?? "UNKNOWN",
+        currentMissionId: stepMission?.id ?? live?.currentMissionId,
+        currentMissionTitle: stepMission?.title ?? live?.currentMissionTitle,
+        currentStep: currentStep ? { id: currentStep.step.id, title: currentStep.step.title, status: currentStep.step.status, dependsOn: currentStep.step.dependsOn ?? [], outputRefs: currentStep.step.outputRefs ?? [] } : undefined,
         skills: getSkillsForSecretary(entry!.config.id).map((skill) => ({ id: skill.id, name: skill.name, status: skill.status, category: skill.category })),
       };
     }),

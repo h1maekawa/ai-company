@@ -75,11 +75,12 @@ export async function runProductionMission(input: {
     } else if (state.runtime?.runs[input.missionId]) {
       await store.appendEvent(event("MISSION_RESUMED", input.missionId, holderId));
     }
-    const agent = buildOrganizationSnapshot().agents.find((item) => item.id === mission.assignedAgentId) ?? null;
+    const organization = buildOrganizationSnapshot();
+    const agent = organization.agents.find((item) => item.id === mission.assignedAgentId) ?? null;
     await runAgent(state, input.missionId, agent, input.worker ?? internalStepWorker, { maxModelCalls: RUNTIME_DEFAULTS.maxModelCallsPerCycle }, async (next) => {
       if (heartbeatError) throw heartbeatError;
       snapshot = await store.save(next, { expectedVersion: snapshot.version, lease: guard });
-    });
+    }, organization.agents);
     snapshot = await store.save(state, { expectedVersion: snapshot.version, lease: guard });
     const result = {
       mission: snapshot.state.missions.find((item) => item.id === input.missionId),

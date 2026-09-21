@@ -20,6 +20,7 @@ export type StepWorker = (input: {
   step: ExecutionStep;
   rejectionReason?: string;
   signal: AbortSignal;
+  agentId?: string;
 }) => Promise<string>;
 export async function runAgent(
   state: ExecutionState,
@@ -28,6 +29,7 @@ export async function runAgent(
   worker: StepWorker,
   options: Partial<RunnerLimits> = {},
   checkpoint?: (state: ExecutionState) => Promise<void>,
+  availableAgents: AgentSummary[] = agent ? [agent] : [],
 ) {
   const limits = runnerLimits(options);
   const runtime = (state.runtime ??= emptyRunnerState());
@@ -134,6 +136,41 @@ export async function runAgent(
   try {
     for (const step of [...plan.steps].sort((a, b) => a.order - b.order)) {
       if (step.status === "COMPLETE") continue;
+      const dependenciesComplete = (step.dependsOn ?? []).every((dependencyId) => plan!.steps.some((candidate) => candidate.id === dependencyId && candidate.status === "COMPLETE"));
+      if (!dependenciesComplete) continue;
+      if (step.humanRequired) {
+        const priorHumanReview = [...run.history].reverse().find((item) => item.planId === plan!.id && item.stepId === step.id && item.actionRequestId);
+        const priorRequest = priorHumanReview?.actionRequestId ? state.actionRequests.find((request) => request.id === priorHumanReview.actionRequestId) : undefined;
+        if (priorRequest?.status === "APPROVED") {
+          step.status = "COMPLETE";
+          step.updatedAt = new Date().toISOString();
+          step.outputRefs = [`approval:${priorRequest.approvalId}`];
+          priorHumanReview!.status = "COMPLETE";
+          priorHumanReview!.outputRefs = step.outputRefs;
+          if (mission.status === "WAITING_APPROVAL") move("EXECUTING", "CEO Human Review approved; no publication executed");
+          continue;
+        }
+        if (priorRequest?.status === "REJECTED") {
+          step.status = "BLOCKED";
+          if (mission.status === "WAITING_APPROVAL") move("REPLAN_REQUIRED", "CEO Human Review rejected");
+          break;
+        }
+        if (!priorRequest) {
+          const reviewAgent = availableAgents.find((candidate) => candidate.id === (step.assignedAgentId ?? "personal-note")) ?? agent;
+          const submitted = submitAction(state, { missionId, traceId: mission.traceId ?? "unknown", agent: reviewAgent, actionType: "PUBLISH_DRAFT", payloadSummary: "Creator Draft Human Review (approval does not publish)", origin: "agent" }, { reportType: "Reviewer Result", content: "Review the referenced Creator draft. Approval records acceptance only and performs no publication." });
+          run.history.push({ planId: plan.id, stepId: step.id, at: new Date().toISOString(), status: "WAITING_APPROVAL", actionRequestId: submitted.request.id, agentId: reviewAgent?.id, inputRefs: step.inputRefs, outputRefs: [], knowledgeRefs: step.knowledgeRefs });
+        }
+        step.status = "WAITING";
+        step.updatedAt = new Date().toISOString();
+        if (mission.status !== "WAITING_APPROVAL") move("WAITING_APPROVAL", "CREATOR_HUMAN_REVIEW_REQUIRED");
+        break;
+      }
+      const stepAgent = step.assignedAgentId ? availableAgents.find((candidate) => candidate.id === step.assignedAgentId) ?? null : agent;
+      if (!stepAgent) {
+        step.status = "BLOCKED";
+        stop(`NO_SUITABLE_AGENT:${step.assignedAgentId ?? "unknown"}`, "BLOCKED");
+        break;
+      }
       if (run.steps >= limits.maxSteps) {
         stop("MAX_STEPS");
         break;
@@ -144,7 +181,7 @@ export async function runAgent(
       }
       if (
         step.requiredSkillId &&
-        !agent.skillIds.includes(step.requiredSkillId)
+        !stepAgent.skillIds.includes(step.requiredSkillId)
       ) {
         stop("MISSING_SKILL", "BLOCKED");
         break;
@@ -168,6 +205,7 @@ export async function runAgent(
         break;
       run.steps++;
       step.status = "RUNNING";
+      step.updatedAt = new Date().toISOString();
       const history = {
         planId: plan.id,
         stepId: step.id,
@@ -176,20 +214,27 @@ export async function runAgent(
         output: undefined as string | undefined,
         reason: undefined as string | undefined,
         actionRequestId: old?.actionRequestId,
+        agentId: stepAgent.id,
+        inputRefs: step.inputRefs,
+        outputRefs: step.outputRefs,
+        knowledgeRefs: step.knowledgeRefs,
       };
       run.history.push(history);
       if (checkpoint) await bounded(checkpoint(state));
-      const context = run.history
-        .filter((h) => h.planId === plan!.id && h.output)
+      const dependencyIds = new Set(step.dependsOn ?? []);
+      const priorContext = run.history
+        .filter((h) => h.planId === plan!.id && h.output && (!dependencyIds.size || dependencyIds.has(h.stepId)))
         .map((h) => h.output)
         .join("\n")
-        .slice(-30000);
+        .slice(-10000);
+      const referenceContext = (plan.referenceContext ?? []).filter((reference) => (step.knowledgeRefs ?? []).includes(reference.id)).map((reference) => `[${reference.source}:${reference.id}] ${reference.excerpt}`).join("\n").slice(0, 4000);
+      const context = `${referenceContext}\n${priorContext}`.trim();
       try {
         if (step.requiredSkillId) {
           const skill = await bounded(executeMissionSkill({
             skillId: step.requiredSkillId,
-            agentId: agent.id,
-            agentSkillIds: agent.skillIds,
+            agentId: stepAgent.id,
+            agentSkillIds: stepAgent.skillIds,
             objective: plan.objective,
             context,
           }));
@@ -217,14 +262,14 @@ export async function runAgent(
                 request: state.actionRequests.find(
                   (a) => a.id === old.actionRequestId,
                 )!,
-                result: executeStoredAction(state, old.actionRequestId!, agent),
+                result: executeStoredAction(state, old.actionRequestId!, stepAgent),
               }
             : submitAction(
                 state,
                 {
                   missionId,
                   traceId: mission.traceId ?? "unknown",
-                  agent,
+                  agent: stepAgent,
                   actionType: step.actionType,
                   payloadSummary: proposal,
                   origin: "agent",
@@ -293,6 +338,7 @@ export async function runAgent(
               step: { ...step },
               rejectionReason: run.rejectionReason,
               signal: controller.signal,
+              agentId: stepAgent.id,
             }),
           );
           if (controller.signal.aborted) throw new Error("MAX_EXECUTION_TIME");
@@ -306,8 +352,11 @@ export async function runAgent(
             break;
           }
           history.output = output;
+          step.outputRefs = [`mission:${missionId}:step:${step.id}:output`];
+          history.outputRefs = step.outputRefs;
         }
         step.status = "COMPLETE";
+        step.updatedAt = new Date().toISOString();
         history.status = "COMPLETE";
         if (checkpoint) await bounded(checkpoint(state));
       } catch (error) {
