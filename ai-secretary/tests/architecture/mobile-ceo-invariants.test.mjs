@@ -10,7 +10,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 test("Mobile CEOは5ナビ・44pxタップ・HUMAN_ONLYを維持する", () => {
   const shell = read("components/app-shell/AppShell.tsx");
   const model = read("app/lib/mobile-ceo/readModel.ts");
-  for (const label of ["Home", "Work", "Approvals", "CEO"]) assert.match(shell, new RegExp(`label: "${label}"`));
+  for (const label of ["ホーム", "事業部", "承認", "秘書"]) assert.match(shell, new RegExp(`label: "${label}"`));
+  assert.doesNotMatch(shell, /label: "(?:note・X|株式|AI会社改善|知識・メモ|今日・予定|開発)"/);
   assert.match(shell, /min-h-14/);
   assert.match(model, /executionAuthority: "HUMAN_ONLY"/);
   assert.match(model, /aiExecutionAllowed: false/);
@@ -26,7 +27,7 @@ test("Mobile Engineering Requestは人間確認なしでai-readyを付与しな�
 });
 
 test("375px UIは横幅を固定せずoverflowを抑え、主要操作は44px以上", () => {
-  const page = read("app/ceo/page.tsx");
+  const page = read("app/page.tsx");
   const actions = read("app/ceo/actions/page.tsx");
   assert.match(page, /w-full/);
   assert.match(page, /overflow-x-hidden/);

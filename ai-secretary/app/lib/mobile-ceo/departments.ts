@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { DerivedMetrics } from "@/app/lib/content/monetization/metrics";
 import type { FundDecision, FundRecommendation } from "@/app/lib/fund/engine";
 import type { Portfolio } from "@/app/lib/investing/types";
+import { DEPARTMENT_IDS, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 
-export const DEPARTMENT_IDS = ["creator", "fund", "operations", "knowledge", "planning", "engineering"] as const;
-export type DepartmentId = typeof DEPARTMENT_IDS[number];
+export { DEPARTMENT_IDS };
+export type DepartmentId = NavigationDepartmentId;
 export type MetricAvailability = "CONFIRMED" | "PARTIAL" | "UNKNOWN";
 export type DepartmentMetric = { metric: string; label: string; value: number | null; displayValue?: string; availability: MetricAvailability; unit?: string; asOf?: string; source: string };
 export type DepartmentReadModel = {
@@ -19,6 +20,14 @@ type FundPayload = { recommendations?: { recommendations?: MobileFundRecommendat
 const arr = (v: unknown): any[] => Array.isArray(v) ? v : [];
 const n = (v: unknown): number | null => typeof v === "number" && Number.isFinite(v) ? v : null;
 const metric = (key: string, label: string, value: unknown, source: string, unit?: string, availability?: MetricAvailability): DepartmentMetric => ({ metric: key, label, value: n(value), availability: availability ?? (n(value) === null ? "UNKNOWN" : "CONFIRMED"), unit, source });
+
+/** Questionと副作用を伴うDirective候補を決定論的に分離する。ここでは実行しない。 */
+export function isDepartmentDirective(message: string): boolean {
+  const text = message.trim();
+  if (!text) return false;
+  if (/(どう|なぜ|何|教えて|状況|ありますか|ある[？?]|とは)[？?]?$/u.test(text)) return false;
+  return /(作って|書いて|投稿して|公開して|実装して|追加して|修正して|改善して|整理して|記録して|買って|売って|始めて|実行して)/u.test(text);
+}
 
 export function buildDepartmentReadModel(id: DepartmentId, data: Json, generatedAt = new Date().toISOString()): DepartmentReadModel {
   const stamp = (asOf?: string | null) => (m: DepartmentMetric) => asOf ? { ...m, asOf } : m;

@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ADMIN_NAV, PRIMARY_NAV, isNavActive, type AppNavItem } from "@/app/lib/config/navigation";
+import { ADMIN_NAV, DEPARTMENT_NAV, PRIMARY_NAV, isNavActive, type AppNavItem } from "@/app/lib/config/navigation";
 
 /**
- * トップレベルの入口。日常は PRIMARY_NAV の5つ、管理系は「管理」1つに畳む。
+ * DesktopはHome/秘書と全Department、管理を表示する。
  * ナビ定義は app/lib/config/navigation.ts が唯一の正。
  */
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -23,6 +23,15 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
           {PRIMARY_NAV.map((item) => (
             <SidebarLink key={item.id} item={item} pathname={pathname} onNavigate={onNavigate} />
           ))}
+        </div>
+
+        <div className="mt-6">
+          <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">事業部</p>
+          <div className="space-y-1">
+            {DEPARTMENT_NAV.map((item) => (
+              <SidebarLink key={item.id} item={item} pathname={pathname} onNavigate={onNavigate} />
+            ))}
+          </div>
         </div>
 
         <div className="mt-auto pt-6">

@@ -99,7 +99,7 @@ function ChatView() {
   const pinnedSecretaryId = node.id === CENTER_NODE.id ? undefined : node.secretaryId;
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => searchParams.get("prompt") ?? "");
   const [loading, setLoading] = useState(false);
   const [provider, setProvider] = useState<Provider>(resolveDefaultProvider);
   const bottomRef = useRef<HTMLDivElement>(null);

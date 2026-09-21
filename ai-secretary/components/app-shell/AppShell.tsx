@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Building2, CheckSquare, Home, Menu, Plus, UserRound, X } from "lucide-react";
+import { Building2, CheckSquare, Home, Menu, MessageCircle, Plus, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { isNavActive } from "@/app/lib/config/navigation";
 import { AppSidebar } from "./AppSidebar";
@@ -58,14 +58,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-/** CEOが片手で主要判断へ到達できる固定5ナビ。詳細領域はWorkに集約する。 */
+/** Mobileは5項目。6 Departmentは「事業部」へ集約する。 */
 function MobileTabBar({ pathname }: { pathname: string }) {
   const items = [
-    { label: "Home", href: "/ceo", icon: Home },
-    { label: "Work", href: "/ceo/work", icon: Building2 },
+    { label: "ホーム", href: "/", icon: Home },
+    { label: "事業部", href: "/ceo/work", icon: Building2 },
     { label: "＋", href: "/ceo/actions", icon: Plus, primary: true },
-    { label: "Approvals", href: "/ceo/approvals", icon: CheckSquare },
-    { label: "CEO", href: "/company", icon: UserRound },
+    { label: "承認", href: "/ceo/approvals", icon: CheckSquare },
+    { label: "秘書", href: "/chat?node=assistant", icon: MessageCircle },
   ];
   return (
     <nav
