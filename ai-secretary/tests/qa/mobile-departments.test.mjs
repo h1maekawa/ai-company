@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { buildDepartmentReadModel, draftDirective, DIRECTIVE_ROUTING } = require(path.join(process.env.QA_DIST, "out/app/lib/mobile-ceo/departments.js"));
+const { buildDepartmentReadModel, draftDirective, DIRECTIVE_ROUTING, isDepartmentDirective } = require(path.join(process.env.QA_DIST, "out/app/lib/mobile-ceo/departments.js"));
 
 test("Creator KPIは正式RPM fieldとContent snapshot asOfを保持する", () => {
   const model = buildDepartmentReadModel("creator", { economics:{outcome:{revenueYen:100000,costYen:20000,profitYen:80000,roi:4,revenueStatus:"CONFIRMED",costStatus:"CONFIRMED"}}, content:{publishedCount:4,conversions:2,revenuePerThousandImpressions:999,dataAsOf:"2026-09-20T12:00:00Z",derived:{revenuePer1000Impressions:1250}} }, "2026-09-21T00:00:00Z");
@@ -47,3 +47,5 @@ test("DirectiveはDraftであり入力だけでは承認・実行されない", 
 test("Fund DirectiveはResearchのみ、Engineeringは外部ActionとしてPreview", () => { const fund=draftDirective({department:"fund",instruction:"ASMLを分析"}); const engineering=draftDirective({department:"engineering",instruction:"画面を追加"}); assert.equal(fund.interpretation.suggestedMissionType,"FUND_RESEARCH"); assert.equal(fund.interpretation.externalAction,false); assert.equal(engineering.interpretation.suggestedMissionType,"ENGINEERING_REQUEST"); assert.equal(engineering.interpretation.externalAction,true); });
 
 test("Directive Routingは既存Agent context別でFund tradeとCreator publishを許可しない", () => { assert.equal(DIRECTIVE_ROUTING.creator.requiredAgentId,"personal-note"); assert.equal(DIRECTIVE_ROUTING.fund.requiredAgentId,"personal-fund"); assert.equal(DIRECTIVE_ROUTING.operations.requiredAgentId,"executive-kaizen"); assert.equal(DIRECTIVE_ROUTING.knowledge.requiredAgentId,"executive-inbox"); assert.equal(DIRECTIVE_ROUTING.planning.requiredAgentId,"personal-morning"); assert.ok(DIRECTIVE_ROUTING.fund.constraints.includes("RESEARCH_ANALYSIS_ONLY")); assert.ok(DIRECTIVE_ROUTING.fund.constraints.includes("INVESTMENT_TRADE_R4")); assert.ok(DIRECTIVE_ROUTING.creator.constraints.includes("EXTERNAL_PUBLISH_REQUIRES_SEPARATE_HUMAN_APPROVAL")); });
+
+test("Departmentの質問はDirectiveではなく、実行依頼だけが確認へ進む", () => { assert.equal(isDepartmentDirective("今のXどう？"),false); assert.equal(isDepartmentDirective("最近伸びたテーマを教えて"),false); assert.equal(isDepartmentDirective("そのテーマで3投稿作って"),true); assert.equal(isDepartmentDirective("MUを買って"),true); assert.equal(isDepartmentDirective("このバグを実装して"),true); });

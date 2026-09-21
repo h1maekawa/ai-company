@@ -51,12 +51,13 @@ test("共通Sidebarはnavigation設定をSSOTにしActiveとMobile導線を備�
   assert.match(shell, /MobileTabBar/);
 });
 
-test("Homeは今日の状況とQuick Actionを表示し異常時だけAlertを出す", () => {
+test("HomeはSimple CEO Dashboardとして秘書・Attention・Departmentだけを表示する", () => {
   const home = read("app/page.tsx");
-  // Navigation v2: 部署カード一覧ではなく「今の状況」と「次の行動」を出す
-  assert.match(home, /useHomeStatus/); assert.match(home, /QUICK_ACTIONS/);
-  assert.match(home, /今日の状況/); assert.match(home, /システム状態/);
-  assert.match(home, /alerts\.length > 0/);
+  const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
+  assert.match(home, /AssistantPrompt/); assert.match(home, /DepartmentOverview/);
+  assert.match(overview, /CEO Attention/); assert.match(overview, /DEPARTMENT_NAV\.map/);
+  assert.match(overview, /\["disconnected", "error"\]/);
+  assert.doesNotMatch(home, /QUICK_ACTIONS|今日の状況|最近の動き|システム状態/);
   assert.doesNotMatch(home, /DailyPlan|Growth Analytics|Knowledge本文/);
 });
 

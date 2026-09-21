@@ -22,6 +22,9 @@ import { dispatchFromChat } from "@/app/lib/agents/dispatch";
 import { appendAgentTask } from "@/app/lib/agents/store";
 import { AGENT_ROLE_LABELS } from "@/app/lib/agents/types";
 import { observe } from "@/app/lib/company/observer";
+import { DEPARTMENT_IDS, DEPARTMENT_NAV_BY_ID, type NavigationDepartmentId } from "@/app/lib/config/navigation";
+import { isDepartmentDirective, type DepartmentReadModel } from "@/app/lib/mobile-ceo/departments";
+import { GET as getDepartment } from "@/app/api/company/departments/[id]/route";
 
 const ROLE_DEFAULT_TEMPLATE = `# 現在の役割
 
@@ -71,12 +74,13 @@ export async function POST(req: NextRequest) {
   // 処理時間は Proposal Score の Time Saving の元データになる（v3.1 §8）
   const requestStartedAt = Date.now();
   try {
-    const { message, provider, mode, history, secretaryId } = (await req.json()) as {
+    const { message, provider, mode, history, secretaryId, departmentId: requestedDepartmentId } = (await req.json()) as {
       message?: string;
       provider?: AIProvider;
       mode?: SecretaryMode;
       history?: ChatMessage[];
       secretaryId?: string;
+      departmentId?: string;
     };
 
     const chatHistory: ChatMessage[] = Array.isArray(history) ? history.slice(-10) : [];
@@ -84,16 +88,23 @@ export async function POST(req: NextRequest) {
     if (!message?.trim()) {
       return NextResponse.json({ error: "メッセージが空です" }, { status: 400 });
     }
+    if (requestedDepartmentId && !DEPARTMENT_IDS.includes(requestedDepartmentId as NavigationDepartmentId)) {
+      return NextResponse.json({ error: "UNKNOWN_DEPARTMENT" }, { status: 400 });
+    }
+    const departmentId = requestedDepartmentId as NavigationDepartmentId | undefined;
 
     // 1. Resolve company contexts from mode
-    const { activeCompany } = resolveCompanyContext(mode);
+    const companyDepartment = departmentId && ["operations", "knowledge", "engineering"].includes(departmentId);
+    const { activeCompany } = resolveCompanyContext(companyDepartment ? "company" : mode);
 
     // 2. Resolve target secretary: an explicit secretaryId (hub node) pins the
     //    department; otherwise fall back to keyword intent routing
     const requestedProvider = resolveProvider(provider);
     let targetSecretaryId: string;
     let routedIntent = "";
-    if (secretaryId && findSecretary(secretaryId)) {
+    if (departmentId) {
+      targetSecretaryId = DEPARTMENT_NAV_BY_ID[departmentId].secretaryId ?? "executive-assistant";
+    } else if (secretaryId && findSecretary(secretaryId)) {
       targetSecretaryId = secretaryId;
     } else {
       const routeResult = await routeRequest(message, activeCompany, requestedProvider);
@@ -119,6 +130,20 @@ export async function POST(req: NextRequest) {
         .map((f) => `### ${f.path}\n${f.content}`)
         .join("\n\n");
       systemPrompt += `\n\n## Scoped Memory Context\n${memoryBlock}`;
+    }
+
+    // Department ChatはClientの数値を信頼せず、同じServer-side Read Modelを再取得する。
+    if (departmentId) {
+      const departmentResponse = await getDepartment(
+        new NextRequest(new URL(`/api/company/departments/${departmentId}`, req.nextUrl.origin)),
+        { params: { id: departmentId } },
+      );
+      if (!departmentResponse.ok) return NextResponse.json({ error: "DEPARTMENT_CONTEXT_UNAVAILABLE" }, { status: 503 });
+      const payload = await departmentResponse.json() as { department: DepartmentReadModel; generatedAt: string };
+      systemPrompt += `\n\n## Current Department Read Model\n以下は既存SSOTから生成された最新Read Modelです。null/UNKNOWNを0や推測値で補わず、asOfがある値はその時点の観測として回答してください。\n${JSON.stringify(payload.department)}\n\n質問には回答だけを返してください。実行依頼でも実行済みと表現せず、Human Confirmation付きDirectiveが必要だと説明してください。`;
+      if (departmentId === "fund") systemPrompt += "\n証券注文・自動売買は絶対に行わず、分析・Recommendation・人間Decisionの記録までに限定してください。";
+      if (departmentId === "creator") systemPrompt += "\n投稿案は下書きまでです。X/noteへの外部公開は別のHuman Approvalなしに行えません。";
+      if (departmentId === "engineering") systemPrompt += "\n質問とEngineering Issueを区別し、main push・auto merge・production deployを行わないでください。";
     }
 
     // 5. Context injection from recent chat summary log
@@ -230,13 +255,16 @@ export async function POST(req: NextRequest) {
      *     ここが落ちても会話は成立させたいので、失敗しても応答は返す。
      */
     let dispatchedTask: { id: string; role: string; label: string } | null = null;
+    let directiveSuggestion: { department: NavigationDepartmentId; instruction: string } | null = null;
     try {
       const dispatch = dispatchFromChat({
         message,
         intent: routedIntent,
         secretaryId: targetSecretaryId,
       });
-      if (dispatch.dispatched) {
+      if (departmentId && (dispatch.dispatched || isDepartmentDirective(message))) {
+        directiveSuggestion = { department: departmentId, instruction: message.trim() };
+      } else if (dispatch.dispatched) {
         await appendAgentTask(dispatch.task);
         dispatchedTask = {
           id: dispatch.task.id,
@@ -270,6 +298,7 @@ export async function POST(req: NextRequest) {
       secretary: targetSecretaryId,
       kaizen,
       task: dispatchedTask,
+      directiveSuggestion,
     });
   } catch (error: any) {
     const msg = error instanceof Error ? error.message : "不明なエラー";

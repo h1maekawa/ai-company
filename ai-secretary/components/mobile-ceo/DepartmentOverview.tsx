@@ -1,5 +1,108 @@
 "use client";
-import { useEffect, useState } from "react";
-import type { DepartmentReadModel } from "@/app/lib/mobile-ceo/departments";
-const ids = ["creator","fund","operations","knowledge","planning","engineering"] as const;
-export function DepartmentOverview() { const [items,setItems]=useState<Array<DepartmentReadModel|null>>([]); useEffect(()=>{ void Promise.all(ids.map(async id=>{ try { const r=await fetch(`/api/company/departments/${id}`); return r.ok ? (await r.json()).department : null; } catch { return null; }})).then(setItems); },[]); const attention=items.flatMap(item=>item ? [...item.operations.filter(m=>m.metric==="decision_required"&&m.value&&m.value>0).map(m=>`${item.name}: ${m.value} Decision Required`), ...item.problems.slice(0,2), ...(item.northStar.availability!=="CONFIRMED"?[`${item.name}: KPI ${item.northStar.availability}`]:[])] : []); return <section className="space-y-4">{attention.length>0&&<div className="rounded-2xl border border-amber-800 bg-amber-950/20 p-4"><h2 className="font-bold">Department Attention</h2><ul className="mt-2 space-y-1 text-sm text-amber-200">{attention.slice(0,8).map((text,index)=><li key={`${text}-${index}`}>{text}</li>)}</ul></div>}<div><h2 className="mb-3 text-base font-bold">Departments</h2><div className="grid grid-cols-2 gap-3">{ids.map((id,index)=>{const item=items[index]; return <a key={id} href={`/ceo/departments/${id}`} className="min-h-28 rounded-2xl border border-slate-800 bg-slate-900/70 p-3"><strong className="capitalize">{item?.name ?? id}</strong><span className="mt-3 block text-xs text-slate-400">{item?.northStar.label ?? "North Star"}</span><span className="mt-1 block text-lg font-bold">{item ? item.northStar.value === null ? "UNKNOWN" : `${item.northStar.value.toLocaleString("ja-JP")}${item.northStar.unit ?? ""}` : "…"}</span></a>})}</div></div></section>; }
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { DEPARTMENT_NAV, type NavigationDepartmentId } from "@/app/lib/config/navigation";
+import type { DepartmentMetric, DepartmentReadModel } from "@/app/lib/mobile-ceo/departments";
+
+type DepartmentMap = Partial<Record<NavigationDepartmentId, DepartmentReadModel | null>>;
+type Attention = { id: string; title: string; href: string };
+type ConnectionHealth = { services?: Array<{ service: string; label: string; status: string; message?: string }> };
+
+function allMetrics(model: DepartmentReadModel) {
+  return [model.northStar, ...model.outcomes, ...model.operations];
+}
+
+function formatMetric(metric: DepartmentMetric | undefined) {
+  if (!metric || metric.value === null) return "UNKNOWN";
+  return `${metric.value.toLocaleString("ja-JP")}${metric.unit ?? ""}`;
+}
+
+function statusOf(model: DepartmentReadModel | null | undefined) {
+  if (!model) return { label: "UNKNOWN", tone: "bg-slate-500" };
+  const decisionRequired = model.operations.find((metric) => metric.metric === "decision_required")?.value ?? 0;
+  const ciFailure = model.operations.concat(model.outcomes).find((metric) => metric.metric === "ci_failure")?.value ?? 0;
+  if (model.problems.length > 0 || decisionRequired > 0 || ciFailure > 0) return { label: "要確認", tone: "bg-amber-400" };
+  if (model.currentWork.length > 0) return { label: "稼働中", tone: "bg-emerald-400" };
+  return { label: "正常", tone: "bg-sky-400" };
+}
+
+export function DepartmentOverview() {
+  const [departments, setDepartments] = useState<DepartmentMap>({});
+  const [approvals, setApprovals] = useState<Attention[]>([]);
+  const [systemAttention, setSystemAttention] = useState<Attention[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all(DEPARTMENT_NAV.map(async (item) => {
+      try {
+        const response = await fetch(`/api/company/departments/${item.id}`);
+        return [item.id, response.ok ? (await response.json()).department as DepartmentReadModel : null] as const;
+      } catch { return [item.id, null] as const; }
+    })).then((entries) => { if (active) setDepartments(Object.fromEntries(entries)); });
+
+    void fetch("/api/company/approvals").then((response) => response.ok ? response.json() : null).then((payload) => {
+      if (!active || !payload) return;
+      setApprovals((Array.isArray(payload.pending) ? payload.pending : []).slice(0, 3).map((item: Record<string, unknown>, index: number) => ({ id: `approval-${String(item.id ?? index)}`, title: String(item.title ?? item.actionType ?? "承認待ち"), href: "/ceo/approvals" })));
+    }).catch(() => undefined);
+
+    void fetch("/api/system/connections").then((response) => response.ok ? response.json() as Promise<ConnectionHealth> : null).then((payload) => {
+      if (!active || !payload) return;
+      const critical = (payload.services ?? []).filter((service) => ["disconnected", "error"].includes(service.status));
+      setSystemAttention(critical.slice(0, 1).map((service) => ({ id: `system-${service.service}`, title: service.message ?? `${service.label}の接続に問題があります`, href: "/connections" })));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  const attention = useMemo(() => {
+    const departmentAttention = DEPARTMENT_NAV.flatMap((item) => {
+      const model = departments[item.id];
+      if (!model) return [];
+      const decision = model.operations.find((metric) => metric.metric === "decision_required" && metric.value !== null && metric.value > 0);
+      const ciFailure = model.outcomes.find((metric) => metric.metric === "ci_failure" && metric.value !== null && metric.value > 0);
+      return [
+        ...(decision ? [{ id: `${item.id}-decision`, title: `${item.label}: 判断待ち ${decision.value}件`, href: item.href }] : []),
+        ...(ciFailure ? [{ id: `${item.id}-ci`, title: `${item.label}: CI失敗 ${ciFailure.value}件`, href: item.href }] : []),
+        ...model.problems.slice(0, 1).map((problem, index) => ({ id: `${item.id}-problem-${index}`, title: `${item.label}: ${problem}`, href: item.href })),
+      ];
+    });
+    return [...approvals, ...departmentAttention, ...systemAttention].slice(0, 5);
+  }, [approvals, departments, systemAttention]);
+
+  return (
+    <div className="space-y-7">
+      <section aria-labelledby="ceo-attention-title">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="ceo-attention-title" className="text-base font-semibold text-white">CEO Attention</h2>
+          <span className="text-sm font-semibold text-amber-300">{attention.length}</span>
+        </div>
+        {attention.length > 0 ? (
+          <ul className="mt-3 space-y-2">
+            {attention.map((item) => <li key={item.id}><Link href={item.href} className="flex min-h-11 items-center rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2 text-sm text-amber-100">{item.title}</Link></li>)}
+          </ul>
+        ) : null}
+      </section>
+
+      <section aria-labelledby="departments-title">
+        <h2 id="departments-title" className="text-base font-semibold text-white">事業部</h2>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {DEPARTMENT_NAV.map((item) => {
+            const model = departments[item.id];
+            const metrics = model ? allMetrics(model) : [];
+            const selected = item.homeMetrics.map((key) => metrics.find((metric) => metric.metric === key));
+            const status = statusOf(model);
+            return (
+              <Link key={item.id} href={item.href} className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/65 p-4 transition hover:border-violet-500/50 hover:bg-slate-900">
+                <h3 className="text-base font-semibold text-white"><span aria-hidden>{item.icon}</span> {item.label}</h3>
+                <dl className="mt-4 grid grid-cols-2 gap-3">
+                  {selected.map((metric, index) => <div key={item.homeMetrics[index]} className="min-w-0"><dt className="truncate text-[11px] text-slate-400">{metric?.label ?? "取得中"}</dt><dd className="mt-1 truncate text-lg font-bold text-white">{formatMetric(metric)}</dd></div>)}
+                </dl>
+                <p className="mt-4 flex items-center gap-2 text-xs text-slate-400"><span className={`h-2 w-2 rounded-full ${status.tone}`} aria-hidden />{status.label}</p>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}

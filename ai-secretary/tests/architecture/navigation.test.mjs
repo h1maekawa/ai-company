@@ -16,20 +16,23 @@ const exists = (relative) => fs.existsSync(path.join(ROOT, relative));
 
 const NAVIGATION = "app/lib/config/navigation.ts";
 
-test("top-level navigation stays at 5 daily areas plus one admin entry", () => {
+test("desktop navigation uses Home/Assistant plus the six Department registry entries", () => {
   const source = read(NAVIGATION);
   const primary = source.slice(
     source.indexOf("export const PRIMARY_NAV"),
     source.indexOf("export const ADMIN_NAV")
   );
   const ids = [...primary.matchAll(/^\s{4}id: "([a-z-]+)",$/gm)].map((match) => match[1]);
-  assert.deepEqual(ids, ["home", "assistant", "today", "content", "investing"]);
+  assert.deepEqual(ids, ["home", "assistant"]);
+  for (const id of ["creator", "fund", "operations", "knowledge", "planning", "engineering"]) {
+    assert.match(source, new RegExp(`id: "${id}"[\\s\\S]{0,180}href: "/ceo/departments/${id}"`));
+  }
   assert.match(source, /export const ADMIN_NAV: AppNavItem = \{[\s\S]*href: "\/admin"/);
 });
 
 test("primary navigation points at the existing routes", () => {
   const source = read(NAVIGATION);
-  for (const href of ["/", "/chat?node=assistant", "/planning", "/note", "/investing"]) {
+  for (const href of ["/", "/chat?node=assistant"]) {
     assert.ok(source.includes(`href: "${href}"`), `PRIMARY_NAV should link to ${href}`);
   }
   for (const page of [
@@ -54,6 +57,7 @@ test("admin holds the non-daily areas instead of the sidebar", () => {
 test("sidebar renders only the shared navigation config", () => {
   const sidebar = read("components/app-shell/AppSidebar.tsx");
   assert.match(sidebar, /from "@\/app\/lib\/config\/navigation"/);
+  assert.match(sidebar, /DEPARTMENT_NAV\.map/);
   // ナビ項目をコンポーネント側に直書きしない（増殖の原因になる）
   assert.doesNotMatch(sidebar, /href="\/(knowledge|connections|content|grill)/);
 });
@@ -70,7 +74,7 @@ test("routes hidden from the sidebar are still reachable", () => {
     assert.ok(exists(page), `${page} must stay reachable by deep link`);
   }
   const source = read(NAVIGATION);
-  for (const href of ["/content", "/knowledge", "/connections", "/grill", "/chat"]) {
+  for (const href of ["/content", "/knowledge", "/connections", "/grill", "/chat", "/company", "/admin"]) {
     assert.ok(
       source.includes(`{ href: "${href}",`),
       `PRESERVED_ROUTES should document ${href}`
