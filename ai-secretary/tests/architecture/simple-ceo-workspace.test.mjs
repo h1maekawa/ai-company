@@ -20,7 +20,7 @@ test("root is the single Simple CEO Dashboard and /ceo redirects", () => {
 test("Department registry is the SSOT for labels, routes and six cards", () => {
   const navigation = read("app/lib/config/navigation.ts");
   const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
-  for (const [id, label] of [["creator","note・X"],["fund","株式"],["operations","AI会社改善"],["knowledge","知識・メモ"],["planning","今日・予定"],["engineering","開発"]]) {
+  for (const [id, label] of [["creator","note・X"],["fund","株式"],["operations","AI会社改善"],["knowledge","知識"],["planning","今日・予定"],["engineering","開発"]]) {
     assert.match(navigation, new RegExp(`id: "${id}", label: "${label}"`));
     assert.match(navigation, new RegExp(`href: "/ceo/departments/${id}"`));
   }

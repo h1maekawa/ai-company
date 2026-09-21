@@ -6,6 +6,7 @@ import { Building2, CheckSquare, Home, Menu, MessageCircle, Plus, X } from "luci
 import { usePathname } from "next/navigation";
 import { isNavActive } from "@/app/lib/config/navigation";
 import { AppSidebar } from "./AppSidebar";
+import { WorkspaceOverlays } from "./WorkspaceOverlays";
 
 /** チャット・壁打ちは1画面1目的の集中モードなので下部ナビを重ねない（ヘッダーに戻る導線がある） */
 const FULLSCREEN_PREFIXES = ["/chat", "/grill", "/login"];
@@ -54,6 +55,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className={`min-h-screen lg:pl-60 ${fullscreen ? "" : "pb-16 lg:pb-0"}`}>{children}</div>
 
       {!fullscreen && <MobileTabBar pathname={pathname} />}
+      {!fullscreen && <WorkspaceOverlays />}
     </div>
   );
 }

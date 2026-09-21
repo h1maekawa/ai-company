@@ -34,6 +34,9 @@ import {
   viewpointText,
 } from "@/app/lib/integrations/slack/editorial-context";
 import { editorialQuestions } from "@/app/lib/integrations/slack/editorial-questions";
+import { COMPANY_APPROVAL_ACTION, canApproveInSlack, isAuthorizedSlackUser } from "@/app/lib/notifications/slack";
+import { getExecutionStore } from "@/app/lib/company/execution/store";
+import { decideApprovalRequest } from "@/app/lib/company/execution/service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -99,8 +102,26 @@ export async function POST(req: Request): Promise<Response> {
   const actionId = action.action_id;
   const value = action.value;
   const user = payload.user?.name ?? payload.user?.id ?? "unknown";
+  const slackUserId = payload.user?.id;
   const channel = payload.channel?.id ?? payload.container?.channel_id;
   const threadTs = payload.container?.thread_ts ?? payload.message?.thread_ts;
+
+  if (actionId === COMPANY_APPROVAL_ACTION) {
+    if (!isAuthorizedSlackUser(slackUserId)) return new Response(JSON.stringify({ error: "UNAUTHORIZED_SLACK_USER" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    const store = getExecutionStore();
+    const snapshot = await store.load();
+    const approval = snapshot.state.approvals.find((item) => item.id === value);
+    if (!approval || approval.status !== "PENDING") return ok("承認対象が見つからないか、既に判断済みです。");
+    if (!canApproveInSlack(approval.riskLevel)) return ok("R3/R4はSlackから承認できません。AI Companyの詳細画面で確認してください。");
+    const key = `${value}:APPROVED:${slackUserId}`;
+    const prior = await store.getIdempotencyResult<{ ok: boolean }>("slack-approval", key);
+    if (prior) return ok("この承認は既に受け付けています。");
+    if (!(await store.claimIdempotency("slack-approval", key))) return ok("この承認は処理中です。");
+    const result = await decideApprovalRequest({ approvalId: value, decision: "APPROVED", reason: `Slack user ${slackUserId}` });
+    if (!result.ok) return ok(result.error);
+    await store.completeIdempotency("slack-approval", key, { ok: true });
+    return ok("承認をAI Companyへ反映しました。");
+  }
 
   // 同じボタンの二度押しで二重に走らせない
   const preparesBeforeClaim = actionId === ACTIONS.bufferQueue || actionId === ACTIONS.bufferNow;

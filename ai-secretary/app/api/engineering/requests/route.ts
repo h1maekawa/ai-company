@@ -49,6 +49,11 @@ export async function GET() {
         ciFailure: relevantRuns ? relevantRuns.filter((run) => run.conclusion === "failure").length : null,
         lastActivity,
       },
+      notificationSources: {
+        prReady: (relevantPulls ?? []).filter((pull) => pull.draft !== true).map((pull) => ({ id: String(pull.id ?? pull.number), title: String(pull.title ?? "Engineering PR Ready"), url: String(pull.html_url ?? "/ceo/departments/engineering"), updatedAt: String(pull.updated_at ?? lastActivity ?? new Date().toISOString()) })),
+        ciFailure: (relevantRuns ?? []).filter((run) => run.conclusion === "failure").map((run) => ({ id: String(run.id), title: String(run.name ?? "Engineering CI Failure"), url: String(run.html_url ?? "/ceo/departments/engineering"), updatedAt: String(run.updated_at ?? run.run_started_at ?? lastActivity ?? new Date().toISOString()) })),
+        blocked: issues.filter((issue) => status(issue) === "BLOCKED").map((issue) => ({ id: String(issue.id ?? issue.number), title: String(issue.title ?? "Engineering Blocked"), url: String(issue.html_url ?? "/ceo/departments/engineering"), updatedAt: String(issue.updated_at ?? lastActivity ?? new Date().toISOString()) })),
+      },
     });
   } catch { return NextResponse.json({ available: false, items: null, reason: "GITHUB_UNAVAILABLE" }); }
 }
