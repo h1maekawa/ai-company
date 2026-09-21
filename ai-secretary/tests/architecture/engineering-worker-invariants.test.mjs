@@ -56,3 +56,23 @@ test("new untracked files enter security review before commit", async () => {
   assert.match(worker, /"add",\s*"--intent-to-add",\s*"--all"/);
   assert.ok(worker.indexOf("const changed = await this.diff") < worker.indexOf('["commit", "-m"'));
 });
+
+test("LaunchAgent remains secret-free and coding agent credentials are isolated", async () => {
+  const plist = await read("ops/macos/com.ai-company.engineering-worker.plist.template");
+  const adapters = await read("app/lib/engineering/adapters.ts");
+  const credentials = await read("app/lib/engineering/credentials.ts");
+  for (const secretName of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GH_TOKEN", "GITHUB_TOKEN"]) assert.doesNotMatch(plist, new RegExp(secretName));
+  assert.match(plist, /<key>HOME<\/key>[\s\S]*__HOME_DIR__/);
+  assert.match(adapters, /HOME:\s*agentHome/);
+  assert.match(adapters, /assertMinimalAgentCredentials/);
+  assert.doesNotMatch(adapters, /process\.env\[(?:key|"GH_TOKEN"|"GITHUB_TOKEN")\]/);
+  assert.match(credentials, /\/usr\/bin\/security/);
+  assert.match(credentials, /find-generic-password/);
+});
+
+test("credential helper prompts securely and never accepts secret argv", async () => {
+  const helper = await read("ops/macos/manage-engineering-credential.sh");
+  assert.match(helper, /add-generic-password[^\n]+-w\s*$/m);
+  assert.doesNotMatch(helper, /-w\s+["']?\$|read\s+.*secret|OPENAI_API_KEY=/);
+  assert.match(helper, /find-generic-password[^\n]+-w\s+>\/dev\/null/);
+});

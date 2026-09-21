@@ -1,4 +1,5 @@
 import path from "node:path";
+import { credentialNameForAgent, type AgentCredentialName } from "./credentials";
 
 export type EngineeringConfig = {
   enabled: boolean;
@@ -12,6 +13,9 @@ export type EngineeringConfig = {
   logsDir: string;
   agentCommand: string;
   agentArgs: string[];
+  agentCredentialName: AgentCredentialName;
+  keychainService: string;
+  keychainAccount: string;
   pollIntervalMs: number;
   leaseMs: number;
   maxTasksPerDay: number;
@@ -40,6 +44,7 @@ function jsonArgs(value: string | undefined): string[] {
 export function loadEngineeringConfig(env: NodeJS.ProcessEnv = process.env): EngineeringConfig {
   const workspaceDir = path.resolve(env.ENGINEERING_WORKSPACE_DIR || path.join(process.cwd(), ".engineering-worker"));
   const agentCommand = env.ENGINEERING_AGENT_COMMAND || "codex";
+  const agentCredentialName = credentialNameForAgent(agentCommand, env.ENGINEERING_AGENT_CREDENTIAL_NAME);
   return {
     enabled: env.ENGINEERING_WORKER_ENABLED !== "false",
     dryRun: env.ENGINEERING_DRY_RUN === "true",
@@ -52,6 +57,9 @@ export function loadEngineeringConfig(env: NodeJS.ProcessEnv = process.env): Eng
     logsDir: path.join(workspaceDir, "logs"),
     agentCommand,
     agentArgs: env.ENGINEERING_AGENT_ARGS_JSON ? jsonArgs(env.ENGINEERING_AGENT_ARGS_JSON) : agentCommand === "codex" ? ["exec", "-"] : [],
+    agentCredentialName,
+    keychainService: env.ENGINEERING_KEYCHAIN_SERVICE || "ai-company-engineering-worker",
+    keychainAccount: env.ENGINEERING_KEYCHAIN_ACCOUNT || agentCredentialName,
     pollIntervalMs: positiveInt(env.ENGINEERING_POLL_INTERVAL_MS, 60_000),
     leaseMs: positiveInt(env.ENGINEERING_LEASE_MS, 30 * 60_000),
     maxTasksPerDay: positiveInt(env.ENGINEERING_MAX_TASKS_PER_DAY, 3),

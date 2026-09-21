@@ -82,11 +82,12 @@ export function reviewDiff(input: { files: string[]; diff: string; maxChangedFil
   return { ok: reasons.length === 0, reasons };
 }
 
-export function redactSecrets(value: string, env: NodeJS.ProcessEnv = process.env): string {
+export function redactSecrets(value: string, env: NodeJS.ProcessEnv = process.env, additionalSecrets: readonly string[] = []): string {
   let redacted = value.replace(/(gh[opusr]_[A-Za-z0-9_]{20,})/g, "[REDACTED]").replace(/(Bearer\s+)[^\s]+/gi, "$1[REDACTED]");
   for (const key of ["GITHUB_TOKEN", "GH_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]) {
     const secret = env[key];
     if (secret && secret.length >= 6) redacted = redacted.split(secret).join("[REDACTED]");
   }
+  for (const secret of additionalSecrets) if (secret.length >= 6) redacted = redacted.split(secret).join("[REDACTED]");
   return redacted;
 }

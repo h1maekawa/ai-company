@@ -11,6 +11,9 @@ if (!dist) throw new Error("ENGINEERING_DIST is required");
 const security = require(path.join(dist, "security.js"));
 const worker = require(path.join(dist, "worker.js"));
 const state = require(path.join(dist, "stateStore.js"));
+const adapters = require(path.join(dist, "adapters.js"));
+const credentials = require(path.join(dist, "credentials.js"));
+const doctor = require(path.join(dist, "doctor.js"));
 
 function issue(overrides = {}) {
   return {
@@ -78,6 +81,58 @@ test("local and CI failures have bounded repair transitions", () => {
 test("secrets are redacted from durable output", () => {
   assert.equal(security.redactSecrets("token=super-secret-value", { GITHUB_TOKEN: "super-secret-value" }), "token=[REDACTED]");
   assert.equal(security.redactSecrets("Bearer abc123"), "Bearer [REDACTED]");
+  assert.equal(security.redactSecrets("agent printed keychain-secret", {}, ["keychain-secret"]), "agent printed [REDACTED]");
+});
+
+test("macOS Keychain provider loads one credential without shell profiles", async () => {
+  const calls = [];
+  const runner = { async run(command, args, options) { calls.push({ command, args, options }); return { code: 0, stdout: "keychain-secret\n", stderr: "" }; } };
+  const provider = new credentials.MacOsKeychainCredentialProvider(runner, "OPENAI_API_KEY", "service", "account", "/workspace");
+  assert.deepEqual(await provider.loadAgentCredentials(), { OPENAI_API_KEY: "keychain-secret" });
+  assert.equal(calls[0].command, "/usr/bin/security");
+  assert.deepEqual(calls[0].args, ["find-generic-password", "-a", "account", "-s", "service", "-w"]);
+  assert.equal(calls[0].options.env.HOME, undefined);
+  assert.equal(calls[0].options.env.GITHUB_TOKEN, undefined);
+});
+
+test("coding agent receives only its credential and keeps isolated HOME", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-agent-test-"));
+  try {
+    let invocation;
+    const runner = { async run(command, args, options) { invocation = { command, args, options }; return { code: 0, stdout: "keychain-secret", stderr: "" }; } };
+    const provider = { async loadAgentCredentials() { return { OPENAI_API_KEY: "keychain-secret" }; }, async checkAvailability() { return true; } };
+    const config = { agentCommand: "codex", agentArgs: ["exec", "-"], agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider);
+    const task = worker.normalizeIssue(issue(), "owner/repo");
+    const result = await adapter.run({ task, worktree: directory, stage: "plan" });
+    assert.equal(invocation.options.env.OPENAI_API_KEY, "keychain-secret");
+    assert.equal(invocation.options.env.GH_TOKEN, undefined);
+    assert.equal(invocation.options.env.GITHUB_TOKEN, undefined);
+    assert.equal(invocation.options.env.ANTHROPIC_API_KEY, undefined);
+    assert.equal(invocation.options.env.HOME, path.join(directory, ".engineering-agent-home"));
+    assert.equal(result.output, "[REDACTED]");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("missing or over-broad agent credentials fail closed before spawn", async () => {
+  let spawned = false;
+  const runner = { async run() { spawned = true; return { code: 0, stdout: "", stderr: "" }; } };
+  const unavailable = { async loadAgentCredentials() { throw new Error("Keychain detail must not escape"); }, async checkAvailability() { return false; } };
+  const config = { agentCommand: "codex", agentArgs: [], agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+  const adapter = new adapters.CommandCodingAgentAdapter(config, runner, unavailable);
+  await assert.rejects(() => adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: "/tmp", stage: "plan" }), /AGENT_CREDENTIAL_UNAVAILABLE/);
+  assert.equal(spawned, false);
+});
+
+test("doctor reports availability only and never credential values", async () => {
+  const config = { repoDir: "/repo", workspaceDir: "/workspace", agentCommand: "codex" };
+  const runner = { async run() { return { code: 0, stdout: "super-secret", stderr: "" }; } };
+  const provider = { async loadAgentCredentials() { return { OPENAI_API_KEY: "super-secret" }; }, async checkAvailability() { return true; } };
+  const checks = await doctor.runEngineeringDoctor({ config, runner, credentials: provider, processEnv: { HOME: "/worker", PATH: "/usr/bin" } });
+  const output = doctor.formatDoctorChecks(checks);
+  assert.match(output, /PASS Coding agent credential/);
+  assert.match(output, /PASS LaunchAgent-compatible authentication/);
+  assert.doesNotMatch(output, /super-secret|OPENAI_API_KEY/);
 });
 
 test("stale leases are recoverable while terminal tasks are not", () => {
@@ -100,7 +155,7 @@ test("durable claim prevents the same issue from being claimed twice", async () 
 
 test("kill switch blocks before issue claim and dry-run never mutates GitHub", async () => {
   const calls = [];
-  const baseConfig = { enabled: false, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "agent", agentArgs: [], pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
+  const baseConfig = { enabled: false, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "agent", agentArgs: [], agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
   const memoryState = { tasks: {}, async countRunsToday() { return 0; }, async read() { return { version: 1, tasks: this.tasks }; }, async claimTask(task) { if (this.tasks[String(task.issueNumber)]) return false; this.tasks[String(task.issueNumber)] = task; return true; }, async updateTask(task) { this.tasks[String(task.issueNumber)] = task; }, async appendAudit() {}, async updateHeartbeat() {} };
   const github = { async listReadyIssues() { calls.push("list"); return [issue()]; }, async addLabel() { calls.push("claim"); }, async removeLabel() {}, async comment() {}, async createPullRequest() { return 1; }, async addPullRequestLabels() {}, async getCiStatus() { return "SUCCESS"; }, async getCiFailureSummary() { return ""; } };
   const agent = { async run() { calls.push("agent"); return { ok: true, output: "plan" }; } };

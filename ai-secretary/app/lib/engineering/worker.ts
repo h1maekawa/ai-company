@@ -97,9 +97,15 @@ export class EngineeringWorker {
       return this.finishAudit(audit, "BLOCKED", task.failureReason);
     }
     if (config.dryRun) {
-      const plan = await this.deps.agent.run({ task: touch(task, "PLANNING", this.now(), config.leaseMs, "dry-run-plan"), worktree: config.repoDir, stage: "plan" });
-      await saveArtifact(config.artifactsDir, task, "plan.md", plan.output);
-      return this.finishAudit(audit, "DRY_RUN", plan.ok ? undefined : "PLAN_FAILED");
+      try {
+        const plan = await this.deps.agent.run({ task: touch(task, "PLANNING", this.now(), config.leaseMs, "dry-run-plan"), worktree: config.repoDir, stage: "plan" });
+        await saveArtifact(config.artifactsDir, task, "plan.md", plan.output);
+        return this.finishAudit(audit, "DRY_RUN", plan.ok ? undefined : "PLAN_FAILED");
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        if (reason === "AGENT_CREDENTIAL_UNAVAILABLE") return this.finishAudit(audit, "BLOCKED", reason);
+        throw error;
+      }
     }
 
     try {
@@ -173,7 +179,7 @@ export class EngineeringWorker {
       return this.finishAudit({ ...audit, ciStatus: "SUCCESS" }, "READY_FOR_HUMAN_REVIEW");
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      task = { ...task, status: reason.startsWith("SECURITY_GATE:") ? "BLOCKED" : "FAILED", failureReason: reason, updatedAt: this.now().toISOString(), leaseExpiresAt: undefined };
+      task = { ...task, status: reason.startsWith("SECURITY_GATE:") || reason === "AGENT_CREDENTIAL_UNAVAILABLE" ? "BLOCKED" : "FAILED", failureReason: reason, updatedAt: this.now().toISOString(), leaseExpiresAt: undefined };
       await state.updateTask(task);
       await this.deps.github.removeLabel(task.issueNumber, "ai-running").catch(() => undefined);
       return this.finishAudit(audit, task.status, reason);
