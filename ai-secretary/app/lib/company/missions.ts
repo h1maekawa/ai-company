@@ -47,6 +47,13 @@ export type PersonalMission = {
   source?: "CEO_MANUAL";
   origin?: "human";
   createdBy?: "ceo";
+  /** Human-approved routing hint. Existing Agent Assignment remains the only router/runtime. */
+  routingContext?: {
+    departmentId: string;
+    requiredAgentId: string;
+    missionType: string;
+    constraints: string[];
+  };
 };
 
 export const FIRST_MISSION_ID = "mission-001-first-revenue";
