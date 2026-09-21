@@ -34,6 +34,8 @@ import {
 import type { PersonalMission } from "../missions";
 import { createManualMissionRecord, validateManualMissionInput } from "./manualMission";
 import { buildKnowledgeContext } from "../../knowledge/router";
+import { discoverSkillCandidates } from "../evolution/skillCandidates";
+import { listSkills } from "../../skills/registry";
 
 export type ServiceResult<T> =
   { ok: true; data: T } | { ok: false; error: string; status: number };
@@ -260,6 +262,8 @@ async function completeMissionOperation(input: {
     { missionId: mission.id },
     now,
   );
+  const completedPlan = next.plans.find((plan) => plan.id === result.mission.executionPlanId);
+  if (completedPlan?.workflowKind === "CREATOR_MULTI_AGENT") next.skillCandidates = discoverSkillCandidates(next, listSkills(), now);
   await saveExecutionState(next);
   return { ok: true, data: { mission: result.mission } };
 }

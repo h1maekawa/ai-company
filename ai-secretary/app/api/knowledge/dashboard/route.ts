@@ -6,19 +6,29 @@ import { listCandidates } from "@/app/lib/knowledge/lifecycle";
 import { parseFrontmatter } from "@/app/lib/knowledge/frontmatter";
 import { readVaultKnowledgeIndexRecords, resyncKnowledgeIndex } from "@/app/lib/knowledge/indexSync";
 import { isHumanReviewPending } from "@/app/lib/knowledge/types";
+import { loadExecutionState } from "@/app/lib/company/execution/store";
+import { deriveKnowledgeUsage, summarizeKnowledgeUsage } from "@/app/lib/company/evolution/skillCandidates";
 
 export const dynamic = "force-dynamic";
 const safeKnowledgePath = (path: string) => path.startsWith("memory/knowledge/") && path.endsWith(".md") && !path.includes("..");
 
 export async function GET(req: NextRequest) {
   try {
+    const execution = await loadExecutionState().catch(() => null);
+    const usageEvents = execution ? deriveKnowledgeUsage(execution) : null;
+    const usageFor = (id: string, path: string) => usageEvents === null
+      ? summarizeKnowledgeUsage(null, id)
+      : summarizeKnowledgeUsage(usageEvents.map((event) => event.knowledgeId === path ? { ...event, knowledgeId: id } : event), id);
     const sp = req.nextUrl.searchParams;
     const detailPath = sp.get("path") ?? "";
     if (detailPath) {
       if (!safeKnowledgePath(detailPath)) return NextResponse.json({ error: "Knowledge pathが不正です" }, { status: 400 });
       const file = await vaultDocumentStore.getFile(detailPath);
       const parsed = parseFrontmatter(file.content);
-      return NextResponse.json({ path: detailPath, frontmatter: parsed.data, body: parsed.body });
+      const knowledgeId = String(parsed.data.id ?? detailPath);
+      const usage = usageFor(knowledgeId, detailPath);
+      const relatedSkillCandidates = execution?.skillCandidates.filter((candidate) => candidate.sourceKnowledgeIds.includes(knowledgeId) || candidate.sourceKnowledgeIds.includes(detailPath)).map((candidate) => ({ id: candidate.id, name: candidate.name, status: candidate.status })) ?? [];
+      return NextResponse.json({ path: detailPath, frontmatter: parsed.data, body: parsed.body, usage, relatedSkillCandidates });
     }
     const query = { text: sp.get("q") || undefined, domain: sp.get("domain") || undefined, tags: (sp.get("tags") || "").split(",").filter(Boolean), managedBy: sp.get("managedBy") || undefined, updatedAfter: sp.get("updatedAfter") || undefined, limit: 75 };
     let source: "supabase" | "vault" = "supabase";
@@ -52,7 +62,7 @@ export async function GET(req: NextRequest) {
         addedThisWeek = null;
       }
     }
-    return NextResponse.json({ source, warning, hits, candidates, kpis: { knowledge: total, candidate: candidates.length, review: candidates.filter((item) => isHumanReviewPending(item.frontmatter.status)).length, addedThisWeek } });
+    return NextResponse.json({ source, warning, hits: hits.map((hit) => ({ ...hit, usage: usageFor("id" in hit ? hit.id : hit.knowledge_id, hit.path) })), candidates, kpis: { knowledge: total, candidate: candidates.length, review: candidates.filter((item) => isHumanReviewPending(item.frontmatter.status)).length, addedThisWeek } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Knowledgeを取得できません" }, { status: 500 }); }
 }
 

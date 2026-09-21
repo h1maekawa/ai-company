@@ -6,6 +6,7 @@ import type { ExecutionPlan } from "./executionPlan";
 import type { ExecutionMission } from "./mission";
 import type { RunnerState } from "./runnerTypes";
 import type { ContentDraftCandidate } from "./contentHandoff";
+import type { SkillCandidate } from "../evolution/skillCandidates";
 import { LocalExecutionStore } from "../runtime/localExecutionStore";
 import type { ExecutionSnapshot, ExecutionStore, StoreSaveOptions } from "../runtime/runtimeTypes";
 import { assertProductionMutationAllowed, runtimeEnvironment } from "../runtime/environment";
@@ -18,10 +19,12 @@ export type ExecutionState = {
   plans: ExecutionPlan[];
   /** Workflow output handoff metadata. Formal drafts remain in the existing Content Core stores. */
   contentDraftCandidates: ContentDraftCandidate[];
+  /** Evidence-backed proposals only; executable Skills remain in the existing Skill Registry. */
+  skillCandidates: SkillCandidate[];
 };
 
 export function emptyExecutionState(): ExecutionState {
-  return { missions: [], actionRequests: [], approvals: [], plans: [], contentDraftCandidates: [] };
+  return { missions: [], actionRequests: [], approvals: [], plans: [], contentDraftCandidates: [], skillCandidates: [] };
 }
 
 let singleton: ExecutionStore | undefined;
