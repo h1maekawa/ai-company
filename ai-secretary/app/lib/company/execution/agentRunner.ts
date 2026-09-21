@@ -13,6 +13,7 @@ import { recordLearning } from "./learning";
 import { runReviewPipeline, runSecurityReview } from "./reviewer";
 import { completionBlocker } from "./completion";
 import { executeMissionSkill } from "../../skills/missionRuntime";
+import { createContentDraftCandidate } from "./contentHandoff";
 
 export type StepWorker = (input: {
   objective: string;
@@ -139,6 +140,12 @@ export async function runAgent(
       const dependenciesComplete = (step.dependsOn ?? []).every((dependencyId) => plan!.steps.some((candidate) => candidate.id === dependencyId && candidate.status === "COMPLETE"));
       if (!dependenciesComplete) continue;
       if (step.humanRequired) {
+        const contentCandidate = state.contentDraftCandidates.find((candidate) => candidate.parentMissionId === missionId && candidate.status !== "REJECTED");
+        if (plan.workflowKind === "CREATOR_MULTI_AGENT" && !contentCandidate) {
+          step.status = "BLOCKED";
+          stop("CONTENT_DRAFT_CANDIDATE_REQUIRED", "BLOCKED");
+          break;
+        }
         const priorHumanReview = [...run.history].reverse().find((item) => item.planId === plan!.id && item.stepId === step.id && item.actionRequestId);
         const priorRequest = priorHumanReview?.actionRequestId ? state.actionRequests.find((request) => request.id === priorHumanReview.actionRequestId) : undefined;
         if (priorRequest?.status === "APPROVED") {
@@ -157,7 +164,12 @@ export async function runAgent(
         }
         if (!priorRequest) {
           const reviewAgent = availableAgents.find((candidate) => candidate.id === (step.assignedAgentId ?? "personal-note")) ?? agent;
-          const submitted = submitAction(state, { missionId, traceId: mission.traceId ?? "unknown", agent: reviewAgent, actionType: "PUBLISH_DRAFT", payloadSummary: "Creator Draft Human Review (approval does not publish)", origin: "agent" }, { reportType: "Reviewer Result", content: "Review the referenced Creator draft. Approval records acceptance only and performs no publication." });
+          const submitted = submitAction(state, { missionId, traceId: mission.traceId ?? "unknown", agent: reviewAgent, actionType: "PUBLISH_DRAFT", payloadSummary: "Creator Draft Human Review (approval does not publish)", origin: "agent", target: contentCandidate ? `content-candidate:${contentCandidate.id}` : undefined }, { reportType: "Reviewer Result", content: "Review the referenced Creator draft. Approval records acceptance only and performs no publication." });
+          const approval = state.approvals.find((item) => item.id === submitted.request.approvalId);
+          if (approval && contentCandidate) {
+            approval.title = `✍️ ${contentCandidate.contentType} Draftが完成しました`;
+            approval.summary = contentCandidate.title ?? contentCandidate.body.slice(0, 120);
+          }
           run.history.push({ planId: plan.id, stepId: step.id, at: new Date().toISOString(), status: "WAITING_APPROVAL", actionRequestId: submitted.request.id, agentId: reviewAgent?.id, inputRefs: step.inputRefs, outputRefs: [], knowledgeRefs: step.knowledgeRefs });
         }
         step.status = "WAITING";
@@ -358,6 +370,28 @@ export async function runAgent(
         step.status = "COMPLETE";
         step.updatedAt = new Date().toISOString();
         history.status = "COMPLETE";
+        if (plan.workflowKind === "CREATOR_MULTI_AGENT" && step.id === "creator_lead_review") {
+          const contentHistory = [...run.history].reverse().find((item) => item.planId === plan!.id && item.stepId === "creator_content" && item.status === "COMPLETE" && item.output);
+          if (!contentHistory?.output) throw new Error("CONTENT_OUTPUT_REQUIRED");
+          const contentStep = plan.steps.find((item) => item.id === "creator_content");
+          const researchStep = plan.steps.find((item) => item.id === "creator_research");
+          const kpiStep = plan.steps.find((item) => item.id === "creator_kpi");
+          const candidate = createContentDraftCandidate({
+            parentMissionId: missionId,
+            objective: plan.objective,
+            body: contentHistory.output,
+            sourceKnowledgeIds: contentStep?.knowledgeRefs,
+            sourceResearchRefs: researchStep?.outputRefs,
+            sourceKpiRefs: kpiStep?.outputRefs,
+            sourceStepId: "creator_content",
+            createdByAgentId: contentHistory.agentId,
+          });
+          const index = state.contentDraftCandidates.findIndex((item) => item.id === candidate.id);
+          if (index >= 0) state.contentDraftCandidates[index] = { ...candidate, createdAt: state.contentDraftCandidates[index].createdAt };
+          else state.contentDraftCandidates.push(candidate);
+          step.outputRefs = [...new Set([...(step.outputRefs ?? []), `content-candidate:${candidate.id}`])];
+          history.outputRefs = step.outputRefs;
+        }
         if (checkpoint) await bounded(checkpoint(state));
       } catch (error) {
         const message = error instanceof Error ? error.message : "STEP_FAILED";

@@ -395,6 +395,13 @@ export type SocialDraft = {
   sourceResearchIds?: string[];
   sourceViewpointIds?: string[];
   sourceExperienceIds?: string[];
+  /** Creator Missionからの監査可能なhandoff lineage（Knowledge本文は保存しない）。 */
+  parentMissionId?: string;
+  sourceStepId?: string;
+  sourceKnowledgeIds?: string[];
+  sourceKpiRefs?: string[];
+  createdByAgentId?: string;
+  contentDraftCandidateId?: string;
 
   xAccountId: string;
   purpose: ContentPurpose;
@@ -523,6 +530,13 @@ export type NoteArticleDraft = {
   sourceResearchItemIds: string[];
   sourceViewpointIds?: string[];
   sourceExperienceIds: string[];
+  /** Creator Missionからの監査可能なhandoff lineage（Knowledge本文は保存しない）。 */
+  parentMissionId?: string;
+  sourceStepId?: string;
+  sourceKnowledgeIds?: string[];
+  sourceKpiRefs?: string[];
+  createdByAgentId?: string;
+  contentDraftCandidateId?: string;
 
   status: NoteArticleStatus;
   noteUrl?: string;

@@ -37,6 +37,7 @@ npx tsc \
   app/lib/content/note-studio/store.ts \
   app/lib/content/note-studio/obsidianDraft.ts \
   app/lib/content/note-studio/interview.ts \
+  app/lib/company/execution/contentHandoff.ts \
   app/lib/content/x-studio/bridge.ts \
   app/lib/content/monetization/types.ts \
   app/lib/content/monetization/store.ts \

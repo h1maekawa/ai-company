@@ -7,6 +7,7 @@ export function normalizeExecutionState(state: Partial<ExecutionState> | null | 
     actionRequests: state?.actionRequests ?? [],
     approvals: state?.approvals ?? [],
     plans: state?.plans ?? [],
+    contentDraftCandidates: state?.contentDraftCandidates ?? [],
   };
 }
 
@@ -60,4 +61,3 @@ export function assertAppendOnly(previous: ExecutionState, next: ExecutionState)
     throw new Error("ARTIFACT_APPEND_ONLY");
   }
 }
-

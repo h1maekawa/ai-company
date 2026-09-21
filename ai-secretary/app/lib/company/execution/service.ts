@@ -23,6 +23,7 @@ import {
   type ExecutionMission,
 } from "./mission";
 import { applyExpiry, createApprovalRequest, decideApproval } from "./approval";
+import { registerApprovedContentDraft } from "./contentHandoff";
 import { reviewActionRequest } from "./actionGateway";
 import {
   getExecutionStore,
@@ -412,15 +413,32 @@ async function decideApprovalRequestOperation(input: {
     }
   }
 
+  const original = state.actionRequests.find((a) => a.id === approval.actionRequestId);
+  const candidateId = original?.target?.startsWith("content-candidate:") ? original.target.slice("content-candidate:".length) : undefined;
+  let contentDraftCandidates = state.contentDraftCandidates;
+  if (candidateId) {
+    const candidate = state.contentDraftCandidates.find((item) => item.id === candidateId);
+    if (!candidate) return fail(409, "Content Draft Candidateが見つかりません");
+    if (!candidate.reviewedByLead) return fail(409, "Lead Reviewが完了していません");
+    if (input.decision === "APPROVED") {
+      try {
+        const registered = await registerApprovedContentDraft({ ...candidate, status: "APPROVED", updatedAt: now.toISOString() }, now);
+        contentDraftCandidates = state.contentDraftCandidates.map((item) => item.id === candidate.id ? registered : item);
+      } catch (error) {
+        return fail(409, error instanceof Error ? error.message : "Content Draft登録に失敗しました");
+      }
+    } else {
+      contentDraftCandidates = state.contentDraftCandidates.map((item) => item.id === candidate.id ? { ...item, status: "REJECTED" as const, updatedAt: now.toISOString() } : item);
+    }
+  }
+
   const next: ExecutionState = {
     ...state,
     approvals,
     actionRequests,
     missions,
+    contentDraftCandidates,
   };
-  const original = state.actionRequests.find(
-    (a) => a.id === approval.actionRequestId,
-  );
   recordLearning(
     next,
     input.decision === "APPROVED" ? "APPROVAL_APPROVED" : "APPROVAL_REJECTED",

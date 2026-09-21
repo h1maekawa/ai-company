@@ -5,6 +5,7 @@ import type { ApprovalRequest } from "./approval";
 import type { ExecutionPlan } from "./executionPlan";
 import type { ExecutionMission } from "./mission";
 import type { RunnerState } from "./runnerTypes";
+import type { ContentDraftCandidate } from "./contentHandoff";
 import { LocalExecutionStore } from "../runtime/localExecutionStore";
 import type { ExecutionSnapshot, ExecutionStore, StoreSaveOptions } from "../runtime/runtimeTypes";
 import { assertProductionMutationAllowed, runtimeEnvironment } from "../runtime/environment";
@@ -15,10 +16,12 @@ export type ExecutionState = {
   actionRequests: ActionRequest[];
   approvals: ApprovalRequest[];
   plans: ExecutionPlan[];
+  /** Workflow output handoff metadata. Formal drafts remain in the existing Content Core stores. */
+  contentDraftCandidates: ContentDraftCandidate[];
 };
 
 export function emptyExecutionState(): ExecutionState {
-  return { missions: [], actionRequests: [], approvals: [], plans: [] };
+  return { missions: [], actionRequests: [], approvals: [], plans: [], contentDraftCandidates: [] };
 }
 
 let singleton: ExecutionStore | undefined;
