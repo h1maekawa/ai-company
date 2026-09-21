@@ -96,7 +96,8 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/skills/implementations/noteDraftFormat.ts",
     "$PWD/app/lib/skills/implementations/fundLogFormat.ts",
     "$PWD/app/lib/company/execution/performance.ts",
-    "$PWD/app/lib/company/opportunity/lifecycle.ts"
+    "$PWD/app/lib/company/opportunity/lifecycle.ts",
+    "$PWD/app/lib/mobile-ceo/readModel.ts"
   ]
 }
 TSCONFIG

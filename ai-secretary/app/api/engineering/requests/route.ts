@@ -1,0 +1,59 @@
+import { NextRequest, NextResponse } from "next/server";
+import { classifyRisk } from "@/app/lib/engineering/security";
+import { getExecutionStore } from "@/app/lib/company/execution/store";
+import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtection";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const repository = () => process.env.ENGINEERING_REPOSITORY || "h1maekawa/ai-company";
+const token = () => process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+
+async function github(path: string, init?: RequestInit) {
+  const credential = token();
+  if (!credential) throw new Error("GITHUB_CREDENTIAL_UNAVAILABLE");
+  return fetch(`https://api.github.com/repos/${repository()}${path}`, {
+    ...init,
+    headers: { accept: "application/vnd.github+json", authorization: `Bearer ${credential}`, "x-github-api-version": "2022-11-28", ...(init?.headers ?? {}) },
+    cache: "no-store",
+  });
+}
+
+export async function GET() {
+  if (!token()) return NextResponse.json({ available: false, items: null, reason: "GITHUB_CREDENTIAL_UNAVAILABLE" });
+  try {
+    const response = await github("/issues?state=open&labels=ai-engineering&per_page=30");
+    if (!response.ok) return NextResponse.json({ available: false, items: null, reason: "GITHUB_UNAVAILABLE" });
+    const issues = await response.json() as Array<Record<string, unknown>>;
+    return NextResponse.json({ available: true, items: issues.filter((item) => !item.pull_request).map((item) => ({ issueNumber: item.number, title: item.title, status: "QUEUED", labels: item.labels, htmlUrl: item.html_url })) });
+  } catch { return NextResponse.json({ available: false, items: null, reason: "GITHUB_UNAVAILABLE" }); }
+}
+
+export async function POST(req: NextRequest) {
+  if (!isSameOriginMutation(req)) return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
+  if (!token()) return NextResponse.json({ error: "GITHUB_CREDENTIAL_UNAVAILABLE" }, { status: 503 });
+  try {
+    const body = await req.json() as Record<string, unknown>;
+    if (body.confirmedByHuman !== true) return NextResponse.json({ error: "HUMAN_CONFIRMATION_REQUIRED" }, { status: 400 });
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const goal = typeof body.goal === "string" ? body.goal.trim() : "";
+    if (!title || !goal) return NextResponse.json({ error: "TITLE_AND_GOAL_REQUIRED" }, { status: 400 });
+    const taskType = ["feature", "bug", "test", "refactor", "docs"].includes(String(body.taskType)) ? String(body.taskType) : "feature";
+    const priority = ["low", "medium", "high"].includes(String(body.priority)) ? String(body.priority) : "medium";
+    const issueBody = `## Goal\n${goal}\n\n## Acceptance Criteria\n${String(body.acceptanceCriteria ?? "Human review and CI pass")}\n\nCreated from Mobile CEO Control Tower after explicit human confirmation.`;
+    const risk = classifyRisk({ title, body: issueBody, labels: [`type:${taskType}`, `priority:${priority}`] });
+    if (risk === "PROTECTED") return NextResponse.json({ error: "HUMAN_SECURITY_REVIEW_REQUIRED", risk }, { status: 422 });
+    const key = req.headers.get("idempotency-key");
+    if (!key) return NextResponse.json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });
+    const store = getExecutionStore();
+    const prior = await store.getIdempotencyResult<Record<string, unknown>>("mobile-engineering-request", key);
+    if (prior) return NextResponse.json(prior);
+    if (!(await store.claimIdempotency("mobile-engineering-request", key))) return NextResponse.json({ error: "DUPLICATE_REQUEST_IN_PROGRESS" }, { status: 409 });
+    const response = await github("/issues", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title, body: issueBody, labels: ["ai-engineering", "ai-ready", `type:${taskType}`, `priority:${priority}`] }) });
+    if (!response.ok) return NextResponse.json({ error: "GITHUB_ISSUE_CREATE_FAILED" }, { status: 502 });
+    const issue = await response.json() as { number: number; html_url: string };
+    const result = { ok: true, issue: { number: issue.number, url: issue.html_url }, risk, humanConfirmed: true };
+    await store.completeIdempotency("mobile-engineering-request", key, result);
+    return NextResponse.json(result, { status: 201 });
+  } catch { return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 }); }
+}
