@@ -11,7 +11,11 @@ export async function GET(): Promise<NextResponse> {
     const approvals = applyExpiry(state.approvals);
 
     return NextResponse.json({
-      pending: approvals.filter((a) => a.status === "PENDING"),
+      pending: approvals.filter((a) => a.status === "PENDING").map((approval) => {
+        const target = state.actionRequests.find((request) => request.id === approval.actionRequestId)?.target;
+        const candidateId = target?.startsWith("content-candidate:") ? target.slice("content-candidate:".length) : undefined;
+        return { ...approval, contentDraftCandidate: candidateId ? state.contentDraftCandidates.find((candidate) => candidate.id === candidateId) : undefined };
+      }),
       decided: approvals.filter((a) => a.status !== "PENDING").slice(-20),
       blockedActions: state.actionRequests.filter((a) => a.status === "BLOCKED"),
     });

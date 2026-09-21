@@ -6,7 +6,7 @@ export function notificationDeepLink(event: NotificationEvent) { const base = pr
 export function slackNotificationBlocks(event: NotificationEvent): SlackBlock[] {
   const link = notificationDeepLink(event);
   const elements: Record<string, unknown>[] = [{ type: "button", text: { type: "plain_text", text: "AI Companyで確認" }, url: link }];
-  if (event.sourceType === "approval" && ["R0", "R1", "R2"].includes(event.riskLevel ?? "")) elements.unshift({ type: "button", text: { type: "plain_text", text: "承認" }, style: "primary", action_id: COMPANY_APPROVAL_ACTION, value: event.sourceId });
+  if (event.sourceType === "approval" && event.approvalKind !== "CONTENT_DRAFT_REGISTRATION" && ["R0", "R1", "R2"].includes(event.riskLevel ?? "")) elements.unshift({ type: "button", text: { type: "plain_text", text: "承認" }, style: "primary", action_id: COMPANY_APPROVAL_ACTION, value: event.sourceId });
   return [{ type: "header", text: { type: "plain_text", text: "AI Company — 確認が必要です", emoji: true } }, { type: "section", text: { type: "mrkdwn", text: `*${event.title}*\n${event.summary}\nPriority: ${event.priority}${event.riskLevel ? `\nRisk: ${event.riskLevel}` : ""}` } }, { type: "actions", elements }];
 }
 export const slackNotificationAdapter: NotificationAdapter = { channel: "slack", async deliver(event) { const result = await postToSlack(`${event.title}\n${event.summary}`, slackNotificationBlocks(event)); return result.ok ? { status: "SENT", deliveredAt: new Date().toISOString() } : { status: "FAILED", error: result.error }; } };
