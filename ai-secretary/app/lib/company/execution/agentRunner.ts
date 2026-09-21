@@ -14,6 +14,8 @@ import { runReviewPipeline, runSecurityReview } from "./reviewer";
 import { completionBlocker } from "./completion";
 import { executeMissionSkill } from "../../skills/missionRuntime";
 import { createContentDraftCandidate } from "./contentHandoff";
+import { discoverSkillCandidates } from "../evolution/skillCandidates";
+import { listSkills } from "../../skills/registry";
 
 export type StepWorker = (input: {
   objective: string;
@@ -450,6 +452,7 @@ export async function runAgent(
             costUnknownReason: "Provider usage not reported",
             tools: plan.steps.map((s) => s.type),
           });
+          if (plan.workflowKind === "CREATOR_MULTI_AGENT") state.skillCandidates = discoverSkillCandidates(state, listSkills());
         }
       }
     }

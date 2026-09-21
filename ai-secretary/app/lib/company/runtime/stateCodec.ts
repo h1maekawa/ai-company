@@ -8,6 +8,7 @@ export function normalizeExecutionState(state: Partial<ExecutionState> | null | 
     approvals: state?.approvals ?? [],
     plans: state?.plans ?? [],
     contentDraftCandidates: state?.contentDraftCandidates ?? [],
+    skillCandidates: state?.skillCandidates ?? [],
   };
 }
 
