@@ -244,9 +244,9 @@ test("durable claim prevents the same issue from being claimed twice", async () 
 
 test("kill switch blocks before issue claim and dry-run never mutates GitHub", async () => {
   const calls = [];
-  const baseConfig = { enabled: false, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "agent", agentArgs: [], agentAuthMode: "api_key", codexHome: "/tmp/codex-home", agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
+  const baseConfig = { machineId: "test-mac", enabled: false, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "agent", agentArgs: [], agentAuthMode: "api_key", codexHome: "/tmp/codex-home", agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
   const memoryState = { tasks: {}, async countRunsToday() { return 0; }, async read() { return { version: 1, tasks: this.tasks }; }, async claimTask(task) { if (this.tasks[String(task.issueNumber)]) return false; this.tasks[String(task.issueNumber)] = task; return true; }, async updateTask(task) { this.tasks[String(task.issueNumber)] = task; }, async appendAudit() {}, async updateHeartbeat() {} };
-  const github = { async listReadyIssues() { calls.push("list"); return [issue()]; }, async addLabel() { calls.push("claim"); }, async removeLabel() {}, async comment() {}, async createPullRequest() { return 1; }, async addPullRequestLabels() {}, async getCiStatus() { return "SUCCESS"; }, async getCiFailureSummary() { return ""; } };
+  const github = { async getActiveMachine() { return "test-mac"; }, async listReadyIssues() { calls.push("list"); return [issue()]; }, async addLabel() { calls.push("claim"); }, async removeLabel() {}, async comment() {}, async createPullRequest() { return 1; }, async addPullRequestLabels() {}, async getCiStatus() { return "SUCCESS"; }, async getCiFailureSummary() { return ""; } };
   const agent = { async checkAvailability() { calls.push("auth"); return true; }, async run() { calls.push("agent"); return { ok: true, output: "plan" }; } };
   const runner = { async run() { throw new Error("must not execute"); } };
   const disabled = new worker.EngineeringWorker({ config: baseConfig, state: memoryState, github, agent, runner });
@@ -256,6 +256,88 @@ test("kill switch blocks before issue claim and dry-run never mutates GitHub", a
   const result = await dry.runOnce();
   assert.equal(result.status, "DRY_RUN");
   assert.deepEqual(calls, ["list", "auth", "agent"]);
+});
+
+function activeGateHarness(options = {}) {
+  const machineId = Object.prototype.hasOwnProperty.call(options, "machineId") ? options.machineId : "home-mac";
+  const active = options.active ?? "home-mac";
+  const enabled = options.enabled ?? true;
+  const calls = [];
+  const config = { machineId, enabled, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "codex", agentArgs: [], agentAuthMode: "chatgpt", codexHome: "/tmp/codex-home", agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
+  const stateStore = { tasks: {}, async countRunsToday() { return 0; }, async read() { return { version: 1, tasks: this.tasks }; }, async claimTask() { calls.push("state-claim"); return true; }, async updateTask() {}, async appendAudit() {}, async updateHeartbeat() {} };
+  const github = { async getActiveMachine() { calls.push("active"); if (active instanceof Error) throw active; return active; }, async listReadyIssues() { calls.push("list"); return []; }, async addLabel() { calls.push("claim"); }, async removeLabel() {}, async comment() {}, async createPullRequest() { calls.push("pr"); return 1; }, async addPullRequestLabels() {}, async getCiStatus() { return "SUCCESS"; }, async getCiFailureSummary() { return ""; } };
+  const agent = { async checkAvailability() { calls.push("auth"); return true; }, async run() { calls.push("agent"); return { ok: true, output: "plan" }; } };
+  const runner = { async run() { throw new Error("must not execute"); } };
+  return { calls, worker: new worker.EngineeringWorker({ config, state: stateStore, github, agent, runner }) };
+}
+
+test("active machine match proceeds while simultaneous standby worker does not inspect issues", async () => {
+  const home = activeGateHarness({ machineId: "home-mac", active: "home-mac" });
+  const mobile = activeGateHarness({ machineId: "mobile-mac", active: "home-mac" });
+  assert.equal((await home.worker.runOnce()).status, "IDLE");
+  const standby = await mobile.worker.runOnce();
+  assert.equal(standby.status, "STANDBY");
+  assert.equal(standby.failureReason, "ACTIVE_MACHINE_MISMATCH");
+  assert.deepEqual(home.calls, ["active", "list"]);
+  assert.deepEqual(mobile.calls, ["active"]);
+});
+
+test("active machine fail-closed states never claim, mutate GitHub, or start Codex", async () => {
+  for (const [options, reason] of [
+    [{ machineId: undefined, active: "home-mac" }, "ENGINEERING_MACHINE_ID_UNCONFIGURED"],
+    [{ machineId: "home-mac", active: "" }, "ACTIVE_MACHINE_VARIABLE_MISSING"],
+    [{ machineId: "home-mac", active: new Error("auth failed") }, "ACTIVE_MACHINE_LOOKUP_FAILED"],
+    [{ machineId: "home-mac", active: "none" }, "ACTIVE_MACHINE_OFF"],
+    [{ machineId: "home-mac", active: "mobile-mac" }, "ACTIVE_MACHINE_MISMATCH"],
+  ]) {
+    const harness = activeGateHarness(options);
+    const result = await harness.worker.runOnce();
+    assert.equal(result.status, "STANDBY");
+    assert.equal(result.failureReason, reason);
+    assert.ok(!harness.calls.some((call) => ["list", "claim", "state-claim", "agent", "pr"].includes(call)), `${reason} must fail before work`);
+  }
+});
+
+test("local STOP wins even when this machine is active", async () => {
+  const harness = activeGateHarness({ machineId: "home-mac", active: "home-mac", enabled: false });
+  const result = await harness.worker.runOnce();
+  assert.equal(result.failureReason, "KILL_SWITCH_DISABLED");
+  assert.deepEqual(harness.calls, []);
+});
+
+test("mid-run authority checks cover plan, implementation, verification, review, push, PR, CI, fix, and completion boundaries", () => {
+  const { readFileSync } = require("node:fs");
+  const source = readFileSync(path.join(process.cwd(), "app/lib/engineering/worker.ts"), "utf8");
+  const checks = source.match(/await this\.assertActiveMachineChanged\(\)/g) || [];
+  assert.ok(checks.length >= 12, "worker must recheck shared authority at every external-action boundary");
+  for (const marker of ["stage: \"plan\"", "stage: \"implement\"", "stage: \"review\"", "getCiStatus(pr)", "getCiFailureSummary(pr)", "READY_FOR_HUMAN_REVIEW"]) {
+    assert.ok(source.includes(marker), `expected guarded boundary ${marker}`);
+  }
+});
+
+test("machine change after plan stops before implementation and releases the claim", async () => {
+  const calls = [];
+  let activeChecks = 0;
+  const config = { machineId: "home-mac", enabled: true, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "codex", agentArgs: [], agentAuthMode: "chatgpt", codexHome: "/tmp/codex-home", agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
+  const stateStore = { tasks: {}, async countRunsToday() { return 0; }, async read() { return { version: 1, tasks: this.tasks }; }, async claimTask(task) { this.tasks[String(task.issueNumber)] = task; return true; }, async updateTask(task) { this.tasks[String(task.issueNumber)] = task; }, async appendAudit() {}, async updateHeartbeat() {} };
+  const github = {
+    async getActiveMachine() { activeChecks += 1; return activeChecks < 4 ? "home-mac" : "mobile-mac"; },
+    async listReadyIssues() { return [issue()]; },
+    async addLabel() { calls.push("claim"); },
+    async removeLabel() { calls.push("release"); },
+    async comment() {}, async createPullRequest() { calls.push("pr"); return 1; }, async addPullRequestLabels() {},
+    async getCiStatus() { return "SUCCESS"; }, async getCiFailureSummary() { return ""; },
+  };
+  const agent = { async checkAvailability() { return true; }, async run(input) { calls.push(input.stage); return { ok: true, output: "approved plan" }; } };
+  const runner = { async run(command, args) { calls.push([command, ...args].join(" ")); return { code: 0, stdout: "", stderr: "" }; } };
+  const result = await new worker.EngineeringWorker({ config, state: stateStore, github, agent, runner }).runOnce();
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.failureReason, "ACTIVE_MACHINE_CHANGED");
+  assert.ok(calls.includes("plan"));
+  assert.ok(!calls.includes("implement"));
+  assert.ok(!calls.some((call) => typeof call === "string" && call.startsWith("git push")));
+  assert.ok(!calls.includes("pr"));
+  assert.ok(calls.includes("release"));
 });
 
 test("tsconfig.tsbuildinfo is excluded from git tracking via .gitignore", () => {
@@ -310,6 +392,7 @@ test("verification mutation in runOnce produces VERIFICATION_MUTATED_WORKTREE, n
   let agentCalls = 0;
   let gitDiffCallCount = 0;
   const baseConfig = {
+    machineId: "test-mac",
     enabled: true, dryRun: false, repository: "o/r", repoDir: "/tmp",
     workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp",
     artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "codex", agentArgs: [],
@@ -329,6 +412,7 @@ test("verification mutation in runOnce produces VERIFICATION_MUTATED_WORKTREE, n
     async updateHeartbeat() {},
   };
   const github = {
+    async getActiveMachine() { return "test-mac"; },
     async listReadyIssues() { return [issue()]; },
     async addLabel() {}, async removeLabel() {}, async comment() {},
     async createPullRequest() { return 1; }, async addPullRequestLabels() {},
@@ -378,6 +462,7 @@ test("verification mutation does not invoke Codex fix loop", async () => {
   // Additional confirmation: fix-loop invocations (stage=fix) never happen for VERIFICATION_MUTATED_WORKTREE
   let fixAttempts = 0;
   const baseConfig = {
+    machineId: "test-mac",
     enabled: true, dryRun: false, repository: "o/r", repoDir: "/tmp",
     workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp",
     artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "codex", agentArgs: [],
@@ -396,6 +481,7 @@ test("verification mutation does not invoke Codex fix loop", async () => {
     async appendAudit() {}, async updateHeartbeat() {},
   };
   const github = {
+    async getActiveMachine() { return "test-mac"; },
     async listReadyIssues() { return [issue()]; },
     async addLabel() {}, async removeLabel() {}, async comment() {},
     async createPullRequest() { return 1; }, async addPullRequestLabels() {},
@@ -499,6 +585,7 @@ test("dependency bootstrap failure returns DEPENDENCY_BOOTSTRAP_FAILED and does 
 test("dependency bootstrap failure in runOnce produces DEPENDENCY_BOOTSTRAP_FAILED, not MAX_FIX_ATTEMPTS_EXCEEDED", async () => {
   const calls = [];
   const baseConfig = {
+    machineId: "test-mac",
     enabled: true, dryRun: false, repository: "o/r", repoDir: "/tmp",
     workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp",
     artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "codex", agentArgs: [],
@@ -518,6 +605,7 @@ test("dependency bootstrap failure in runOnce produces DEPENDENCY_BOOTSTRAP_FAIL
     async updateHeartbeat() {},
   };
   const github = {
+    async getActiveMachine() { return "test-mac"; },
     async listReadyIssues() { return [issue()]; },
     async addLabel() {},
     async removeLabel() {},
@@ -548,9 +636,9 @@ test("dependency bootstrap failure in runOnce produces DEPENDENCY_BOOTSTRAP_FAIL
 
 test("unavailable coding-agent auth blocks before GitHub mutation", async () => {
   const calls = [];
-  const config = { enabled: true, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "codex", agentArgs: [], agentAuthMode: "chatgpt", codexHome: "/tmp/codex-home", agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
+  const config = { machineId: "test-mac", enabled: true, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "codex", agentArgs: [], agentAuthMode: "chatgpt", codexHome: "/tmp/codex-home", agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };
   const memoryState = { tasks: {}, async countRunsToday() { return 0; }, async read() { return { version: 1, tasks: this.tasks }; }, async claimTask() { calls.push("state-claim"); return true; }, async updateTask() {}, async appendAudit() {}, async updateHeartbeat() {} };
-  const github = { async listReadyIssues() { calls.push("list"); return [issue()]; }, async addLabel() { calls.push("claim"); }, async removeLabel() {}, async comment() { calls.push("comment"); }, async createPullRequest() { return 1; }, async addPullRequestLabels() {}, async getCiStatus() { return "SUCCESS"; }, async getCiFailureSummary() { return ""; } };
+  const github = { async getActiveMachine() { return "test-mac"; }, async listReadyIssues() { calls.push("list"); return [issue()]; }, async addLabel() { calls.push("claim"); }, async removeLabel() {}, async comment() { calls.push("comment"); }, async createPullRequest() { return 1; }, async addPullRequestLabels() {}, async getCiStatus() { return "SUCCESS"; }, async getCiFailureSummary() { return ""; } };
   const agent = { async checkAvailability() { calls.push("auth"); return false; }, async run() { calls.push("agent"); return { ok: true, output: "plan" }; } };
   const runner = { async run() { throw new Error("must not execute"); } };
   const result = await new worker.EngineeringWorker({ config, state: memoryState, github, agent, runner }).runOnce();
