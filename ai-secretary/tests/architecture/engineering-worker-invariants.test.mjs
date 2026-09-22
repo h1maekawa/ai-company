@@ -89,6 +89,21 @@ test("ChatGPT mode: launcher HOME is real macOS HOME; child isolation via Codex 
   assert.match(adapters, /AgentCredentialUnavailableError/);
 });
 
+test("verification commands do not mutate the worktree and tsbuildinfo is excluded from tracking", async () => {
+  const workerSrc = await read("app/lib/engineering/worker.ts");
+  const gitignore = await read(".gitignore");
+  // Verification mutation guard must be present
+  assert.match(workerSrc, /VERIFICATION_MUTATED_WORKTREE/);
+  assert.match(workerSrc, /assertNoVerificationMutation/);
+  // Guard must fire inside the TESTING block (after "FULL_VERIFICATION_COMMANDS" run, before "REVIEWING" transition)
+  assert.ok(workerSrc.indexOf("assertNoVerificationMutation") > workerSrc.indexOf("FULL_VERIFICATION_COMMANDS"));
+  assert.ok(workerSrc.indexOf("assertNoVerificationMutation") < workerSrc.indexOf('"REVIEWING"'));
+  // Guard must not use blanket git restore/reset/clean
+  assert.doesNotMatch(workerSrc, /git\s+(checkout|restore|reset|clean)\b/);
+  // tsbuildinfo excluded from tracking
+  assert.match(gitignore, /\*\.tsbuildinfo/);
+});
+
 test("dependency bootstrap precedes planning and is classified as infrastructure failure", async () => {
   const workerSrc = await read("app/lib/engineering/worker.ts");
   // bootstrapDependencies must be defined and called before "PLANNING" transition

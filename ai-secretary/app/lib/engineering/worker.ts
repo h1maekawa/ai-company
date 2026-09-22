@@ -183,8 +183,13 @@ export class EngineeringWorker {
       if (!changed.files.length) throw new Error("NO_CHANGES");
       await this.assertSafeDiff(task, changed);
 
+      // Snapshot the file set produced by implementation. Verification commands must not
+      // add new tracked files (e.g. tsconfig.tsbuildinfo from `tsc --noEmit`).
+      const preVerificationFiles = new Set(changed.files);
+
       task = touch(task, "TESTING", this.now(), config.leaseMs, "full-verification"); await state.updateTask(task);
       let tests = await runVerification(this.deps.runner, FULL_VERIFICATION_COMMANDS, path.join(worktree, "ai-secretary"));
+      await this.assertNoVerificationMutation(worktree, preVerificationFiles);
       while (tests.some((result) => !result.ok) && failureDisposition(task.fixAttempts, config.maxFixAttempts) === "FIX") {
         task = { ...touch(task, "IMPLEMENTING", this.now(), config.leaseMs, "local-fix"), fixAttempts: task.fixAttempts + 1 };
         await state.updateTask(task);
@@ -194,6 +199,7 @@ export class EngineeringWorker {
         await this.assertSafeDiff(task, await this.diff(worktree));
         task = touch(task, "TESTING", this.now(), config.leaseMs, "full-verification-retry"); await state.updateTask(task);
         tests = await runVerification(this.deps.runner, FULL_VERIFICATION_COMMANDS, path.join(worktree, "ai-secretary"));
+        await this.assertNoVerificationMutation(worktree, preVerificationFiles);
       }
       audit.tests = tests;
       audit.fixAttempts = task.fixAttempts;
@@ -291,6 +297,25 @@ export class EngineeringWorker {
     const result = reviewDiff({ ...changed, maxChangedFiles: this.deps.config.maxChangedFiles, maxDiffLines: this.deps.config.maxDiffLines });
     await saveArtifact(this.deps.config.artifactsDir, task, "security-review.json", JSON.stringify(result, null, 2));
     if (!result.ok) throw new Error(`SECURITY_GATE:${result.reasons.join(",")}`);
+  }
+
+  /**
+   * Guard that verification commands do not introduce new tracked file changes.
+   *
+   * Verification tools (e.g. tsc with incremental=true) may write generated cache
+   * files that appear as unintended diffs.  If any file is present in the post-
+   * verification diff that was NOT in the pre-verification diff produced by the
+   * implementation, the run is terminated as VERIFICATION_MUTATED_WORKTREE —
+   * an Infrastructure failure, not a code failure.
+   *
+   * This guard must never be used to blanket-restore the worktree; it only detects.
+   * The correct remedy is to exclude generated files from git tracking (e.g. via
+   * .gitignore), not to auto-restore.
+   */
+  private async assertNoVerificationMutation(worktree: string, preVerificationFiles: Set<string>): Promise<void> {
+    const postDiff = await this.diff(worktree);
+    const newFiles = postDiff.files.filter((f) => !preVerificationFiles.has(f));
+    if (newFiles.length > 0) throw new Error(`VERIFICATION_MUTATED_WORKTREE:${newFiles.join(",")}`);
   }
 
   private async mustRun(command: string, args: readonly string[], cwd: string): Promise<string> {
