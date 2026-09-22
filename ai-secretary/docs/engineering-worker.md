@@ -133,6 +133,8 @@ State is atomically written under `$ENGINEERING_WORKSPACE_DIR/state`; audit logs
 
 ## macOS launchd
 
+This local worker prepares pull requests for human review and never merges them.
+
 Use the per-user LaunchAgent template; a system LaunchDaemon and `sudo` are unnecessary and would broaden privileges. Review the generated plist before loading it:
 
 ```bash
