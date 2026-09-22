@@ -6,6 +6,7 @@ export type EngineeringAgentAuthMode = "api_key" | "chatgpt";
 export type EngineeringConfig = {
   enabled: boolean;
   dryRun: boolean;
+  machineId?: string;
   repository: string;
   repoDir: string;
   workspaceDir: string;
@@ -75,6 +76,7 @@ export function loadEngineeringConfig(env: NodeJS.ProcessEnv = process.env): Eng
   return {
     enabled: env.ENGINEERING_WORKER_ENABLED !== "false",
     dryRun: env.ENGINEERING_DRY_RUN === "true",
+    machineId: env.ENGINEERING_MACHINE_ID?.trim() || undefined,
     repository: env.ENGINEERING_REPOSITORY || "h1maekawa/ai-company",
     repoDir: path.resolve(env.ENGINEERING_REPO_DIR || path.join(workspaceDir, "repo")),
     workspaceDir,

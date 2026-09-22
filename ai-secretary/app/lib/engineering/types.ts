@@ -62,7 +62,7 @@ export type EngineeringRunAudit = {
   pullRequestNumber?: number;
   startedAt: string;
   completedAt?: string;
-  status: EngineeringTaskStatus | "IDLE" | "DRY_RUN";
+  status: EngineeringTaskStatus | "IDLE" | "DRY_RUN" | "STANDBY";
   tests: TestResult[];
   fixAttempts: number;
   ciStatus?: string;

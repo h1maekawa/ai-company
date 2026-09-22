@@ -34,6 +34,7 @@ export class SafeCommandRunner implements CommandRunner {
 }
 
 export interface GitHubAdapter {
+  getActiveMachine(): Promise<string>;
   listReadyIssues(): Promise<GitHubIssue[]>;
   addLabel(issue: number, label: "ai-running"): Promise<void>;
   removeLabel(issue: number, label: "ai-running"): Promise<void>;
@@ -50,6 +51,15 @@ export class GhCliAdapter implements GitHubAdapter {
     const result = await this.runner.run("gh", args, { cwd: this.config.repoDir });
     if (result.code !== 0) throw new Error(result.stderr || result.stdout || "GH_COMMAND_FAILED");
     return result.stdout;
+  }
+  async getActiveMachine(): Promise<string> {
+    const direct = await this.runner.run("gh", ["variable", "get", "ENGINEERING_ACTIVE_MACHINE", "--repo", this.config.repository], { cwd: this.config.repoDir });
+    if (direct.code === 0) return direct.stdout.trim();
+    const fallback = await this.runner.run("gh", ["api", `repos/${this.config.repository}/actions/variables/ENGINEERING_ACTIVE_MACHINE`, "--jq", ".value"], { cwd: this.config.repoDir });
+    if (fallback.code !== 0) throw new Error("ACTIVE_MACHINE_LOOKUP_FAILED");
+    const value = fallback.stdout.trim();
+    if (!value) throw new Error("ACTIVE_MACHINE_VARIABLE_MISSING");
+    return value;
   }
   async listReadyIssues(): Promise<GitHubIssue[]> {
     const output = await this.gh(["issue", "list", "--repo", this.config.repository, "--state", "open", "--label", "ai-engineering", "--label", "ai-ready", "--limit", "100", "--json", "number,title,body,state,labels,createdAt"]);

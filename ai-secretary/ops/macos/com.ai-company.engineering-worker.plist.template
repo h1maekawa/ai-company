@@ -20,6 +20,8 @@
     <string>__WORKSPACE_DIR__</string>
     <key>ENGINEERING_REPO_DIR</key>
     <string>__REPO_DIR__</string>
+    <key>ENGINEERING_MACHINE_ID</key>
+    <string>__MACHINE_ID__</string>
     <key>ENGINEERING_AGENT_AUTH_MODE</key>
     <string>__AGENT_AUTH_MODE__</string>
     <key>ENGINEERING_CODEX_HOME</key>

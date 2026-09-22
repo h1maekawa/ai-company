@@ -125,6 +125,8 @@ export class EngineeringWorker {
     const startedAt = this.now().toISOString();
     const audit: EngineeringRunAudit = { runId: randomUUID(), startedAt, status: "IDLE", tests: [], fixAttempts: 0 };
     if (await this.killSwitchActive()) return this.finishAudit(audit, "BLOCKED", "KILL_SWITCH_DISABLED");
+    const standbyReason = await this.activeMachineStandbyReason();
+    if (standbyReason) return this.finishAudit(audit, "STANDBY", standbyReason);
     if (await state.countRunsToday(this.now()) >= config.maxTasksPerDay) return this.finishAudit(audit, "BLOCKED", "DAILY_TASK_BUDGET_EXCEEDED");
 
     await this.recoverStaleTasks();
@@ -158,6 +160,7 @@ export class EngineeringWorker {
     }
 
     try {
+      await this.assertActiveMachineChanged();
       task = { ...touch(task, "CLAIMED", this.now(), config.leaseMs, "claim"), attempt: task.attempt + 1, claimedAt: this.now().toISOString(), branchName: sanitizeBranchName(issue.number, issue.title) };
       if (!await state.claimTask(task, this.now().getTime())) throw new Error("ISSUE_ALREADY_CLAIMED");
       await this.deps.github.addLabel(issue.number, "ai-running");
@@ -170,11 +173,13 @@ export class EngineeringWorker {
       audit.dependencyBootstrap = bootstrap;
       if (!bootstrap.success) throw new Error("DEPENDENCY_BOOTSTRAP_FAILED");
       task = touch(task, "PLANNING", this.now(), config.leaseMs, "planning"); await state.updateTask(task);
+      await this.assertActiveMachineChanged();
       const plan = await this.deps.agent.run({ task, worktree, stage: "plan" });
       await saveArtifact(config.artifactsDir, task, "plan.md", plan.output);
       if (!plan.ok) throw new Error("PLANNING_FAILED");
 
       task = touch(task, "IMPLEMENTING", this.now(), config.leaseMs, "implementation"); await state.updateTask(task);
+      await this.assertActiveMachineChanged();
       const implementation = await this.deps.agent.run({ task, worktree, stage: "implement", context: `Approved plan:\n${plan.output}` });
       await saveArtifact(config.artifactsDir, task, "implementation.log", implementation.output);
       if (!implementation.ok) throw new Error("IMPLEMENTATION_FAILED");
@@ -190,9 +195,11 @@ export class EngineeringWorker {
       task = touch(task, "TESTING", this.now(), config.leaseMs, "full-verification"); await state.updateTask(task);
       let tests = await runVerification(this.deps.runner, FULL_VERIFICATION_COMMANDS, path.join(worktree, "ai-secretary"));
       await this.assertNoVerificationMutation(worktree, preVerificationFiles);
+      await this.assertActiveMachineChanged();
       while (tests.some((result) => !result.ok) && failureDisposition(task.fixAttempts, config.maxFixAttempts) === "FIX") {
         task = { ...touch(task, "IMPLEMENTING", this.now(), config.leaseMs, "local-fix"), fixAttempts: task.fixAttempts + 1 };
         await state.updateTask(task);
+        await this.assertActiveMachineChanged();
         const failure = tests.find((result) => !result.ok)!;
         const fix = await this.deps.agent.run({ task, worktree, stage: "fix", context: `Local verification failed. Fix only this failure:\n${failure.command}\n${failure.output}` });
         if (!fix.ok) break;
@@ -200,12 +207,14 @@ export class EngineeringWorker {
         task = touch(task, "TESTING", this.now(), config.leaseMs, "full-verification-retry"); await state.updateTask(task);
         tests = await runVerification(this.deps.runner, FULL_VERIFICATION_COMMANDS, path.join(worktree, "ai-secretary"));
         await this.assertNoVerificationMutation(worktree, preVerificationFiles);
+        await this.assertActiveMachineChanged();
       }
       audit.tests = tests;
       audit.fixAttempts = task.fixAttempts;
       if (tests.some((result) => !result.ok)) throw new Error("MAX_FIX_ATTEMPTS_EXCEEDED");
 
       task = touch(task, "REVIEWING", this.now(), config.leaseMs, "review"); await state.updateTask(task);
+      await this.assertActiveMachineChanged();
       const reviewedDiff = await this.diff(worktree);
       const review = await this.deps.agent.run({ task, worktree, stage: "review", context: `Review correctness, regressions, architecture/SSOT, compatibility and tests. Do not edit files. End with exactly REVIEW_PASS when there are no blocking findings, otherwise REVIEW_BLOCKED: followed by reasons.\nDiff:\n${reviewedDiff.diff}` });
       await saveArtifact(config.artifactsDir, task, "review.md", review.output);
@@ -213,6 +222,7 @@ export class EngineeringWorker {
       const finalDiff = await this.diff(worktree);
       if (finalDiff.diff !== reviewedDiff.diff) throw new Error("REVIEWER_MODIFIED_WORKTREE");
       await this.assertSafeDiff(task, finalDiff);
+      await this.assertActiveMachineChanged();
 
       const commitMessage = `${task.taskType}: ${task.title.slice(0, 60)} (#${task.issueNumber})`;
       await this.mustRun("git", ["add", "--all"], worktree);
@@ -220,8 +230,10 @@ export class EngineeringWorker {
       task.commit = (await this.mustRun("git", ["rev-parse", "HEAD"], worktree)).trim();
       audit.commit = task.commit;
       validatePushRef(task.branchName!);
+      await this.assertActiveMachineChanged();
       await this.mustRun("git", ["push", "--set-upstream", "origin", task.branchName!], worktree);
 
+      await this.assertActiveMachineChanged();
       const pr = await this.deps.github.createPullRequest({ branch: task.branchName!, title: commitMessage, body: this.pullRequestBody(task, finalDiff.files, tests, audit.runId) });
       task.pullRequestNumber = pr; audit.pullRequestNumber = pr;
       await state.updateTask(task);
@@ -230,6 +242,7 @@ export class EngineeringWorker {
       task = touch(task, "CI_WAIT", this.now(), config.leaseMs, "ci-wait"); await state.updateTask(task);
 
       await this.monitorCi(task, worktree, audit);
+      await this.assertActiveMachineChanged();
       task = { ...touch(task, "READY_FOR_HUMAN_REVIEW", this.now(), config.leaseMs, "complete"), leaseExpiresAt: undefined };
       await state.updateTask(task);
       await this.deps.github.comment(task.issueNumber, `CI passed. #${pr} is READY_FOR_HUMAN_REVIEW. This worker will not merge it.`);
@@ -238,7 +251,7 @@ export class EngineeringWorker {
       return this.finishAudit({ ...audit, ciStatus: "SUCCESS" }, "READY_FOR_HUMAN_REVIEW");
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      task = { ...task, status: reason.startsWith("SECURITY_GATE:") || reason === "AGENT_CREDENTIAL_UNAVAILABLE" ? "BLOCKED" : "FAILED", failureReason: reason, updatedAt: this.now().toISOString(), leaseExpiresAt: undefined };
+      task = { ...task, status: reason.startsWith("SECURITY_GATE:") || ["AGENT_CREDENTIAL_UNAVAILABLE", "ACTIVE_MACHINE_CHANGED", "KILL_SWITCH_DISABLED"].includes(reason) ? "BLOCKED" : "FAILED", failureReason: reason, updatedAt: this.now().toISOString(), leaseExpiresAt: undefined };
       await state.updateTask(task);
       await this.deps.github.removeLabel(task.issueNumber, "ai-running").catch(() => undefined);
       return this.finishAudit(audit, task.status, reason);
@@ -249,6 +262,7 @@ export class EngineeringWorker {
     const pr = task.pullRequestNumber!;
     for (;;) {
       if (await this.killSwitchActive()) throw new Error("KILL_SWITCH_DISABLED");
+      await this.assertActiveMachineChanged();
       const status = await this.deps.github.getCiStatus(pr);
       if (status === "SUCCESS") return;
       if (status === "PENDING") {
@@ -262,6 +276,7 @@ export class EngineeringWorker {
       task.ciFixAttempts += 1;
       task = touch(task, "CI_WAIT", this.now(), this.deps.config.leaseMs, "ci-fix");
       await this.deps.state.updateTask(task);
+      await this.assertActiveMachineChanged();
       const summary = await this.deps.github.getCiFailureSummary(pr);
       const fix = await this.deps.agent.run({ task, worktree, stage: "fix", context: `CI failed. Fix only the reported failure:\n${summary}` });
       if (!fix.ok) throw new Error("CI_FIX_FAILED");
@@ -272,6 +287,7 @@ export class EngineeringWorker {
       await this.mustRun("git", ["add", "--all"], worktree);
       await this.mustRun("git", ["commit", "-m", `fix: address CI failure (#${task.issueNumber})`], worktree);
       validatePushRef(task.branchName!);
+      await this.assertActiveMachineChanged();
       await this.mustRun("git", ["push", "origin", task.branchName!], worktree);
     }
   }
@@ -341,6 +357,27 @@ export class EngineeringWorker {
   private async killSwitchActive(): Promise<boolean> {
     if (!this.deps.config.enabled) return true;
     try { await access(path.join(this.deps.config.stateDir, "STOP")); return true; } catch { return false; }
+  }
+
+  private async activeMachineStandbyReason(): Promise<string | undefined> {
+    const machineId = this.deps.config.machineId;
+    if (!machineId) return "ENGINEERING_MACHINE_ID_UNCONFIGURED";
+    try {
+      const active = (await this.deps.github.getActiveMachine()).trim();
+      if (!active) return "ACTIVE_MACHINE_VARIABLE_MISSING";
+      if (active === "none") return "ACTIVE_MACHINE_OFF";
+      if (active !== machineId) return "ACTIVE_MACHINE_MISMATCH";
+      return undefined;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "ACTIVE_MACHINE_LOOKUP_FAILED";
+      return reason === "ACTIVE_MACHINE_VARIABLE_MISSING" ? reason : "ACTIVE_MACHINE_LOOKUP_FAILED";
+    }
+  }
+
+  private async assertActiveMachineChanged(): Promise<void> {
+    if (await this.killSwitchActive()) throw new Error("KILL_SWITCH_DISABLED");
+    const reason = await this.activeMachineStandbyReason();
+    if (reason) throw new Error("ACTIVE_MACHINE_CHANGED");
   }
 
   private async finishAudit(audit: EngineeringRunAudit, status: EngineeringRunAudit["status"], failureReason?: string): Promise<EngineeringRunAudit> {

@@ -2,6 +2,14 @@
 
 The Engineering Worker is a local, fail-closed runtime for human-approved GitHub issues. It is deliberately separate from `app/lib/company/runtime`: it may prepare a branch and pull request, but it cannot merge, deploy production, change protected security/financial paths, or create its own issues.
 
+## Active / standby architecture
+
+Any number of Macs may have the LaunchAgent loaded, but exactly one shared GitHub Repository Variable controls which machine may process tasks. Each Mac has an explicit, non-secret `ENGINEERING_MACHINE_ID`; hostname inference is intentionally forbidden. GitHub's `ENGINEERING_ACTIVE_MACHINE` is the single source of truth. A worker proceeds only when both values match.
+
+For example, with `ENGINEERING_ACTIVE_MACHINE=home-mac`, `home-mac` is ACTIVE and `mobile-mac` is STANDBY. Setting the variable to the reserved value `none` makes every worker STANDBY. Missing local identity, a missing variable, GitHub authentication/lookup failure, `none`, or a mismatch all fail closed before issue access. Standby is recorded as a normal `STANDBY` result, not a worker error.
+
+The worker rechecks authority at run start, immediately before claim and each Codex stage, after verification and review, before push and PR creation, throughout CI monitoring, before CI fixes, and before `READY_FOR_HUMAN_REVIEW`. A mid-run change stops with `ACTIVE_MACHINE_CHANGED`; no later push, PR, CI fix, or issue claim occurs. The existing cleanup contract releases `ai-running`, while local worktrees and useful changes remain intact.
+
 ## Safety contract
 
 Only an open issue carrying both `ai-engineering` and human-applied `ai-ready` is eligible. `blocked` and `ai-running` issues are ignored. The worker may add/remove only the `ai-running` claim label; it never grants itself `ai-ready`.
@@ -36,6 +44,7 @@ Set these in the worker process environment or a local, uncommitted launcher:
 
 ```bash
 export ENGINEERING_REPOSITORY=h1maekawa/ai-company
+export ENGINEERING_MACHINE_ID=home-mac
 export ENGINEERING_WORKSPACE_DIR="$HOME/ai-company-worker"
 export ENGINEERING_REPO_DIR="$HOME/ai-company-worker/repo"
 export ENGINEERING_AGENT_COMMAND=codex
@@ -130,15 +139,36 @@ Use the per-user LaunchAgent template; a system LaunchDaemon and `sudo` are unne
 cd "$ENGINEERING_REPO_DIR/ai-secretary"
 ENGINEERING_PROJECT_DIR="$ENGINEERING_REPO_DIR/ai-secretary" \
 ENGINEERING_WORKSPACE_DIR="$ENGINEERING_WORKSPACE_DIR" \
+ENGINEERING_MACHINE_ID=home-mac \
 bash ops/macos/install-engineering-worker.sh render
 
-bash ops/macos/install-engineering-worker.sh install
+ENGINEERING_MACHINE_ID=home-mac bash ops/macos/install-engineering-worker.sh install
 ```
+
+On the mobile Mac use the same commands with `ENGINEERING_MACHINE_ID=mobile-mac`. The ID is stored in the plist because it is not a secret. Both LaunchAgents may remain loaded.
+
+Use the operator helper to inspect or change the shared control plane:
+
+```bash
+bash ops/macos/engineering-worker-machine.sh status
+bash ops/macos/engineering-worker-machine.sh off
+bash ops/macos/engineering-worker-machine.sh activate home-mac
+bash ops/macos/engineering-worker-machine.sh activate mobile-mac
+```
+
+Safe switching protocol:
+
+1. Run `bash ops/macos/engineering-worker-machine.sh off`.
+2. Use `status` and confirm there is no open `ai-running` issue. If there is one, confirm that the old worker has stopped and reconcile its preserved state/worktree.
+3. Run `activate <target-machine>`.
+4. The target starts on its next poll; an old machine waking later remains STANDBY.
+
+Do not use `worker-state.json`, worktrees, audit logs, artifacts, or LaunchAgent state as a global lock. They are machine-local. The GitHub variable is the shared authority.
 
 The helper never embeds secrets. Run `engineering:doctor` as the same dedicated macOS user before installation; it verifies both `gh auth` and Keychain retrieval with a launchd-compatible minimal environment that does not load shell profiles. View status with `launchctl print "gui/$(id -u)/com.ai-company.engineering-worker"`. Disable/uninstall with `bash ops/macos/install-engineering-worker.sh uninstall`; durable state/worktrees are retained for recovery and must be removed manually after review.
 
 ## Recovery and kill switch
 
-Create `$ENGINEERING_WORKSPACE_DIR/state/STOP` for an emergency halt (checked before each task and during CI monitoring), or set `ENGINEERING_WORKER_ENABLED=false` and restart/stop the LaunchAgent. Remove the file only after review. A stale lease is not blindly resumed: the task is moved to `BLOCKED` with `STALE_LEASE_REQUIRES_RECONCILIATION`, the claim label is released, and a human must compare local branch/worktree/PR state before retrying. `engineering:status` shows the issue, branch, last step, attempts, PR, failure reason, and heartbeat.
+Create `$ENGINEERING_WORKSPACE_DIR/state/STOP` for a machine-local emergency halt (checked before each task and during CI monitoring), or set `ENGINEERING_WORKER_ENABLED=false` and restart/stop the LaunchAgent. `STOP` is independent of the shared GitHub active-machine control: either stop condition prevents work. Remove the file only after review. A stale lease is not blindly resumed: the task is moved to `BLOCKED` with `STALE_LEASE_REQUIRES_RECONCILIATION`, the claim label is released, and a human must compare local branch/worktree/PR state before retrying. `engineering:status` shows the issue, branch, last step, attempts, PR, failure reason, and heartbeat.
 
 For recovery, first keep the kill switch off, inspect status and `$ENGINEERING_WORKSPACE_DIR`, then check the GitHub issue/branch/PR. Preserve useful changes, remove only a confirmed-abandoned worktree with normal Git worktree commands, and re-enable the issue only after reconciling state. The worker never falls back to pushing `main`.
