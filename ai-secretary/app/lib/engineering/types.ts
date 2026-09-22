@@ -47,6 +47,13 @@ export type TestResult = { command: string; ok: boolean; output: string };
 export type ReviewResult = { ok: boolean; reasons: string[] };
 export type AgentResult = { ok: boolean; output: string };
 
+export type DependencyBootstrapResult = {
+  attempted: boolean;
+  success: boolean;
+  durationMs: number;
+  errorOutput?: string;
+};
+
 export type EngineeringRunAudit = {
   runId: string;
   issue?: number;
@@ -60,6 +67,7 @@ export type EngineeringRunAudit = {
   fixAttempts: number;
   ciStatus?: string;
   failureReason?: string;
+  dependencyBootstrap?: DependencyBootstrapResult;
 };
 
 export type WorkerHeartbeat = {

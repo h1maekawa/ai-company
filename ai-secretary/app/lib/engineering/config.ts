@@ -29,6 +29,7 @@ export type EngineeringConfig = {
   maxChangedFiles: number;
   maxDiffLines: number;
   maxConcurrentTasks: 1;
+  npmCacheDir: string;
 };
 
 function positiveInt(value: string | undefined, fallback: number): number {
@@ -84,6 +85,7 @@ export function loadEngineeringConfig(env: NodeJS.ProcessEnv = process.env): Eng
     maxChangedFiles: positiveInt(env.ENGINEERING_MAX_CHANGED_FILES, 30),
     maxDiffLines: positiveInt(env.ENGINEERING_MAX_DIFF_LINES, 2_000),
     maxConcurrentTasks: 1,
+    npmCacheDir: path.join(workspaceDir, "npm-cache"),
   };
 }
 

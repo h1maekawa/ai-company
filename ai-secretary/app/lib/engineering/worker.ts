@@ -5,7 +5,53 @@ import { FULL_VERIFICATION_COMMANDS, type EngineeringConfig } from "./config";
 import { EngineeringStateStore, hasExpiredLease } from "./stateStore";
 import { classifyRisk, isEligibleIssue, reviewDiff, sanitizeBranchName, validatePushRef } from "./security";
 import { runVerification, saveArtifact, type CodingAgentAdapter, type CommandRunner, type GitHubAdapter } from "./adapters";
-import type { EngineeringRunAudit, EngineeringTask, EngineeringTaskType, GitHubIssue, TestResult } from "./types";
+import type { DependencyBootstrapResult, EngineeringRunAudit, EngineeringTask, EngineeringTaskType, GitHubIssue, TestResult } from "./types";
+
+/**
+ * Run `npm ci` in the ai-secretary directory of a fresh worktree.
+ *
+ * This is an Infrastructure step — it must complete before any coding-agent or
+ * verification command runs.  Failures surface as DEPENDENCY_BOOTSTRAP_FAILED
+ * (not MAX_FIX_ATTEMPTS_EXCEEDED) and must never be forwarded to the Codex fix
+ * loop.
+ *
+ * Isolation contract:
+ *  - HOME is scoped to a worker-private npm-home directory (no real macOS HOME).
+ *  - NPM_CONFIG_CACHE points to a shared, worker-private cache dir.
+ *  - NPM_CONFIG_USERCONFIG is /dev/null so the operator's ~/.npmrc is ignored.
+ *  - No AI API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, …).
+ *  - No GitHub credentials (GH_TOKEN, GITHUB_TOKEN).
+ *  - --ignore-scripts prevents supply-chain script execution.
+ *  - --no-audit and --no-fund suppress outbound network calls beyond the registry.
+ */
+export async function bootstrapDependencies(
+  runner: CommandRunner,
+  worktree: string,
+  workspaceDir: string,
+  processEnv: NodeJS.ProcessEnv = process.env,
+): Promise<DependencyBootstrapResult> {
+  const npmCacheDir = path.join(workspaceDir, "npm-cache");
+  const npmHomeDir = path.join(workspaceDir, "npm-home");
+  await mkdir(npmCacheDir, { recursive: true, mode: 0o700 });
+  await mkdir(npmHomeDir, { recursive: true, mode: 0o700 });
+  const cwd = path.join(worktree, "ai-secretary");
+  const startMs = Date.now();
+  const env: NodeJS.ProcessEnv = {
+    HOME: npmHomeDir,
+    NPM_CONFIG_CACHE: npmCacheDir,
+    NPM_CONFIG_USERCONFIG: "/dev/null",
+    PATH: processEnv.PATH ?? "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+    CI: "true",
+    NODE_ENV: processEnv.NODE_ENV ?? "development",
+  };
+  const result = await runner.run("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd, env, timeoutMs: 5 * 60_000 });
+  const durationMs = Date.now() - startMs;
+  if (result.code !== 0) {
+    const errorOutput = (result.stderr || result.stdout || "").trim().slice(0, 2_000);
+    return { attempted: true, success: false, durationMs, errorOutput };
+  }
+  return { attempted: true, success: true, durationMs };
+}
 
 export type WorkerDependencies = {
   config: EngineeringConfig;
@@ -119,6 +165,10 @@ export class EngineeringWorker {
       audit.branch = task.branchName;
 
       const worktree = await this.prepareWorktree(task);
+      task = touch(task, "CLAIMED", this.now(), config.leaseMs, "dependency-bootstrap"); await state.updateTask(task);
+      const bootstrap = await bootstrapDependencies(this.deps.runner, worktree, config.workspaceDir);
+      audit.dependencyBootstrap = bootstrap;
+      if (!bootstrap.success) throw new Error("DEPENDENCY_BOOTSTRAP_FAILED");
       task = touch(task, "PLANNING", this.now(), config.leaseMs, "planning"); await state.updateTask(task);
       const plan = await this.deps.agent.run({ task, worktree, stage: "plan" });
       await saveArtifact(config.artifactsDir, task, "plan.md", plan.output);
