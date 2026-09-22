@@ -30,11 +30,24 @@ export type EngineeringConfig = {
   maxDiffLines: number;
   maxConcurrentTasks: 1;
   npmCacheDir: string;
+  /** CI check names (substring match) that must all pass before READY_FOR_HUMAN_REVIEW.
+   * Non-listed checks (e.g. Cloudflare Pages) are ignored for the pass/fail decision.
+   * Configure via ENGINEERING_REQUIRED_CI_CHECKS_JSON env var. */
+  requiredCiChecks: string[];
 };
 
 function positiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function jsonStringArray(value: string | undefined, fallback: string[]): string[] {
+  if (!value) return fallback;
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) {
+    throw new Error("must be a JSON array of strings");
+  }
+  return parsed;
 }
 
 function jsonArgs(value: string | undefined): string[] {
@@ -86,6 +99,7 @@ export function loadEngineeringConfig(env: NodeJS.ProcessEnv = process.env): Eng
     maxDiffLines: positiveInt(env.ENGINEERING_MAX_DIFF_LINES, 2_000),
     maxConcurrentTasks: 1,
     npmCacheDir: path.join(workspaceDir, "npm-cache"),
+    requiredCiChecks: jsonStringArray(env.ENGINEERING_REQUIRED_CI_CHECKS_JSON, ["typecheck / build / test"]),
   };
 }
 

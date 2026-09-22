@@ -45,7 +45,7 @@ export type GitHubIssue = {
 
 export type TestResult = { command: string; ok: boolean; output: string };
 export type ReviewResult = { ok: boolean; reasons: string[] };
-export type AgentResult = { ok: boolean; output: string };
+export type AgentResult = { ok: boolean; output: string; diagnostics?: string };
 
 export type DependencyBootstrapResult = {
   attempted: boolean;

@@ -67,11 +67,18 @@ export class GhCliAdapter implements GitHubAdapter {
   }
   async addPullRequestLabels(pr: number, labels: string[]): Promise<void> { await this.gh(["pr", "edit", String(pr), "--repo", this.config.repository, "--add-label", labels.join(",")]); }
   async getCiStatus(pr: number): Promise<"PENDING" | "SUCCESS" | "FAILURE"> {
-    const result = await this.runner.run("gh", ["pr", "checks", String(pr), "--repo", this.config.repository, "--json", "state"], { cwd: this.config.repoDir });
+    const result = await this.runner.run("gh", ["pr", "checks", String(pr), "--repo", this.config.repository, "--json", "name,state"], { cwd: this.config.repoDir });
     if (result.code !== 0 && !result.stdout) return "PENDING";
-    const checks = JSON.parse(result.stdout || "[]") as Array<{ state: string }>;
-    if (!checks.length || checks.some((check) => ["PENDING", "QUEUED", "IN_PROGRESS"].includes(check.state))) return "PENDING";
-    return checks.every((check) => ["SUCCESS", "SKIPPED", "NEUTRAL"].includes(check.state)) ? "SUCCESS" : "FAILURE";
+    const allChecks = JSON.parse(result.stdout || "[]") as Array<{ name: string; state: string }>;
+    const requiredNames = this.config.requiredCiChecks;
+    // Each required check name must have at least one matching actual check (substring match).
+    // If any required check has not appeared yet, the checks are still pending.
+    for (const requiredName of requiredNames) {
+      if (!allChecks.some((c) => c.name.includes(requiredName))) return "PENDING";
+    }
+    const requiredChecks = allChecks.filter((c) => requiredNames.some((name) => c.name.includes(name)));
+    if (requiredChecks.some((c) => ["PENDING", "QUEUED", "IN_PROGRESS"].includes(c.state))) return "PENDING";
+    return requiredChecks.every((c) => ["SUCCESS", "SKIPPED", "NEUTRAL"].includes(c.state)) ? "SUCCESS" : "FAILURE";
   }
   async getCiFailureSummary(pr: number): Promise<string> { return this.gh(["pr", "checks", String(pr), "--repo", this.config.repository]); }
 }
@@ -174,7 +181,13 @@ export class CommandCodingAgentAdapter implements CodingAgentAdapter {
       runArgs = this.config.agentArgs;
     }
     const result = await this.runner.run(this.config.agentCommand, runArgs, { cwd: input.worktree, input: prompt, env: runEnv, timeoutMs: 60 * 60_000 });
-    return { ok: result.code === 0, output: redactSecrets(`${result.stdout}\n${result.stderr}`.trim(), this.processEnv, Object.values(agentCredentials)) };
+    // Separate semantic output (stdout) from CLI diagnostics (stderr).
+    // Review decisions are made against stdout only; stderr is never mixed into output.
+    const credentialValues = Object.values(agentCredentials);
+    const output = redactSecrets(result.stdout.trim(), this.processEnv, credentialValues);
+    const rawDiagnostics = result.stderr.trim().slice(0, 5_000);
+    const diagnostics = redactSecrets(rawDiagnostics, this.processEnv, credentialValues);
+    return diagnostics ? { ok: result.code === 0, output, diagnostics } : { ok: result.code === 0, output };
   }
 }
 
