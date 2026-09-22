@@ -64,6 +64,8 @@ export async function runAgent(
       `${missionId}:${run.replans}`,
       { missionId, reason },
     );
+    runtime.operationalEvents = appendOperationalEvent(runtime.operationalEvents ?? [], operationalEvent({ type: status === "BLOCKED" ? "MISSION_BLOCKED" : "MISSION_FAILED", missionId, agentId: agent?.id, metadata: { reasonCode: reason.slice(0, 120) } }));
+    runtime.companyImprovementCandidates = discoverCompanyImprovementCandidates(runtime.operationalEvents, runtime.companyImprovementCandidates ?? []);
   };
   if (!agent || mission.assignedAgentId !== agent.id) {
     stop("NO_SUITABLE_AGENT", "BLOCKED");

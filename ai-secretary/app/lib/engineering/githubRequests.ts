@@ -15,6 +15,11 @@ export async function engineeringGithub(path: string, init?: RequestInit) {
   });
 }
 
+/** Research-facing helper. It deliberately exposes GET only. */
+export async function engineeringGithubRead(path: string) {
+  return engineeringGithub(path, { method: "GET" });
+}
+
 export async function createEngineeringIssue(input: { title: string; body: string; labels: string[] }) {
   const safeInput = { ...input, title: redactSecrets(input.title), body: redactSecrets(input.body) };
   const response = await engineeringGithub("/issues", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(safeInput) });
