@@ -8,6 +8,7 @@ import type { RunnerState } from "./runnerTypes";
 import type { ContentDraftCandidate } from "./contentHandoff";
 import type { SkillCandidate } from "../evolution/skillCandidates";
 import type { SkillEngineeringHandoff, SkillEngineeringSpecification } from "../evolution/skillEngineering";
+import type { CompanyImprovementHandoff, CompanyImprovementSpecification } from "../evolution/companyImprovementEngineering";
 import { LocalExecutionStore } from "../runtime/localExecutionStore";
 import type { ExecutionSnapshot, ExecutionStore, StoreSaveOptions } from "../runtime/runtimeTypes";
 import { assertProductionMutationAllowed, runtimeEnvironment } from "../runtime/environment";
@@ -24,10 +25,12 @@ export type ExecutionState = {
   skillCandidates: SkillCandidate[];
   skillEngineeringSpecifications: SkillEngineeringSpecification[];
   skillEngineeringHandoffs: SkillEngineeringHandoff[];
+  companyImprovementSpecifications: CompanyImprovementSpecification[];
+  companyImprovementHandoffs: CompanyImprovementHandoff[];
 };
 
 export function emptyExecutionState(): ExecutionState {
-  return { missions: [], actionRequests: [], approvals: [], plans: [], contentDraftCandidates: [], skillCandidates: [], skillEngineeringSpecifications: [], skillEngineeringHandoffs: [] };
+  return { missions: [], actionRequests: [], approvals: [], plans: [], contentDraftCandidates: [], skillCandidates: [], skillEngineeringSpecifications: [], skillEngineeringHandoffs: [], companyImprovementSpecifications: [], companyImprovementHandoffs: [] };
 }
 
 let singleton: ExecutionStore | undefined;

@@ -36,6 +36,9 @@ import { createManualMissionRecord, validateManualMissionInput } from "./manualM
 import { buildKnowledgeContext } from "../../knowledge/router";
 import { discoverSkillCandidates } from "../evolution/skillCandidates";
 import { listSkills } from "../../skills/registry";
+import { appendOperationalEvent, discoverCompanyImprovementCandidates, operationalEvent } from "../evolution/operationalObservability";
+
+function recordOperational(state:ExecutionState,input:Parameters<typeof operationalEvent>[0]){const runtime=(state.runtime??={runs:{},executions:[],artifacts:[],learning:[]});runtime.operationalEvents=appendOperationalEvent(runtime.operationalEvents??[],operationalEvent(input));runtime.companyImprovementCandidates=discoverCompanyImprovementCandidates(runtime.operationalEvents,runtime.companyImprovementCandidates??[]);}
 
 export type ServiceResult<T> =
   { ok: true; data: T } | { ok: false; error: string; status: number };
@@ -161,6 +164,8 @@ async function startMissionOperation(input: {
         { missionId: mission.id, reason: "NO_SUITABLE_AGENT" },
         now,
       );
+      recordOperational(next,{type:"MISSION_BLOCKED",missionId:mission.id,metadata:{reasonCode:"NO_SUITABLE_AGENT"}});
+      recordOperational(next,{type:"ROUTING_FALLBACK",missionId:mission.id,metadata:{reasonCode:"NO_SUITABLE_AGENT"}});
       await saveExecutionState(next);
     }
     return fail(409, `NO_SUITABLE_AGENT: ${assignment.detail}`);
@@ -290,7 +295,9 @@ async function cancelMissionOperation(input: {
   });
   if (!result.ok) return fail(409, result.error);
 
-  await saveExecutionState(upsertMission(state, result.mission));
+  const next=upsertMission(state,result.mission);
+  recordOperational(next,{type:"MISSION_CANCELLED",missionId:mission.id,metadata:{reasonCode:"HUMAN_CANCELLED"}});
+  await saveExecutionState(next);
   return { ok: true, data: { mission: result.mission } };
 }
 
@@ -455,6 +462,7 @@ async function decideApprovalRequestOperation(input: {
     },
     now,
   );
+  if(input.decision==="REJECTED")recordOperational(next,{type:"APPROVAL_REJECTED",missionId:approval.missionId,metadata:{approvalId:approval.id,reasonCode:"HUMAN_REJECTED"}});
   await saveExecutionState(next);
   return { ok: true, data: { state: next } };
 }

@@ -11,6 +11,8 @@ export function normalizeExecutionState(state: Partial<ExecutionState> | null | 
     skillCandidates: state?.skillCandidates ?? [],
     skillEngineeringSpecifications: state?.skillEngineeringSpecifications ?? [],
     skillEngineeringHandoffs: state?.skillEngineeringHandoffs ?? [],
+    companyImprovementSpecifications: state?.companyImprovementSpecifications ?? [],
+    companyImprovementHandoffs: state?.companyImprovementHandoffs ?? [],
   };
 }
 

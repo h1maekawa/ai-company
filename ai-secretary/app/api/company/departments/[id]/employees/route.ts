@@ -22,6 +22,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       const live = statuses.find((status) => status.agentId === entry!.config.id);
       const currentStep = state?.plans.flatMap((plan) => plan.steps.map((step) => ({ plan, step }))).find(({ step }) => step.assignedAgentId === entry!.config.id && ["RUNNING", "WAITING", "BLOCKED"].includes(step.status));
       const stepMission = currentStep ? state?.missions.find((mission) => mission.id === currentStep.plan.missionId) : undefined;
+      const researchRuns = (state?.runtime?.researchRuns ?? []).filter((run) => run.researcherAgentId === entry!.config.id);
+      const latestResearch = researchRuns.at(-1);
+      const researchItems = (state?.runtime?.researchItems ?? []).filter((item) => item.researcherAgentId === entry!.config.id);
       return {
         id: entry!.config.id,
         name: entry!.config.name,
@@ -35,6 +38,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         currentMissionId: stepMission?.id ?? live?.currentMissionId,
         currentMissionTitle: stepMission?.title ?? live?.currentMissionTitle,
         currentStep: currentStep ? { id: currentStep.step.id, title: currentStep.step.title, status: currentStep.step.status, dependsOn: currentStep.step.dependsOn ?? [], outputRefs: currentStep.step.outputRefs ?? [] } : undefined,
+        research: latestResearch ? { lastRun: latestResearch.completedAt ?? latestResearch.startedAt, freshItems: researchItems.filter((item) => item.freshnessStatus === "FRESH").length, importantItems: researchItems.filter((item) => item.reliability === "PRIMARY" || item.reliability === "HIGH").length, health: latestResearch.status === "COMPLETED" ? "HEALTHY" : latestResearch.status } : undefined,
         skills: getSkillsForSecretary(entry!.config.id).map((skill) => ({ id: skill.id, name: skill.name, status: skill.status, category: skill.category, usage: state ? skillEffectiveness(skill.id, state.runtime?.skillExecutions ?? [], state.missions) : skillEffectiveness(skill.id, null) })),
       };
     }),
