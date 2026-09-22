@@ -1,10 +1,6 @@
 import { getSkillById } from "./registry";
 import { SkillExecutionInput, SkillExecutionResult } from "./types";
-import { runPersonalCapture } from "./implementations/personalCapture";
-import { runPersonalTodoAdd } from "./implementations/personalTodoAdd";
-import { runPersonalTodayShow } from "./implementations/personalTodayShow";
-import { runNoteDraftFormat } from "./implementations/noteDraftFormat";
-import { runFundLogFormat } from "./implementations/fundLogFormat";
+import { getSkillImplementation } from "./implementationRegistry";
 import { captureKnowledgeCandidate } from "../knowledge/captureService";
 
 /**
@@ -12,25 +8,6 @@ import { captureKnowledgeCandidate } from "../knowledge/captureService";
  * 全Skill実行を無条件保存しない。input.captureToKnowledge === true でも明示的にCaptureできる。
  */
 const CAPTURE_WORTHY_SKILLS = new Set<string>(["personal-capture"]);
-
-type SkillHandler = (input: Record<string, unknown>) => {
-  markdown: string;
-  output?: Record<string, unknown>;
-  warnings?: string[];
-};
-
-/**
- * skillId → 実処理のマッピング。
- * ここに存在しない、または registry.ts 側で status !== "implemented" の場合は
- * executeSkill() が "not implemented" を返す。
- */
-const HANDLERS: Record<string, SkillHandler> = {
-  "personal-capture": runPersonalCapture,
-  "personal-todo-add": runPersonalTodoAdd,
-  "personal-today-show": runPersonalTodayShow,
-  "note-draft-format": runNoteDraftFormat,
-  "fund-log-format": runFundLogFormat,
-};
 
 /**
  * Phase3A Skill Executor.
@@ -67,8 +44,8 @@ export async function executeSkill(
       };
     }
 
-    const handler = HANDLERS[skillId];
-    if (!handler || definition.status !== "implemented") {
+    const implementation = getSkillImplementation(skillId);
+    if (!implementation || definition.status !== "implemented") {
       return {
         skillId,
         secretaryId,
@@ -77,7 +54,7 @@ export async function executeSkill(
       };
     }
 
-    const result = handler(input ?? {});
+    const result = implementation.run(input ?? {});
 
     // 学び候補のCapture（非致命。失敗してもSkill結果は返す）
     const wantCapture =

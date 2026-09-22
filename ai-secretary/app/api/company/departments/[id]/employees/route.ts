@@ -5,6 +5,7 @@ import { getSkillsForSecretary } from "@/app/lib/skills/registry";
 import { computeAgentStatuses } from "@/app/lib/company/execution/agentStatus";
 import { loadExecutionState } from "@/app/lib/company/execution/store";
 import { buildOrganizationSnapshot } from "@/app/lib/company/organization";
+import { skillEffectiveness } from "@/app/lib/company/evolution/skillObservability";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         currentMissionId: stepMission?.id ?? live?.currentMissionId,
         currentMissionTitle: stepMission?.title ?? live?.currentMissionTitle,
         currentStep: currentStep ? { id: currentStep.step.id, title: currentStep.step.title, status: currentStep.step.status, dependsOn: currentStep.step.dependsOn ?? [], outputRefs: currentStep.step.outputRefs ?? [] } : undefined,
-        skills: getSkillsForSecretary(entry!.config.id).map((skill) => ({ id: skill.id, name: skill.name, status: skill.status, category: skill.category })),
+        skills: getSkillsForSecretary(entry!.config.id).map((skill) => ({ id: skill.id, name: skill.name, status: skill.status, category: skill.category, usage: state ? skillEffectiveness(skill.id, state.runtime?.skillExecutions ?? [], state.missions) : skillEffectiveness(skill.id, null) })),
       };
     }),
   });

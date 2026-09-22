@@ -16,6 +16,7 @@ import { executeMissionSkill } from "../../skills/missionRuntime";
 import { createContentDraftCandidate } from "./contentHandoff";
 import { discoverSkillCandidates } from "../evolution/skillCandidates";
 import { listSkills } from "../../skills/registry";
+import { appendSkillExecution, discoverSkillImprovementCandidates, skillExecutionEvent } from "../evolution/skillObservability";
 
 export type StepWorker = (input: {
   objective: string;
@@ -245,6 +246,7 @@ export async function runAgent(
       const context = `${referenceContext}\n${priorContext}`.trim();
       try {
         if (step.requiredSkillId) {
+          const skillStartedAt = new Date();
           const skill = await bounded(executeMissionSkill({
             skillId: step.requiredSkillId,
             agentId: stepAgent.id,
@@ -252,6 +254,9 @@ export async function runAgent(
             objective: plan.objective,
             context,
           }));
+          state.runtime ??= { runs: {}, executions: [], artifacts: [], learning: [] };
+          state.runtime.skillExecutions = appendSkillExecution(state.runtime.skillExecutions ?? [], skillExecutionEvent({ skillId: step.requiredSkillId, agentId: stepAgent.id, source: "mission", result: skill, startedAt: skillStartedAt, missionId: mission.id, stepId: step.id, knowledgeRefs: step.knowledgeRefs }));
+          state.runtime.skillImprovementCandidates = discoverSkillImprovementCandidates(listSkills().filter((item) => item.status === "implemented").map((item) => item.id), state.runtime.skillExecutions, state.runtime.skillImprovementCandidates ?? []);
           if (!skill.ok || !skill.markdown) {
             history.status = "BLOCKED";
             history.reason = skill.error ?? "SKILL_EXECUTION_FAILED";

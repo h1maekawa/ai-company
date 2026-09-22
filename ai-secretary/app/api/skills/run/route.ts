@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeSkill } from "@/app/lib/skills";
+import { executionTransaction } from "@/app/lib/company/execution/transaction";
+import { loadExecutionState, saveExecutionState } from "@/app/lib/company/execution/store";
+import { appendSkillExecution, discoverSkillImprovementCandidates, skillExecutionEvent } from "@/app/lib/company/evolution/skillObservability";
+import { listSkills } from "@/app/lib/skills/registry";
 
 /**
  * POST /api/skills/run
@@ -28,10 +32,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "secretaryId は必須です" }, { status: 400 });
     }
 
+    const startedAt = new Date();
     const result = await executeSkill({
       skillId,
       secretaryId,
       input: input && typeof input === "object" ? input : {},
+    });
+    const event = skillExecutionEvent({ skillId, agentId: secretaryId, source: "direct", result, startedAt });
+    await executionTransaction(async () => {
+      const state = await loadExecutionState();
+      const runtime = state.runtime ?? { runs: {}, executions: [], artifacts: [], learning: [] };
+      const skillExecutions = appendSkillExecution(runtime.skillExecutions ?? [], event);
+      const skillImprovementCandidates = discoverSkillImprovementCandidates(listSkills().filter((item) => item.status === "implemented").map((item) => item.id), skillExecutions, runtime.skillImprovementCandidates ?? []);
+      await saveExecutionState({ ...state, runtime: { ...runtime, skillExecutions, skillImprovementCandidates } });
     });
 
     return NextResponse.json(result);
