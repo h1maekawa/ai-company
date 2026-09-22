@@ -35,7 +35,7 @@ test("Knowledge and AI Company improvement UIs expose real usage and review deta
   assert.match(knowledge, /detail\.usage\.missions/);
   assert.match(knowledge, /Related Skill Candidates/);
   assert.match(organization, /Skill化を承認/);
-  assert.match(organization, /Existing Similar Skills/);
+  assert.match(organization, /existingSimilarSkillIds/);
 });
 
 test("Notification deep-links to review and financial/engineering safety remains intact", () => {

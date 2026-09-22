@@ -2,25 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { classifyRisk } from "@/app/lib/engineering/security";
 import { getExecutionStore } from "@/app/lib/company/execution/store";
 import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtection";
+import { createEngineeringIssue, engineeringGithub as github, githubCredentialAvailable } from "@/app/lib/engineering/githubRequests";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const repository = () => process.env.ENGINEERING_REPOSITORY || "h1maekawa/ai-company";
-const token = () => process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-
-async function github(path: string, init?: RequestInit) {
-  const credential = token();
-  if (!credential) throw new Error("GITHUB_CREDENTIAL_UNAVAILABLE");
-  return fetch(`https://api.github.com/repos/${repository()}${path}`, {
-    ...init,
-    headers: { accept: "application/vnd.github+json", authorization: `Bearer ${credential}`, "x-github-api-version": "2022-11-28", ...(init?.headers ?? {}) },
-    cache: "no-store",
-  });
-}
-
 export async function GET() {
-  if (!token()) return NextResponse.json({ available: false, items: null, reason: "GITHUB_CREDENTIAL_UNAVAILABLE" });
+  if (!githubCredentialAvailable()) return NextResponse.json({ available: false, items: null, reason: "GITHUB_CREDENTIAL_UNAVAILABLE" });
   try {
     const [issueResponse, pullResponse, runResponse] = await Promise.all([
       github("/issues?state=open&labels=ai-engineering&per_page=100"),
@@ -60,7 +48,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   if (!isSameOriginMutation(req)) return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
-  if (!token()) return NextResponse.json({ error: "GITHUB_CREDENTIAL_UNAVAILABLE" }, { status: 503 });
+  if (!githubCredentialAvailable()) return NextResponse.json({ error: "GITHUB_CREDENTIAL_UNAVAILABLE" }, { status: 503 });
   try {
     const body = await req.json() as Record<string, unknown>;
     if (body.confirmedByHuman !== true) return NextResponse.json({ error: "HUMAN_CONFIRMATION_REQUIRED" }, { status: 400 });
@@ -78,9 +66,7 @@ export async function POST(req: NextRequest) {
     const prior = await store.getIdempotencyResult<Record<string, unknown>>("mobile-engineering-request", key);
     if (prior) return NextResponse.json(prior);
     if (!(await store.claimIdempotency("mobile-engineering-request", key))) return NextResponse.json({ error: "DUPLICATE_REQUEST_IN_PROGRESS" }, { status: 409 });
-    const response = await github("/issues", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title, body: issueBody, labels: ["ai-engineering", "ai-ready", `type:${taskType}`, `priority:${priority}`] }) });
-    if (!response.ok) return NextResponse.json({ error: "GITHUB_ISSUE_CREATE_FAILED" }, { status: 502 });
-    const issue = await response.json() as { number: number; html_url: string };
+    const issue = await createEngineeringIssue({ title, body: issueBody, labels: ["ai-engineering", `type:${taskType}`, `priority:${priority}`] });
     const result = { ok: true, issue: { number: issue.number, url: issue.html_url }, risk, humanConfirmed: true };
     await store.completeIdempotency("mobile-engineering-request", key, result);
     return NextResponse.json(result, { status: 201 });

@@ -86,6 +86,7 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/execution/xp.ts",
     "$PWD/app/lib/company/execution/agentStatus.ts",
     "$PWD/app/lib/company/execution/agentRunner.ts",
+    "$PWD/app/lib/company/evolution/skillEngineering.ts",
     "$PWD/app/lib/skills/types.ts",
     "$PWD/app/lib/skills/registry.ts",
     "$PWD/app/lib/skills/missionRuntime.ts",

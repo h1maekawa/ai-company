@@ -22,7 +22,8 @@ test("Mobile Engineering Requestは人間確認なしでai-readyを付与しな�
   assert.match(route, /confirmedByHuman !== true/);
   assert.match(route, /HUMAN_CONFIRMATION_REQUIRED/);
   assert.match(route, /HUMAN_SECURITY_REVIEW_REQUIRED/);
-  assert.match(route, /\["ai-engineering", "ai-ready"/);
+  assert.match(route, /labels: \["ai-engineering", `type:/);
+  assert.doesNotMatch(route, /labels: \["ai-engineering", "ai-ready"/);
   assert.doesNotMatch(route, /placeOrder|submitOrder|executeTrade/);
 });
 
