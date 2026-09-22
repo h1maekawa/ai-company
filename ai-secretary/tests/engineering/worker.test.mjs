@@ -558,3 +558,154 @@ test("unavailable coding-agent auth blocks before GitHub mutation", async () => 
   assert.equal(result.failureReason, "AGENT_CREDENTIAL_UNAVAILABLE");
   assert.deepEqual(calls, ["list", "auth"]);
 });
+
+// ─── Review output: stdout/stderr separation ──────────────────────────────────
+
+test("review output: stdout=REVIEW_PASS stderr=diagnostics → output is REVIEW_PASS only and regex matches", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-review-pass-"));
+  try {
+    const runner = { async run() { return { code: 0, stdout: "REVIEW_PASS", stderr: "OpenAI Codex v0.155.1\ntokens used\n3408" }; } };
+    const provider = { async loadAgentCredentials() { return { OPENAI_API_KEY: "key-value" }; }, async checkAvailability() { return true; } };
+    const config = { agentCommand: "codex", agentArgs: [], agentAuthMode: "api_key", codexHome: "/unused", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider, {});
+    const result = await adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: directory, stage: "review" });
+    assert.equal(result.output, "REVIEW_PASS", "output must be stdout only");
+    assert.ok(/(?:^|\n)REVIEW_PASS\s*$/.test(result.output), "REVIEW_PASS-only output must match worker review regex");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("review output: stdout=REVIEW_BLOCKED stderr contains prompt text REVIEW_PASS → output is REVIEW_BLOCKED and regex fails", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-review-blocked-"));
+  try {
+    const runner = { async run() { return { code: 0, stdout: "REVIEW_BLOCKED: missing tests", stderr: "End with exactly REVIEW_PASS\nREVIEW_PASS" }; } };
+    const provider = { async loadAgentCredentials() { return { OPENAI_API_KEY: "key-value" }; }, async checkAvailability() { return true; } };
+    const config = { agentCommand: "codex", agentArgs: [], agentAuthMode: "api_key", codexHome: "/unused", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider, {});
+    const result = await adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: directory, stage: "review" });
+    assert.equal(result.output, "REVIEW_BLOCKED: missing tests", "output must be stdout only");
+    assert.ok(!/(?:^|\n)REVIEW_PASS\s*$/.test(result.output), "REVIEW_BLOCKED stdout must fail review regex even if stderr has REVIEW_PASS");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("review output: stdout empty stderr has REVIEW_PASS → output is empty (fail closed)", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-review-empty-"));
+  try {
+    const runner = { async run() { return { code: 0, stdout: "", stderr: "REVIEW_PASS\ntokens used" }; } };
+    const provider = { async loadAgentCredentials() { return { OPENAI_API_KEY: "key-value" }; }, async checkAvailability() { return true; } };
+    const config = { agentCommand: "codex", agentArgs: [], agentAuthMode: "api_key", codexHome: "/unused", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider, {});
+    const result = await adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: directory, stage: "review" });
+    assert.equal(result.output, "", "output must be empty when stdout is empty");
+    assert.ok(!/(?:^|\n)REVIEW_PASS\s*$/.test(result.output), "empty stdout must fail review regex (fail closed)");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("review output: stdout final semantic line is REVIEW_PASS → regex matches", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-review-final-"));
+  try {
+    const runner = { async run() { return { code: 0, stdout: "Analysis complete.\nREVIEW_PASS", stderr: "" }; } };
+    const provider = { async loadAgentCredentials() { return { OPENAI_API_KEY: "key-value" }; }, async checkAvailability() { return true; } };
+    const config = { agentCommand: "codex", agentArgs: [], agentAuthMode: "api_key", codexHome: "/unused", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider, {});
+    const result = await adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: directory, stage: "review" });
+    assert.ok(/(?:^|\n)REVIEW_PASS\s*$/.test(result.output), "output ending with REVIEW_PASS must match review regex");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("review output: stdout has REVIEW_PASS followed by more text → regex fails (fail closed)", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-review-mid-"));
+  try {
+    const runner = { async run() { return { code: 0, stdout: "REVIEW_PASS\nsome additional text", stderr: "" }; } };
+    const provider = { async loadAgentCredentials() { return { OPENAI_API_KEY: "key-value" }; }, async checkAvailability() { return true; } };
+    const config = { agentCommand: "codex", agentArgs: [], agentAuthMode: "api_key", codexHome: "/unused", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider, {});
+    const result = await adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: directory, stage: "review" });
+    assert.ok(!/(?:^|\n)REVIEW_PASS\s*$/.test(result.output), "REVIEW_PASS followed by text must fail review regex (fail closed)");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("agent diagnostics are bounded and secrets redacted; output is separate from diagnostics", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-diag-bounds-"));
+  try {
+    const longStderr = "diagnostics-line\n".repeat(500);
+    const runner = { async run() { return { code: 0, stdout: "semantic result", stderr: `secret-value\n${longStderr}` }; } };
+    const provider = { async loadAgentCredentials() { return { OPENAI_API_KEY: "secret-value" }; }, async checkAvailability() { return true; } };
+    const config = { agentCommand: "codex", agentArgs: [], agentAuthMode: "api_key", codexHome: "/unused", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider, {});
+    const result = await adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: directory, stage: "plan" });
+    // output is semantic (stdout)
+    assert.equal(result.output, "semantic result");
+    // diagnostics are bounded to 5000 chars
+    assert.ok((result.diagnostics ?? "").length <= 5_000, "diagnostics must be bounded");
+    // secrets must not appear in diagnostics
+    assert.ok(!(result.diagnostics ?? "").includes("secret-value"), "secrets must be redacted from diagnostics");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+// ─── CI authority: required checks allowlist ──────────────────────────────────
+
+test("getCiStatus: required check success + non-required Cloudflare failure → SUCCESS", async () => {
+  const runner = { async run() { return { code: 0, stdout: JSON.stringify([
+    { name: "typecheck / build / test", state: "SUCCESS" },
+    { name: "Cloudflare Pages", state: "FAILURE" },
+  ]), stderr: "" }; } };
+  const config = { repository: "o/r", repoDir: "/tmp", requiredCiChecks: ["typecheck / build / test"] };
+  const adapter = new adapters.GhCliAdapter(config, runner);
+  assert.equal(await adapter.getCiStatus(1), "SUCCESS");
+});
+
+test("getCiStatus: required check pending + non-required Cloudflare failure → PENDING", async () => {
+  const runner = { async run() { return { code: 0, stdout: JSON.stringify([
+    { name: "typecheck / build / test", state: "IN_PROGRESS" },
+    { name: "Cloudflare Pages", state: "FAILURE" },
+  ]), stderr: "" }; } };
+  const config = { repository: "o/r", repoDir: "/tmp", requiredCiChecks: ["typecheck / build / test"] };
+  const adapter = new adapters.GhCliAdapter(config, runner);
+  assert.equal(await adapter.getCiStatus(1), "PENDING");
+});
+
+test("getCiStatus: required check failure + non-required Vercel success → FAILURE", async () => {
+  const runner = { async run() { return { code: 0, stdout: JSON.stringify([
+    { name: "typecheck / build / test", state: "FAILURE" },
+    { name: "Vercel Preview", state: "SUCCESS" },
+  ]), stderr: "" }; } };
+  const config = { repository: "o/r", repoDir: "/tmp", requiredCiChecks: ["typecheck / build / test"] };
+  const adapter = new adapters.GhCliAdapter(config, runner);
+  assert.equal(await adapter.getCiStatus(1), "FAILURE");
+});
+
+test("getCiStatus: required check absent (not appeared yet) → PENDING", async () => {
+  const runner = { async run() { return { code: 0, stdout: JSON.stringify([
+    { name: "Cloudflare Pages", state: "SUCCESS" },
+    { name: "Vercel Preview", state: "SUCCESS" },
+  ]), stderr: "" }; } };
+  const config = { repository: "o/r", repoDir: "/tmp", requiredCiChecks: ["typecheck / build / test"] };
+  const adapter = new adapters.GhCliAdapter(config, runner);
+  assert.equal(await adapter.getCiStatus(1), "PENDING");
+});
+
+test("getCiStatus: all required checks success (no non-required checks) → SUCCESS", async () => {
+  const runner = { async run() { return { code: 0, stdout: JSON.stringify([
+    { name: "typecheck / build / test", state: "SUCCESS" },
+  ]), stderr: "" }; } };
+  const config = { repository: "o/r", repoDir: "/tmp", requiredCiChecks: ["typecheck / build / test"] };
+  const adapter = new adapters.GhCliAdapter(config, runner);
+  assert.equal(await adapter.getCiStatus(1), "SUCCESS");
+});
+
+test("getCiStatus: no checks at all → PENDING", async () => {
+  const runner = { async run() { return { code: 0, stdout: "[]", stderr: "" }; } };
+  const config = { repository: "o/r", repoDir: "/tmp", requiredCiChecks: ["typecheck / build / test"] };
+  const adapter = new adapters.GhCliAdapter(config, runner);
+  assert.equal(await adapter.getCiStatus(1), "PENDING");
+});
+
+test("getCiStatus: required check SKIPPED → SUCCESS (SKIPPED counts as passing)", async () => {
+  const runner = { async run() { return { code: 0, stdout: JSON.stringify([
+    { name: "typecheck / build / test", state: "SKIPPED" },
+    { name: "Cloudflare Pages", state: "FAILURE" },
+  ]), stderr: "" }; } };
+  const config = { repository: "o/r", repoDir: "/tmp", requiredCiChecks: ["typecheck / build / test"] };
+  const adapter = new adapters.GhCliAdapter(config, runner);
+  assert.equal(await adapter.getCiStatus(1), "SUCCESS");
+});
