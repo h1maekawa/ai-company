@@ -133,18 +133,63 @@ test("coding agent receives only its credential and keeps isolated HOME", async 
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test("ChatGPT mode passes CODEX_HOME and no API or GitHub credentials", async () => {
+test("ChatGPT launcher receives real HOME and CODEX_HOME; no API or GitHub credentials", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-chatgpt-agent-test-"));
   try {
     let invocation;
     const runner = { async run(command, args, options) { invocation = { command, args, options }; return { code: 0, stdout: "ok", stderr: "" }; } };
     const provider = { async loadAgentCredentials() { return {}; }, async checkAvailability() { return true; } };
     const config = { agentCommand: "codex", agentArgs: ["exec", "-"], agentAuthMode: "chatgpt", codexHome: "/worker/codex-home", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
-    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider);
+    const processEnv = { HOME: "/real/home", PATH: "/usr/bin:/bin", LANG: "en_US.UTF-8", NODE_ENV: "test" };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider, processEnv);
     await adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: directory, stage: "plan" });
+    // Launcher env: real HOME for Keychain, CODEX_HOME for config
+    assert.equal(invocation.options.env.HOME, "/real/home", "launcher must receive real HOME for Keychain resolution");
     assert.equal(invocation.options.env.CODEX_HOME, "/worker/codex-home");
-    assert.equal(invocation.options.env.HOME, path.join(directory, ".engineering-agent-home"));
-    for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]) assert.equal(invocation.options.env[key], undefined);
+    // No API keys or GitHub tokens in launcher env
+    for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]) {
+      assert.equal(invocation.options.env[key], undefined, `launcher must not receive ${key}`);
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("ChatGPT child isolation: isolated HOME and inherit=none configured via Codex args", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-chatgpt-child-test-"));
+  try {
+    let invocation;
+    const runner = { async run(command, args, options) { invocation = { command, args, options }; return { code: 0, stdout: "ok", stderr: "" }; } };
+    const provider = { async loadAgentCredentials() { return {}; }, async checkAvailability() { return true; } };
+    const config = { agentCommand: "codex", agentArgs: ["exec", "-"], agentAuthMode: "chatgpt", codexHome: "/worker/codex-home", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const processEnv = { HOME: "/real/home", PATH: "/usr/bin:/bin", LANG: "en_US.UTF-8", NODE_ENV: "test" };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider, processEnv);
+    await adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: directory, stage: "plan" });
+    const argsStr = invocation.args.join(" ");
+    const agentHome = path.join(directory, ".engineering-agent-home");
+    // Child isolation args must be present
+    assert.ok(argsStr.includes("shell_environment_policy.inherit=none"), "must configure inherit=none for child commands");
+    assert.ok(argsStr.includes(`shell_environment_policy.env.HOME="${agentHome}"`), "child must receive isolated HOME, not real HOME");
+    assert.ok(argsStr.includes("allow_login_shell=false"), "must disable login shell for child commands");
+    assert.ok(argsStr.includes("sandbox_workspace_write.network_access=false"), "must disable network for child commands");
+    // Real HOME and CODEX_HOME must NOT be passed to child env via args
+    assert.ok(!argsStr.includes(`shell_environment_policy.env.HOME="/real/home"`), "real HOME must not appear in child env config");
+    assert.ok(!argsStr.includes(`shell_environment_policy.env.CODEX_HOME`), "CODEX_HOME must not be in child env");
+    // Stdin marker must still be the last arg
+    assert.equal(invocation.args[invocation.args.length - 1], "-", "stdin marker must be last arg");
+    // Sandbox flag present
+    assert.ok(invocation.args.includes("-s"), "sandbox flag must be present");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("ChatGPT mode fails closed when real HOME is unavailable", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-chatgpt-nohome-test-"));
+  try {
+    let spawned = false;
+    const runner = { async run() { spawned = true; return { code: 0, stdout: "ok", stderr: "" }; } };
+    const provider = { async loadAgentCredentials() { return {}; }, async checkAvailability() { return true; } };
+    const config = { agentCommand: "codex", agentArgs: ["exec", "-"], agentAuthMode: "chatgpt", codexHome: "/worker/codex-home", agentCredentialName: "OPENAI_API_KEY", maxAgentRunsPerTask: 2 };
+    const adapter = new adapters.CommandCodingAgentAdapter(config, runner, provider, { PATH: "/usr/bin" }); // No HOME
+    await assert.rejects(() => adapter.run({ task: worker.normalizeIssue(issue(), "owner/repo"), worktree: directory, stage: "plan" }), /AGENT_CREDENTIAL_UNAVAILABLE/);
+    assert.equal(spawned, false, "must not spawn Codex when real HOME is unavailable");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 

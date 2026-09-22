@@ -70,7 +70,9 @@ CODEX_HOME="$ENGINEERING_CODEX_HOME" codex login
 CODEX_HOME="$ENGINEERING_CODEX_HOME" codex login status
 ```
 
-In `chatgpt` mode the coding-agent process receives `CODEX_HOME` but no provider API key, GitHub token, or OAuth token. The existing `api_key` mode remains available for server/CI use and continues to use the macOS Keychain provider.
+In `chatgpt` mode the Codex launcher receives the real macOS HOME only so Security.framework can resolve the login Keychain. Commands launched by Codex do not inherit that HOME. They execute with an isolated worktree HOME and an explicit environment allowlist configured via Codex `shell_environment_policy` arguments. Do not symlink `~/Library/Keychains` into a worktree.
+
+The coding-agent process receives `CODEX_HOME` but no provider API key, GitHub token, or OAuth token. The existing `api_key` mode remains available for server/CI use and continues to use the macOS Keychain provider.
 
 ## Credential lifecycle
 
