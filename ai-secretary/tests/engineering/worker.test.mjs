@@ -258,6 +258,126 @@ test("kill switch blocks before issue claim and dry-run never mutates GitHub", a
   assert.deepEqual(calls, ["list", "auth", "agent"]);
 });
 
+test("fresh worktree receives dependency bootstrap: npm ci with required flags", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-bootstrap-test-"));
+  try {
+    const npmCalls = [];
+    const runner = {
+      async run(command, args, options) {
+        if (command === "npm") npmCalls.push({ command, args, options });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    };
+    const processEnv = { PATH: "/usr/bin:/bin", NODE_ENV: "test" };
+    const result = await worker.bootstrapDependencies(runner, directory, directory, processEnv);
+    assert.equal(result.attempted, true);
+    assert.equal(result.success, true);
+    assert.equal(npmCalls.length, 1);
+    assert.equal(npmCalls[0].command, "npm");
+    // npm ci (not npm install) ensures package-lock.json is authoritative
+    assert.deepEqual(npmCalls[0].args, ["ci", "--ignore-scripts", "--no-audit", "--no-fund"]);
+    // cwd is the ai-secretary subdirectory
+    assert.equal(npmCalls[0].options.cwd, path.join(directory, "ai-secretary"));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("dependency bootstrap environment: isolated HOME, shared cache, no secrets", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-bootstrap-env-test-"));
+  try {
+    let captured;
+    const runner = {
+      async run(command, args, options) {
+        if (command === "npm") captured = options;
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    };
+    const processEnv = { PATH: "/usr/local/bin:/usr/bin:/bin", NODE_ENV: "development" };
+    await worker.bootstrapDependencies(runner, directory, directory, processEnv);
+    // HOME is isolated to npm-home (not real macOS HOME, not worktree agent home)
+    assert.ok(captured.env.HOME.includes("npm-home"), "HOME must be isolated npm-home, not real HOME");
+    assert.ok(captured.env.HOME !== directory, "HOME must not be worktree root");
+    // Shared cache dir
+    assert.ok(captured.env.NPM_CONFIG_CACHE.includes("npm-cache"), "must use shared npm cache dir");
+    // User npmrc ignored
+    assert.equal(captured.env.NPM_CONFIG_USERCONFIG, "/dev/null");
+    // PATH forwarded
+    assert.equal(captured.env.PATH, "/usr/local/bin:/usr/bin:/bin");
+    // No AI API keys or GitHub credentials
+    for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]) {
+      assert.equal(captured.env[key], undefined, `bootstrap env must not receive ${key}`);
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("dependency bootstrap failure returns DEPENDENCY_BOOTSTRAP_FAILED and does not invoke fix loop", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "engineering-bootstrap-fail-test-"));
+  try {
+    const runner = {
+      async run(command) {
+        if (command === "npm") return { code: 1, stdout: "npm ERR! Cannot find module 'react'", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    };
+    const result = await worker.bootstrapDependencies(runner, directory, directory, { PATH: "/usr/bin" });
+    assert.equal(result.attempted, true);
+    assert.equal(result.success, false);
+    assert.ok(typeof result.durationMs === "number");
+    assert.ok(result.errorOutput !== undefined && result.errorOutput.length > 0);
+    // errorOutput is bounded (not full npm output dumped to state)
+    assert.ok(result.errorOutput.length <= 2_000);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("dependency bootstrap failure in runOnce produces DEPENDENCY_BOOTSTRAP_FAILED, not MAX_FIX_ATTEMPTS_EXCEEDED", async () => {
+  const calls = [];
+  const baseConfig = {
+    enabled: true, dryRun: false, repository: "o/r", repoDir: "/tmp",
+    workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp",
+    artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "codex", agentArgs: [],
+    agentAuthMode: "api_key", codexHome: "/tmp/codex-home",
+    agentCredentialName: "OPENAI_API_KEY", keychainService: "svc", keychainAccount: "acc",
+    pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3,
+    maxFixAttempts: 3, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000,
+    maxConcurrentTasks: 1, npmCacheDir: "/tmp/npm-cache",
+  };
+  const memoryState = {
+    tasks: {},
+    async countRunsToday() { return 0; },
+    async read() { return { version: 1, tasks: this.tasks }; },
+    async claimTask(t) { this.tasks[String(t.issueNumber)] = t; return true; },
+    async updateTask(t) { this.tasks[String(t.issueNumber)] = t; },
+    async appendAudit() {},
+    async updateHeartbeat() {},
+  };
+  const github = {
+    async listReadyIssues() { return [issue()]; },
+    async addLabel() {},
+    async removeLabel() {},
+    async comment() {},
+    async createPullRequest() { return 1; },
+    async addPullRequestLabels() {},
+    async getCiStatus() { return "SUCCESS"; },
+    async getCiFailureSummary() { return ""; },
+  };
+  const agent = {
+    async checkAvailability() { return true; },
+    async run() { calls.push("agent"); return { ok: true, output: "done" }; },
+  };
+  const mockRunner = {
+    async run(command, args) {
+      calls.push(command);
+      // git commands succeed; npm ci fails to simulate bootstrap failure
+      if (command === "npm" && args[0] === "ci") return { code: 1, stdout: "Cannot find module", stderr: "" };
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  };
+  const result = await new worker.EngineeringWorker({ config: baseConfig, state: memoryState, github, agent, runner: mockRunner }).runOnce();
+  assert.equal(result.failureReason, "DEPENDENCY_BOOTSTRAP_FAILED");
+  assert.equal(result.status, "FAILED");
+  // Codex agent must never have been invoked — bootstrap failure is infrastructure, not a fix target
+  assert.equal(calls.filter((c) => c === "agent").length, 0, "Codex fix loop must not be triggered by bootstrap failure");
+});
+
 test("unavailable coding-agent auth blocks before GitHub mutation", async () => {
   const calls = [];
   const config = { enabled: true, dryRun: false, repository: "o/r", repoDir: "/tmp", workspaceDir: "/tmp", stateDir: "/tmp", worktreesDir: "/tmp", artifactsDir: "/tmp", logsDir: "/tmp", agentCommand: "codex", agentArgs: [], agentAuthMode: "chatgpt", codexHome: "/tmp/codex-home", agentCredentialName: "OPENAI_API_KEY", keychainService: "service", keychainAccount: "account", pollIntervalMs: 1, leaseMs: 10, maxTasksPerDay: 3, maxAgentRunsPerTask: 3, maxFixAttempts: 1, maxCiFixAttempts: 1, maxChangedFiles: 30, maxDiffLines: 2000, maxConcurrentTasks: 1 };

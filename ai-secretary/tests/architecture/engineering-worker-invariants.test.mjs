@@ -89,6 +89,26 @@ test("ChatGPT mode: launcher HOME is real macOS HOME; child isolation via Codex 
   assert.match(adapters, /AgentCredentialUnavailableError/);
 });
 
+test("dependency bootstrap precedes planning and is classified as infrastructure failure", async () => {
+  const workerSrc = await read("app/lib/engineering/worker.ts");
+  // bootstrapDependencies must be defined and called before "PLANNING" transition
+  assert.ok(workerSrc.indexOf("bootstrapDependencies") < workerSrc.indexOf('"PLANNING"'));
+  // Bootstrap uses npm ci with all required supply-chain safety flags
+  assert.match(workerSrc, /"npm",\s*\["ci",\s*"--ignore-scripts",\s*"--no-audit",\s*"--no-fund"\]/);
+  // Infrastructure failures are classified distinctly — never fed to the Codex fix loop
+  assert.match(workerSrc, /DEPENDENCY_BOOTSTRAP_FAILED/);
+  // The fix loop only triggers for test failures, not bootstrap failures
+  assert.ok(workerSrc.indexOf("DEPENDENCY_BOOTSTRAP_FAILED") < workerSrc.indexOf("MAX_FIX_ATTEMPTS_EXCEEDED"));
+  // npm env must not contain AI API keys or GitHub credentials
+  assert.doesNotMatch(workerSrc, /OPENAI_API_KEY.*npm-home|npm-home.*OPENAI_API_KEY/);
+  assert.doesNotMatch(workerSrc, /GH_TOKEN.*npmHomeDir|npmHomeDir.*GH_TOKEN/);
+  assert.doesNotMatch(workerSrc, /GITHUB_TOKEN.*npmHomeDir|npmHomeDir.*GITHUB_TOKEN/);
+  // npmCacheDir in config
+  assert.match(await read("app/lib/engineering/config.ts"), /npmCacheDir/);
+  // DependencyBootstrapResult in types
+  assert.match(await read("app/lib/engineering/types.ts"), /DependencyBootstrapResult/);
+});
+
 test("credential helper prompts securely and never accepts secret argv", async () => {
   const helper = await read("ops/macos/manage-engineering-credential.sh");
   assert.match(helper, /add-generic-password[^\n]+-w\s*$/m);
