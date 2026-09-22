@@ -8,5 +8,8 @@ node_modules
 .wrangler
 .DS_Store
 
+# TypeScript incremental build cache — generated, never committed
+*.tsbuildinfo
+
 # fund engine test build output
 .test-dist/
