@@ -17,6 +17,7 @@ import { createContentDraftCandidate } from "./contentHandoff";
 import { discoverSkillCandidates } from "../evolution/skillCandidates";
 import { listSkills } from "../../skills/registry";
 import { appendSkillExecution, discoverSkillImprovementCandidates, skillExecutionEvent } from "../evolution/skillObservability";
+import { appendOperationalEvent, discoverCompanyImprovementCandidates, operationalEvent } from "../evolution/operationalObservability";
 
 export type StepWorker = (input: {
   objective: string;
@@ -258,6 +259,8 @@ export async function runAgent(
           state.runtime.skillExecutions = appendSkillExecution(state.runtime.skillExecutions ?? [], skillExecutionEvent({ skillId: step.requiredSkillId, agentId: stepAgent.id, source: "mission", result: skill, startedAt: skillStartedAt, missionId: mission.id, stepId: step.id, knowledgeRefs: step.knowledgeRefs }));
           state.runtime.skillImprovementCandidates = discoverSkillImprovementCandidates(listSkills().filter((item) => item.status === "implemented").map((item) => item.id), state.runtime.skillExecutions, state.runtime.skillImprovementCandidates ?? []);
           if (!skill.ok || !skill.markdown) {
+            state.runtime.operationalEvents = appendOperationalEvent(state.runtime.operationalEvents ?? [], operationalEvent({ type: "SKILL_FAILURE", departmentId: plan.departmentId, agentId: stepAgent.id, missionId: mission.id, metadata: { skillId: step.requiredSkillId, errorCode: skill.error ?? "SKILL_EXECUTION_FAILED" } }));
+            state.runtime.companyImprovementCandidates = discoverCompanyImprovementCandidates(state.runtime.operationalEvents, state.runtime.companyImprovementCandidates ?? []);
             history.status = "BLOCKED";
             history.reason = skill.error ?? "SKILL_EXECUTION_FAILED";
             step.status = "FAILED";
