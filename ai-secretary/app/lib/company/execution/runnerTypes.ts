@@ -2,6 +2,8 @@ import type { ActionExecution, InternalArtifact } from "./executorTypes";
 import type { CompanyEvent } from "../events";
 import type { PipelineResult } from "./reviewer";
 import type { SkillExecutionEvent, SkillImprovementCandidate } from "../evolution/skillObservability";
+import type { CompanyImprovementCandidate, OperationalEvent } from "../evolution/operationalObservability";
+import type { ResearchArtifact, ResearchItem, ResearchRun } from "../research/types";
 export type LearningEventType =
   | "MISSION_SUCCEEDED"
   | "MISSION_FAILED"
@@ -60,6 +62,11 @@ export type RunnerState = {
   canaries?: CanaryResult[];
   skillExecutions?: SkillExecutionEvent[];
   skillImprovementCandidates?: SkillImprovementCandidate[];
+  researchItems?: ResearchItem[];
+  researchArtifacts?: ResearchArtifact[];
+  researchRuns?: ResearchRun[];
+  operationalEvents?: OperationalEvent[];
+  companyImprovementCandidates?: CompanyImprovementCandidate[];
 };
 export type CanaryResult = {
   id: string;

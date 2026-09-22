@@ -1,0 +1,2 @@
+import {NextResponse} from "next/server";import {loadExecutionState} from "@/app/lib/company/execution/store";
+export async function GET(){try{const state=await loadExecutionState();return NextResponse.json({events:(state.runtime?.operationalEvents??[]).slice(-100),improvementCandidates:state.runtime?.companyImprovementCandidates??[],retentionLimit:2000});}catch{return NextResponse.json({events:null,improvementCandidates:null,error:"OPERATIONAL_STORE_UNAVAILABLE"},{status:503});}}
