@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { DepartmentId } from "@/app/lib/mobile-ceo/departments";
 import { DepartmentChat } from "./DepartmentChat";
 
-export type EmployeeReadModel = { id: string; name: string; role: string; departmentRole: string; departmentId: DepartmentId; riskLevel: string; status: string; currentMissionId?: string; currentMissionTitle?: string; currentStep?: { id: string; title: string; status: string; dependsOn: string[]; outputRefs: string[] }; permissions: string[]; knowledgeAccess: { mode: "read" | "candidate"; domains: string[] }; skills: Array<{ id: string; name: string; status: string; category: string }> };
+export type EmployeeReadModel = { id: string; name: string; role: string; departmentRole: string; departmentId: DepartmentId; riskLevel: string; status: string; currentMissionId?: string; currentMissionTitle?: string; currentStep?: { id: string; title: string; status: string; dependsOn: string[]; outputRefs: string[] }; permissions: string[]; knowledgeAccess: { mode: "read" | "candidate"; domains: string[] }; skills: Array<{ id: string; name: string; status: string; category: string; usage?: { availability: string; executionCount: number | null; successRate: number | null; lastUsedAt: string | null } }> };
 const STATUS: Record<string, string> = { IDLE: "待機中", THINKING: "作業中", RESEARCHING: "作業中", EXECUTING: "作業中", REVIEWING: "レビュー中", WAITING_APPROVAL: "CEO確認待ち", COMPLETE: "完了", ERROR: "問題あり", UNKNOWN: "UNKNOWN" };
 
 export function EmployeeWorkspace({ departmentId }: { departmentId: DepartmentId }) {
