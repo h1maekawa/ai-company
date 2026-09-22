@@ -73,6 +73,22 @@ test("LaunchAgent remains secret-free and coding agent credentials are isolated"
   for (const secretName of ["CODEX_API_KEY", "CODEX_ACCESS_TOKEN"]) assert.doesNotMatch(plist, new RegExp(secretName));
 });
 
+test("ChatGPT mode: launcher HOME is real macOS HOME; child isolation via Codex args without Keychain symlink", async () => {
+  const adapters = await read("app/lib/engineering/adapters.ts");
+  // Launcher receives real HOME (processEnv.HOME) for Keychain resolution
+  assert.match(adapters, /realHome\s*=\s*this\.processEnv\.HOME/);
+  // Child commands get isolated HOME via Codex shell_environment_policy args
+  assert.match(adapters, /shell_environment_policy\.inherit.*none/);
+  assert.match(adapters, /allow_login_shell.*false/);
+  assert.match(adapters, /shell_environment_policy\.env\.HOME/);
+  // No Keychain directory symlink — real Keychain must never be exposed to worktrees via symlink
+  assert.doesNotMatch(adapters, /symlink.*[Kk]eychain|[Kk]eychain.*symlink|ln\s.*Keychains/i);
+  // CODEX_HOME must not appear in child env config (only in launcher env)
+  assert.doesNotMatch(adapters, /shell_environment_policy\.env\.CODEX_HOME/);
+  // Fail-closed when HOME unavailable
+  assert.match(adapters, /AgentCredentialUnavailableError/);
+});
+
 test("credential helper prompts securely and never accepts secret argv", async () => {
   const helper = await read("ops/macos/manage-engineering-credential.sh");
   assert.match(helper, /add-generic-password[^\n]+-w\s*$/m);
