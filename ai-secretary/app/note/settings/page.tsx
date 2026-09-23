@@ -9,6 +9,7 @@ import { AffiliateManager } from "@/components/note/AffiliateManager";
 import { BrandEditor } from "@/components/note/BrandEditor";
 import { LineProgram } from "@/components/note/LineProgram";
 import { XAccounts } from "@/components/note/XAccounts";
+import { DraftCleanup } from "@/components/note/DraftCleanup";
 import { GrowthInsights } from "@/components/note/growth/GrowthInsights";
 import { GrowthInsights as OperationsGrowthInsights } from "@/components/note/GrowthInsights";
 import { useAffiliates, useBrand, useIdeas } from "../useNote";
@@ -129,6 +130,10 @@ export default function ContentSettingsPage() {
                 onSave={(program) => brandState.save({ program })}
                 onGenerate={brandState.generateLesson}
               />
+            </Advanced>
+
+            <Advanced title="旧X下書きの整理" hint="未公開・未予約の古い下書きを一度だけ整理します">
+              <DraftCleanup />
             </Advanced>
 
             <Advanced title="分析・成長条件" hint="どんな投稿が伸びたかの内部指標">
