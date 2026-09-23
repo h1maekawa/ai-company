@@ -88,6 +88,29 @@ test("X日次実行は生成とBuffer予約のため最大5分を確保する", 
   assert.match(source, /export const maxDuration = 300;/);
 });
 
+test("T17 X日次実行のLock TTLはroute maxDurationより長い（処理中にLockが切れて二重起動しない）", () => {
+  const route = fs.readFileSync(path.join(ROOT, "app/api/cron/x-daily-publish/route.ts"), "utf8");
+  const daily = fs.readFileSync(path.join(ROOT, "app/lib/note/automation/dailyX.ts"), "utf8");
+  const maxDuration = Number(route.match(/export const maxDuration = (\d+);/)?.[1]);
+  const ttl = Number(daily.match(/export const DAILY_X_LOCK_TTL_SEC = (\d+);/)?.[1]);
+  assert.ok(Number.isFinite(maxDuration) && Number.isFinite(ttl));
+  assert.ok(ttl > maxDuration, `lock TTL ${ttl}s must exceed maxDuration ${maxDuration}s`);
+  assert.match(route, /withLock\("daily-x-publish", runDailyXAutomation, \{ ttlSec: DAILY_X_LOCK_TTL_SEC \}\)/);
+  // route.ts には Next.js の route export 以外を追加しない
+  assert.doesNotMatch(route, /export const DAILY_X_LOCK_TTL_SEC/);
+});
+
+test("SNS Autopilotの予約経路は fail-closed の claimStrict / strict count を使い、既存claimOnceは維持する", () => {
+  const daily = fs.readFileSync(path.join(ROOT, "app/lib/note/automation/dailyX.ts"), "utf8");
+  const queue = fs.readFileSync(path.join(ROOT, "app/lib/note/publishing/queue.ts"), "utf8");
+  assert.match(daily, /claimStrict/);
+  assert.match(daily, /countForTokyoDate\("x", dateKey, \{ strict: true \}\)/);
+  assert.doesNotMatch(daily, /claimOnce|canPublishToday|incrementToday\(/);
+  assert.match(queue, /export async function claimOnce/);
+  const strict = queue.slice(queue.indexOf("export async function claimStrict"), queue.indexOf("export async function releaseClaim"));
+  assert.doesNotMatch(strict, /localSeen|localLocks/, "strict claimはプロセス内fallbackを使わない");
+});
+
 /**
  * Phase 10-B.1 Cadence Expansion（2026-09-15）
  *

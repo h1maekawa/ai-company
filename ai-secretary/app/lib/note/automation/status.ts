@@ -24,6 +24,7 @@ import { countToday } from "@/app/lib/note/publishing/queue";
 import { runXDraftQa, summarizeReport } from "@/app/lib/qa/runner";
 import type { QaReport } from "@/app/lib/qa/types";
 import type { DataFreshness } from "@/app/lib/freshness";
+import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
 
 /**
  * 承認フィードの1件（要件2の表示単位）。
@@ -76,11 +77,11 @@ export type AutomationStatus = {
 };
 
 function tokyoDate(iso: string): string {
-  return new Date(new Date(iso).getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
+  return tokyoDateKey(new Date(iso));
 }
 
 function todayTokyo(): string {
-  return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+  return tokyoDateKey();
 }
 
 /** 予約されない理由を全部並べる（1つ直せば動く、という誤解を避ける） */
