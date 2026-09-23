@@ -25,6 +25,7 @@ import { observe } from "@/app/lib/company/observer";
 import { DEPARTMENT_IDS, DEPARTMENT_NAV_BY_ID, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 import { isDepartmentDirective, type DepartmentReadModel } from "@/app/lib/mobile-ceo/departments";
 import { GET as getDepartment } from "@/app/api/company/departments/[id]/route";
+import { formatResearchReply, runInteractiveResearch } from "@/app/lib/company/research/intelligence/service";
 
 const ROLE_DEFAULT_TEMPLATE = `# 現在の役割
 
@@ -111,6 +112,20 @@ export async function POST(req: NextRequest) {
       targetSecretaryId = secretaryId;
     } else {
       const routeResult = await routeRequest(message, activeCompany, requestedProvider);
+      if (routeResult.target === "research") {
+        // Research & Intelligence: Researchを実行（またはTTL内のArtifactを再利用）して返す。Trade / Publishへは進まない
+        const research = await runInteractiveResearch({ question: message, provider: requestedProvider });
+        await observe({ kind: "chat.request", department: "research-intelligence", actor: "research-intelligence", action: message.slice(0, 120), outcome: "success", signature: message, latencyMs: Date.now() - requestStartedAt });
+        return NextResponse.json({
+          reply: formatResearchReply(research),
+          provider: requestedProvider,
+          mode: mode ?? "note",
+          secretary: "research-intelligence",
+          research: { artifactId: research.artifact.id, topicKey: research.artifact.intelligence.topicKey, playbook: research.artifact.intelligence.playbookId, status: research.artifact.intelligence.status, reused: research.reused, asOf: research.artifact.intelligence.asOf },
+          task: null,
+          directiveSuggestion: null,
+        });
+      }
       targetSecretaryId = routeResult.secretary;
       routedIntent = routeResult.intent;
     }

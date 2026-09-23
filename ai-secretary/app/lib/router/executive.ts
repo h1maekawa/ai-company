@@ -1,6 +1,7 @@
 import { callAI } from "../ai/client";
 import { AIProvider } from "../ai/client";
 import { SECRETARY_REGISTRY } from "../config/registry";
+import { PRE_ROUTE_SECRETARY, preRoute } from "./preRouter";
 
 /**
  * Grilling（壁打ち）を求めているかの判定（docs/15 D6）。
@@ -34,6 +35,8 @@ export type RoutingResult = {
   room?: string;
   secretary: string;
   confidence: number;
+  /** Layer 1 で Research & Intelligence に確定した場合だけ設定。秘書ではなく Research Platform が処理する */
+  target?: "research";
 };
 
 /**
@@ -48,6 +51,16 @@ export async function routeRequest(
   const normalized = message.toLowerCase();
 
   if (activeCompany === "personal") {
+    // Layer 1: 決定的 Pre-Router（LLMなし）。R&I に確定した依頼は Executive のLLM分類を通さない
+    const preRouted = preRoute(message);
+    if (preRouted === "research") {
+      return { intent: "Research & Intelligence", department: "research-intelligence", secretary: "executive-assistant", confidence: 0.9, target: "research" };
+    }
+    if (preRouted) {
+      const routed = PRE_ROUTE_SECRETARY[preRouted];
+      return { intent: routed.intent, department: routed.department, room: routed.room, secretary: routed.secretary, confidence: 0.95 };
+    }
+
     if (
       normalized.includes("note") ||
       normalized.includes("sns") ||

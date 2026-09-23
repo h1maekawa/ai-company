@@ -35,6 +35,8 @@ export const LEGACY_DOMAIN_ALIASES: Record<string, CanonicalDomain> = {
   content: "content",
   strategy: "strategy",
   investing: "investment",
+  // Fund Department / fund-research の legacy 表記。新しい Canonical Domain として fund は増やさない
+  fund: "investment",
   systems: "technology",
   recruiting: "management", // 暫定: 人事系domainが必要になれば別途新設
   // "misc" は意図的に未解決（warning）。手動 or 文脈で分類する。
