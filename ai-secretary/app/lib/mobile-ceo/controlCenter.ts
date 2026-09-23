@@ -168,9 +168,12 @@ export function createHumanDecisionFeedback(input: { id: string; targetType: Hum
   };
 }
 
-/** append-only。既存recordは変更しない。 */
-export function appendHumanDecisionFeedback(existing: HumanDecisionFeedback[] | undefined, record: HumanDecisionFeedback, limit = 500): HumanDecisionFeedback[] {
-  return [...(existing ?? []), record].slice(-limit);
+/**
+ * append-only。監査履歴なので古い判断を切り捨てない（silent truncation禁止）。
+ * 既存配列は変更しない。件数増加への対処（archive / pagination / 別event store）は別途検討する。
+ */
+export function appendHumanDecisionFeedback(existing: HumanDecisionFeedback[] | undefined, record: HumanDecisionFeedback): HumanDecisionFeedback[] {
+  return [...(existing ?? []), record];
 }
 
 /** runtime が未初期化の state に判断記録を追加するときの空の RunnerState。 */

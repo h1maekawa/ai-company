@@ -113,6 +113,20 @@ test("fund-research is registered under the Fund department without trade author
   assert.doesNotMatch(read("app/lib/skills/registry.ts"), /company-analysis|valuation-analysis|risk-analysis|investment-thesis/);
 });
 
+test("Fund Research Policy points at the registered fund-research employee", () => {
+  const policies = read("app/lib/company/research/policies.ts");
+  const fund = policies.split("\n").find((line) => line.includes('departmentId: "fund"'));
+  assert.match(fund, /researcherAgentId: "fund-research"/);
+  assert.doesNotMatch(policies, /investment-researcher/);
+  assert.match(read("app/lib/config/departments.ts"), /id: "fund-research"/);
+});
+
+test("Human Decision Feedback is append-only without silent truncation", () => {
+  const source = read("app/lib/mobile-ceo/controlCenter.ts");
+  const fn = source.slice(source.indexOf("export function appendHumanDecisionFeedback"), source.indexOf("}", source.indexOf("export function appendHumanDecisionFeedback")));
+  assert.doesNotMatch(fn, /slice|splice|limit|shift/);
+});
+
 test("Financial HUMAN_ONLY and INVESTMENT_TRADE_R4 remain unchanged", () => {
   const model = read("app/lib/mobile-ceo/departments.ts");
   const types = read("app/lib/company/execution/actionTypes.ts");
