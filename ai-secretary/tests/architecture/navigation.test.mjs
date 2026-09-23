@@ -101,6 +101,29 @@ test("content settings groups into four sections", () => {
   assert.deepEqual(labels, ["基本設定", "ブランド", "接続", "詳細設定"]);
 });
 
+test("creator department exposes the canonical content workflow", () => {
+  const navigation = read(NAVIGATION);
+  const department = read("components/mobile-ceo/DepartmentPage.tsx");
+  const monitor = read("components/note/AutomationMonitor.tsx");
+
+  assert.match(navigation, /id: "creator"[\s\S]{0,180}href: "\/ceo\/departments\/creator"/);
+  for (const href of ["/note", "/note?view=review", "/content", "/note/settings"]) {
+    assert.ok(department.includes(`href: "${href}"`), `Creator should link to ${href}`);
+  }
+  assert.match(department, /id === "creator" \? <CreatorQuickNavigation \/>/);
+  assert.match(department, /id === "creator" \? "詳細分析を開く" : "詳細を見る"/);
+
+  assert.match(monitor, /href="\/note\/settings"/);
+  assert.match(monitor, /href="\/note\?view=review"/);
+  assert.doesNotMatch(monitor, /href="\/content\/(?:x|settings)"/);
+  assert.match(monitor, /投稿案の生成は毎朝7:10（JST）に走ります。/);
+  assert.doesNotMatch(monitor, /毎朝8時/);
+
+  for (const page of ["app/content/x/page.tsx", "app/content/settings/page.tsx"]) {
+    assert.ok(exists(page), `${page} must remain available as a legacy route`);
+  }
+});
+
 test("investing shows four daily items and folds the rest away", () => {
   const shell = read("components/investing/Shell.tsx");
   const daily = shell.slice(
