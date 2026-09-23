@@ -128,7 +128,7 @@ export function AutomationMonitor() {
             <p className="mt-1.5 text-[11px] text-sub">{OPERATION_MODE_HINTS[mode]}</p>
           </div>
           <Link
-            href="/content/settings"
+            href="/note/settings"
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-hairline px-3 py-2 text-xs text-sub hover:border-white/20 hover:text-white"
           >
             <Settings className="h-3.5 w-3.5" />
@@ -166,7 +166,7 @@ export function AutomationMonitor() {
 
           {today.slots.length === 0 ? (
             <p className="mt-3 text-xs text-sub">
-              本日の予約はまだありません。生成は毎朝8時（JST）に走ります。
+              本日の予約はまだありません。投稿案の生成は毎朝7:10（JST）に走ります。
             </p>
           ) : (
             <ul className="mt-3 space-y-2">
@@ -200,7 +200,7 @@ export function AutomationMonitor() {
               {approvalQueue.slice(0, 5).map((entry) => (
                 <li key={entry.draftId} className="text-xs">
                   <Link
-                    href="/content/x"
+                    href="/note?view=review"
                     className="block rounded-lg px-2 py-1.5 hover:bg-white/[0.04]"
                   >
                     <span className="block truncate text-white">{entry.text}</span>
@@ -213,7 +213,7 @@ export function AutomationMonitor() {
           )}
           {approvalQueue.length > 5 && (
             <Link
-              href="/content/x"
+              href="/note?view=review"
               className="mt-2 inline-block text-[11px] font-medium text-brand hover:underline"
             >
               残り{approvalQueue.length - 5}件を見る

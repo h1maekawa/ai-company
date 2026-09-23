@@ -9,6 +9,48 @@ import { EmployeeWorkspace } from "./EmployeeWorkspace";
 import { EngineeringWorkerControl } from "./EngineeringWorkerControl";
 import { PageState, Section } from "./MobilePrimitives";
 
+const CREATOR_OPERATION_LINKS = [
+  {
+    href: "/note",
+    label: "コンテンツスタジオ",
+    description: "今日の状況、投稿作成、確認、成果を見る",
+  },
+  {
+    href: "/note?view=review",
+    label: "投稿を確認",
+    description: "X・noteの下書きを確認・修正・予約する",
+  },
+  {
+    href: "/content",
+    label: "詳細分析",
+    description: "自動運用、投稿実績、Revenue、学びを見る",
+  },
+  {
+    href: "/note/settings",
+    label: "運用設定",
+    description: "AUTOPILOT / REVIEW、Buffer、Research、ブランドを設定",
+  },
+] as const;
+
+function CreatorQuickNavigation() {
+  return (
+    <Section title="Creatorメニュー">
+      <nav aria-label="Creatorの主要画面" className="grid gap-3 sm:grid-cols-2">
+        {CREATOR_OPERATION_LINKS.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="min-h-11 rounded-xl border border-slate-700 bg-slate-900 p-4 transition-colors hover:border-violet-500 hover:bg-slate-800"
+          >
+            <span className="block text-sm font-semibold text-violet-300">{item.label}</span>
+            <span className="mt-1 block text-xs leading-relaxed text-slate-400">{item.description}</span>
+          </Link>
+        ))}
+      </nav>
+    </Section>
+  );
+}
+
 function MetricCard({ item }: { item: DepartmentMetric }) {
   return <div className="min-w-0 rounded-xl border border-slate-800 bg-slate-950/60 p-3"><div className="text-xs text-slate-400">{item.label}</div><div className="mt-1 break-words text-lg font-bold">{item.displayValue ?? (item.value === null ? "UNKNOWN" : `${item.value.toLocaleString("ja-JP")}${item.unit ?? ""}`)}</div><div className="mt-1 text-[10px] text-slate-500">{item.availability} · {item.source}</div>{item.asOf ? <div className="mt-1 text-[10px] text-slate-600">as of {item.asOf}</div> : null}</div>;
 }
@@ -46,6 +88,7 @@ export function DepartmentPage({ id }: { id: DepartmentId }) {
   if (!model) return <PageState retry={() => void load()}>{error}</PageState>;
   const important = [model.northStar, ...model.outcomes].slice(0, 3);
   return <div className="space-y-4">
+    {id === "creator" ? <CreatorQuickNavigation /> : null}
     {id === "engineering" ? <EngineeringWorkerControl /> : null}
     {model.problems.length ? <Section title="確認事項"><ul className="space-y-2 text-sm text-amber-200">{model.problems.map((item) => <li key={item}>{item}</li>)}</ul></Section> : null}
     {model.workflows?.length || model.currentWork.length ? <Section title="現在の仕事"><div className="space-y-2 text-sm">{model.workflows?.map((workflow) => <details key={workflow.id} className="rounded-xl border border-slate-700 bg-slate-900 p-3"><summary className="min-h-11 cursor-pointer"><strong className="block">{workflow.title}</strong><span className="text-xs text-slate-400">{workflow.completed} / {workflow.total} Step完了 · {workflow.status}</span></summary><ol className="mt-3 space-y-2">{workflow.steps.map((step) => <li key={step.id} className="rounded-lg bg-slate-950 p-2"><div className="flex justify-between gap-2"><span>{step.title}</span><span>{step.status}</span></div><p className="mt-1 text-xs text-slate-500">担当: {step.assignedAgentId ?? "UNKNOWN"} · Depends on: {step.dependsOn.join(", ") || "なし"}</p><p className="mt-1 break-all text-[10px] text-slate-600">Inputs: {step.inputRefs.join(", ") || "なし"}<br/>Outputs: {step.outputRefs.join(", ") || "なし"}<br/>Knowledge: {step.knowledgeRefs.join(", ") || "なし"}</p></li>)}</ol></details>)}{model.currentWork.map((item) => <div key={item} className="rounded-lg bg-slate-800 p-3">{item}</div>)}</div></Section> : null}
@@ -55,7 +98,7 @@ export function DepartmentPage({ id }: { id: DepartmentId }) {
     {model.suggestions.length ? <Section title="AIからの提案">{model.suggestions.map((item) => <div key={item.suggestion} className="space-y-1 text-sm"><p>{item.observation}</p><p className="text-slate-400">{item.interpretation}</p><p>{item.suggestion}</p></div>)}</Section> : null}
     <DepartmentChat id={id} label={navigation.label} onDirective={setDirectiveSeed}/>
     <DirectiveComposer id={id} label={navigation.label} initialInstruction={directiveSeed}/>
-    <Link href={navigation.detailHref} className="flex min-h-11 items-center justify-center rounded-xl border border-slate-700 text-sm text-violet-300">詳細を見る</Link>
+    <Link href={navigation.detailHref} className="flex min-h-11 items-center justify-center rounded-xl border border-slate-700 text-sm text-violet-300">{id === "creator" ? "詳細分析を開く" : "詳細を見る"}</Link>
     {model.executionAuthority === "HUMAN_ONLY" ? <p className="rounded-xl border border-amber-800 p-3 text-xs text-amber-300">HUMAN_ONLY — AIによる証券注文・自動売買は禁止</p> : null}
   </div>;
 }
