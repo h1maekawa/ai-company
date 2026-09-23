@@ -8,6 +8,7 @@ import { GET as decisions } from "@/app/api/fund/decisions/route";
 import { GET as transactions } from "@/app/api/fund/transactions/route";
 import { GET as performance } from "@/app/api/fund/performance/route";
 import { GET as learning } from "@/app/api/fund/learning/route";
+import { GET as outcomes } from "@/app/api/fund/outcomes/route";
 import { GET as metrics } from "@/app/api/company/metrics/route";
 import { GET as execution } from "@/app/api/company/execution/route";
 import { GET as knowledge } from "@/app/api/knowledge/dashboard/route";
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const id = params.id as DepartmentId; const origin = req.nextUrl.origin;
   let data: Record<string, unknown> = {};
   if (id === "creator") { const [a,b,c,d] = await Promise.all([json(content(request(`${origin}/api/content/dashboard?period=month`))), json(economics(request(`${origin}/api/company/economics`))), json(opportunities()), json(execution())]); data = { content:a, economics:b, opportunities:c, execution:d }; }
-  if (id === "fund") { const [a,b,c,d,e,portfolio] = await Promise.all([json(recommendations()), json(decisions()), json(transactions()), json(performance()), json(learning()), loadPortfolio().catch(() => null)]); data = { recommendations:a, decisions:b, transactions:c, performance:d, learning:e, portfolio }; }
+  if (id === "fund") { const [a,b,c,d,e,f,portfolio] = await Promise.all([json(recommendations()), json(decisions()), json(transactions()), json(performance()), json(learning()), json(outcomes()), loadPortfolio().catch(() => null)]); data = { recommendations:a, decisions:b, transactions:c, performance:d, learning:e, outcomes:f, portfolio }; }
   if (id === "operations") { const [a,b] = await Promise.all([json(metrics(request(`${origin}/api/company/metrics?days=14`))), json(execution())]); data = { metrics:a, execution:b }; }
   if (id === "knowledge") data = { knowledge: await json(knowledge(request(`${origin}/api/knowledge/dashboard`))) };
   if (id === "planning") { const [a,b] = await Promise.all([json(planning(request(`${origin}/api/planning`))), json(execution())]); data = { planning:a, execution:b }; }

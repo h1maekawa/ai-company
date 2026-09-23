@@ -122,3 +122,52 @@ export function useNews() {
 
   return { items, available, loading };
 }
+
+/** 取得できなかった場合は null（UIでは「未取得」）。0件と取得失敗を区別する。 */
+export function useJson<T>(url: string) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    fetch(url)
+      .then((r) => (r.ok ? (r.json() as Promise<T>) : null))
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [url]);
+
+  useEffect(reload, [reload]);
+
+  return { data, loading, reload };
+}
+
+/** Policy Engineの提案ログ（/api/fund/recommendations）のうち画面で使う項目 */
+export type FundRecommendationView = {
+  id: string;
+  ticker: string;
+  horizon: "short" | "medium" | "long";
+  decision: string;
+  score: number;
+  confidence: string;
+  reasons: string[];
+  counterarguments: string[];
+  warnings: string[];
+  missingData: string[];
+  invalidation: string | null;
+  dataAsOf: string;
+  nextReviewAt: string;
+  evaluatedAt: string;
+  policyVersion: number;
+};
+
+/** 同じ銘柄・期間は最新の評価だけを採用する */
+export function latestRecommendations(items: FundRecommendationView[] | null | undefined): FundRecommendationView[] {
+  const latest = new Map<string, FundRecommendationView>();
+  for (const item of items ?? []) {
+    const key = `${item.ticker}:${item.horizon}`;
+    const prior = latest.get(key);
+    if (!prior || prior.evaluatedAt < item.evaluatedAt) latest.set(key, item);
+  }
+  return [...latest.values()].sort((a, b) => b.evaluatedAt.localeCompare(a.evaluatedAt));
+}

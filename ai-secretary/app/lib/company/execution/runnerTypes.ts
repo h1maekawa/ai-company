@@ -4,6 +4,7 @@ import type { PipelineResult } from "./reviewer";
 import type { SkillExecutionEvent, SkillImprovementCandidate } from "../evolution/skillObservability";
 import type { CompanyImprovementCandidate, OperationalEvent } from "../evolution/operationalObservability";
 import type { ResearchArtifact, ResearchItem, ResearchRun } from "../research/types";
+import type { DepartmentKpiGoal, HumanDecisionFeedback } from "../../mobile-ceo/controlCenter";
 export type LearningEventType =
   | "MISSION_SUCCEEDED"
   | "MISSION_FAILED"
@@ -67,6 +68,10 @@ export type RunnerState = {
   researchRuns?: ResearchRun[];
   operationalEvents?: OperationalEvent[];
   companyImprovementCandidates?: CompanyImprovementCandidate[];
+  /** CEOの判断と補足（append-only）。元のProposal本文は変更しない。 */
+  humanDecisionFeedback?: HumanDecisionFeedback[];
+  /** Human actionでのみ変更できるDepartment KPI目標。 */
+  departmentKpiGoals?: DepartmentKpiGoal[];
 };
 export type CanaryResult = {
   id: string;

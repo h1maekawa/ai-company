@@ -3,6 +3,8 @@ import { decideSkillCandidate } from "@/app/lib/company/evolution/skillCandidate
 import { getExecutionStore, loadExecutionState, saveExecutionState } from "@/app/lib/company/execution/store";
 import { executionTransaction } from "@/app/lib/company/execution/transaction";
 import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtection";
+import { appendHumanDecisionFeedback, createHumanDecisionFeedback, emptyRunnerState } from "@/app/lib/mobile-ceo/controlCenter";
+import { DEPARTMENT_IDS } from "@/app/lib/config/navigation";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   if (!isSameOriginMutation(req)) return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
@@ -26,7 +28,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       const fresh = state.skillCandidates.find((item) => item.id === params.id);
       if (!fresh) throw new Error("SKILL_CANDIDATE_NOT_FOUND");
       const next = decideSkillCandidate(fresh, decision, typeof body.reason === "string" ? body.reason : undefined);
-      await saveExecutionState({ ...state, skillCandidates: state.skillCandidates.map((item) => item.id === next.id ? next : item) });
+      // CEO補足はCandidate本文へ書き込まず、append-onlyの判断記録として別に残す。
+      const runtime = state.runtime ?? emptyRunnerState();
+      const feedback = createHumanDecisionFeedback({ id: `human_decision_${key}`, targetType: "skill-candidate", targetId: next.id, departmentId: DEPARTMENT_IDS.includes(body.departmentId) ? body.departmentId : undefined, decision, note: body.note });
+      await saveExecutionState({ ...state, skillCandidates: state.skillCandidates.map((item) => item.id === next.id ? next : item), runtime: { ...runtime, humanDecisionFeedback: appendHumanDecisionFeedback(runtime.humanDecisionFeedback, feedback) } });
       return next;
     });
     const response = { candidate: decided, engineeringStarted: false, registryChanged: false };
