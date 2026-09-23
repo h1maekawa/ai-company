@@ -54,6 +54,16 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     };
   }
 
+  const trace = startTrace({ departmentId: "note", workflowId: "daily-x-automation" });
+  const logPhaseDuration = (phase: string, startedAt: number) => {
+    console.info("[daily-x][timing]", {
+      traceId: trace.traceId,
+      phase,
+      durationMs: Date.now() - startedAt,
+    });
+  };
+
+  const loadContextStartedAt = Date.now();
   const [settings, clusters, items, experiences, brandFile, ideaFile, existingDrafts, styleProfile] =
     await Promise.all([
       loadResearchSettings(),
@@ -65,7 +75,9 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       loadSocialDrafts(),
       loadStyleProfile(),
     ]);
+  logPhaseDuration("load-context", loadContextStartedAt);
 
+  const candidateSelectStartedAt = Date.now();
   const eligible = clusters.filter((candidate) => candidate.status === "candidate" && !candidate.blocked);
   // 全件Legacyなら旧スコアへfallback。新旧混在時はLegacyを紛れ込ませず、MEDIUM/HIGHだけを使う。
   const candidates = filterHotConfidenceCandidates(eligible);
@@ -83,6 +95,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     };
     return priority(left) - priority(right) || (right.hotScore ?? right.totalScore) - (left.hotScore ?? left.totalScore);
   })[0];
+  logPhaseDuration("candidate-select", candidateSelectStartedAt);
 
   if (!cluster) {
     return {
@@ -101,7 +114,6 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
    * 候補選定 → 生成 → ゲート → 予約 が同じ traceId になることで、
    * Workflow Candidate が手順として検出できるようになる。
    */
-  const trace = startTrace({ departmentId: "note", workflowId: "daily-x-automation" });
   const stepLog: RecordStepInput[] = [
     {
       stepId: "research.select",
@@ -121,6 +133,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
   const usable = usableExperiences(experiences, cluster.matchedExperienceIds);
   const generated: SocialDraft[] = [];
   const warnings: string[] = [];
+  const generateStartedAt = Date.now();
   for (const slot of DEFAULT_X_SCHEDULE) {
     // 投資→X連携（要件4・13・16）: 信頼枠でだけ試みる。材料が無い/Fact Gate却下なら通常生成へfallback
     if (slot.purpose === "trust" && settings.flags.investmentBridgeEnabled) {
@@ -162,6 +175,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     if (candidate) generated.push(candidate);
     if (result.warning) warnings.push(result.warning);
   }
+  logPhaseDuration("generate", generateStartedAt);
   if (generated.length === 0) {
     await recordPipelineSteps(
       [
@@ -178,6 +192,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     result: `投稿案を${generated.length}件生成`,
   });
 
+  const safetyGateStartedAt = Date.now();
   const gated = [];
   for (const draft of generated) {
     const prepared = await prepareXDraftForPublishing({
@@ -191,6 +206,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     gate.safe ? draft : { ...draft, failureReason: gate.reasons.join(" / ") }
   );
   const gateBlockedCount = prepared.filter((draft) => Boolean(draft.failureReason)).length;
+  logPhaseDuration("safety-gate", safetyGateStartedAt);
   stepLog.push({
     stepId: "fact_check.gate",
     status: "done",
@@ -200,6 +216,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
         : `${prepared.length}件すべて通過`,
   });
 
+  const saveDraftsStartedAt = Date.now();
   let drafts = [...prepared, ...existingDrafts];
   await saveSocialDrafts(drafts);
   await saveClusters(
@@ -207,11 +224,13 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       candidate.id === cluster.id ? { ...candidate, status: "used" as const } : candidate
     )
   );
+  logPhaseDuration("save-drafts", saveDraftsStartedAt);
 
   const scheduledDraftIds: string[] = [];
   const scheduleMessages: string[] = [];
   const safeDrafts = prepared.filter((draft) => !draft.failureReason).slice(0, 3);
 
+  const bufferScheduleStartedAt = Date.now();
   if (settings.flags.publishingEnabled && settings.flags.xAutoPublish && safeDrafts.length > 0) {
     if (!isBufferConfigured()) {
       scheduleMessages.push("自動予約は行いませんでした: Bufferの環境変数が未設定です。");
@@ -277,6 +296,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
   } else if (!settings.flags.publishingEnabled || !settings.flags.xAutoPublish) {
     scheduleMessages.push("自動投稿フラグがOFFのため下書き保存で停止しました。");
   }
+  logPhaseDuration("buffer-schedule", bufferScheduleStartedAt);
 
   // Human Escalation（要件P1.6）: 通常成功時は毎回通知しない。異常時のみSlackへ送る。
   // 通常の実行結果はWeekly CEO Reportへ集約する。

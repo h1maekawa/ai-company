@@ -80,6 +80,14 @@ test("X日次実行はResearchの10分後（07:10 JST）に固定する", () => 
   assert.equal(xPublish?.schedule, "10 22 * * *");
 });
 
+test("X日次実行は生成とBuffer予約のため最大5分を確保する", () => {
+  const source = fs.readFileSync(
+    path.join(ROOT, "app/api/cron/x-daily-publish/route.ts"),
+    "utf8"
+  );
+  assert.match(source, /export const maxDuration = 300;/);
+});
+
 /**
  * Phase 10-B.1 Cadence Expansion（2026-09-15）
  *

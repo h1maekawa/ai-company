@@ -4,7 +4,9 @@ import { withLock } from "@/app/lib/note/publishing/queue";
 import { runDailyXAutomation } from "@/app/lib/note/automation/dailyX";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Research・3投稿生成・Safety Gate・Buffer予約を同一実行で完了させる。
+// Vercel Fluid ComputeのHobby上限に合わせ、60秒の明示上書きを解除して5分確保する。
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const auth = verifyCronSecret(request);
@@ -22,4 +24,3 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 }
-
