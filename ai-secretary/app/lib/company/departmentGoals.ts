@@ -40,7 +40,7 @@ export type DepartmentGoalMapping = {
 export const DEPARTMENT_GOAL_MAP: DepartmentGoalMapping[] = [
   {
     goal: "wealth",
-    agentIds: ["personal-fund"],
+    agentIds: ["personal-fund", "fund-research"],
     contribution: "投資資産を増やし、不労所得の基盤を作る",
   },
   {

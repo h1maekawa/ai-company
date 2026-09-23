@@ -104,13 +104,15 @@ test("content settings groups into four sections", () => {
 test("creator department exposes the canonical content workflow", () => {
   const navigation = read(NAVIGATION);
   const department = read("components/mobile-ceo/DepartmentPage.tsx");
+  const creator = read("components/mobile-ceo/CreatorDepartmentControl.tsx");
   const monitor = read("components/note/AutomationMonitor.tsx");
 
   assert.match(navigation, /id: "creator"[\s\S]{0,180}href: "\/ceo\/departments\/creator"/);
   for (const href of ["/note", "/note?view=review", "/content", "/note/settings"]) {
-    assert.ok(department.includes(`href: "${href}"`), `Creator should link to ${href}`);
+    assert.ok(creator.includes(`href: "${href}"`), `Creator should link to ${href}`);
   }
-  assert.match(department, /id === "creator" \? <CreatorQuickNavigation \/>/);
+  assert.match(creator, /<CreatorQuickNavigation \/>/);
+  assert.match(department, /id === "creator" \? <CreatorDepartmentControl/);
   assert.match(department, /id === "creator" \? "詳細分析を開く" : "詳細を見る"/);
 
   assert.match(monitor, /href="\/note\/settings"/);
@@ -124,23 +126,30 @@ test("creator department exposes the canonical content workflow", () => {
   }
 });
 
-test("investing shows four daily items and folds the rest away", () => {
+test("investing shows the five Investment areas and keeps every legacy route in the menu", () => {
   const shell = read("components/investing/Shell.tsx");
   const daily = shell.slice(
     shell.indexOf("export const DAILY_NAV_ITEMS"),
     shell.indexOf("export const MORE_NAV_ITEMS")
   );
   const dailyLabels = [...daily.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(dailyLabels, ["ダッシュボード", "保有株", "ニュース", "AI分析"]);
+  assert.deepEqual(dailyLabels, ["Overview", "Research", "Companies", "Portfolio", "Learning"]);
+  const dailyHrefs = [...daily.matchAll(/href: "([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(dailyHrefs, ["/investing", "/investing/research", "/investing/companies", "/investing/portfolio", "/investing/learning"]);
+  // モバイル下部ナビは4項目 + メニュー。Companiesはメニューから
+  const mobile = [...daily.matchAll(/label: "([^"]+)"[^\n]*mobile: true/g)].map((match) => match[1]);
+  assert.deepEqual(mobile, ["Overview", "Research", "Portfolio", "Learning"]);
 
   const more = shell.slice(
     shell.indexOf("export const MORE_NAV_ITEMS"),
     shell.indexOf("/** 互換用")
   );
   for (const href of [
+    "/investing/holdings",
+    "/investing/news",
+    "/investing/analysis",
     "/investing/allocation",
     "/investing/policy",
-    "/investing/portfolio",
     "/investing/screening",
     "/investing/watchlist",
     "/investing/dividends",
@@ -149,6 +158,9 @@ test("investing shows four daily items and folds the rest away", () => {
     "/investing/settings",
   ]) {
     assert.ok(more.includes(`href: "${href}"`), `${href} must stay in the investing menu`);
+  }
+  for (const page of ["research", "companies", "companies/[ticker]", "portfolio", "learning", "holdings", "holdings/[code]", "news", "analysis", "allocation", "policy", "screening", "watchlist", "dividends", "transactions", "import", "settings"]) {
+    assert.ok(exists(`app/investing/${page}/page.tsx`), `/investing/${page} must exist`);
   }
 });
 

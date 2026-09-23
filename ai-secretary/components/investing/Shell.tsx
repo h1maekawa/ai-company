@@ -5,7 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, ReactNode, useState } from "react";
 import {
   Bell,
+  Brain,
   Briefcase,
+  Building2,
   ChevronDown,
   ChevronLeft,
   CircleDollarSign,
@@ -14,6 +16,7 @@ import {
   LayoutDashboard,
   LineChart,
   Menu,
+  Microscope,
   Newspaper,
   PieChart,
   Scale,
@@ -36,19 +39,25 @@ export type NavItem = {
 
 const ICON = "h-[18px] w-[18px]";
 
-/** 日常で使う4つ。モバイル下部ナビもこの並び */
+/**
+ * Investment Departmentの5領域。Desktop Sidebarは5つすべて、
+ * モバイル下部ナビは Overview / Research / Portfolio / Learning + メニュー（Companiesはメニューから）。
+ */
 export const DAILY_NAV_ITEMS: NavItem[] = [
-  { href: "/investing", label: "ダッシュボード", icon: <LayoutDashboard className={ICON} />, mobile: true },
-  { href: "/investing/holdings", label: "保有株", icon: <Briefcase className={ICON} />, mobile: true },
-  { href: "/investing/news", label: "ニュース", icon: <Newspaper className={ICON} />, mobile: true },
-  { href: "/investing/analysis", label: "AI分析", icon: <Sparkles className={ICON} />, mobile: true },
+  { href: "/investing", label: "Overview", icon: <LayoutDashboard className={ICON} />, mobile: true },
+  { href: "/investing/research", label: "Research", icon: <Microscope className={ICON} />, mobile: true },
+  { href: "/investing/companies", label: "Companies", icon: <Building2 className={ICON} /> },
+  { href: "/investing/portfolio", label: "Portfolio", icon: <PieChart className={ICON} />, mobile: true },
+  { href: "/investing/learning", label: "Learning", icon: <Brain className={ICON} />, mobile: true },
 ];
 
 /** 必要なときだけ開く。既存routeはすべて残す（Deep Linkは生きている） */
 export const MORE_NAV_ITEMS: NavItem[] = [
+  { href: "/investing/holdings", label: "保有株", icon: <Briefcase className={ICON} /> },
+  { href: "/investing/news", label: "ニュース", icon: <Newspaper className={ICON} /> },
+  { href: "/investing/analysis", label: "AI分析", icon: <Sparkles className={ICON} /> },
   { href: "/investing/allocation", label: "配分・集中度", icon: <Scale className={ICON} /> },
   { href: "/investing/policy", label: "投資判断エンジン", icon: <Gauge className={ICON} /> },
-  { href: "/investing/portfolio", label: "ポートフォリオ", icon: <PieChart className={ICON} /> },
   { href: "/investing/screening", label: "スクリーニング", icon: <Filter className={ICON} /> },
   { href: "/investing/watchlist", label: "ウォッチリスト", icon: <Star className={ICON} /> },
   { href: "/investing/dividends", label: "配当管理", icon: <CircleDollarSign className={ICON} /> },
@@ -77,7 +86,7 @@ function TickerSearch({ onDone }: { onDone?: () => void }) {
     if (!code) return;
     setQuery("");
     onDone?.();
-    router.push(`/investing/holdings/${encodeURIComponent(code)}`);
+    router.push(`/investing/companies/${encodeURIComponent(code)}`);
   }
 
   return (
@@ -284,7 +293,7 @@ function MobileNav({ onMenu }: { onMenu: () => void }) {
               }`}
             >
               {item.icon}
-              <span>{item.label === "ダッシュボード" ? "ホーム" : item.label}</span>
+              <span>{item.label}</span>
             </Link>
           );
         })}

@@ -35,7 +35,7 @@ export type DepartmentNavItem = AppNavItem & {
 /** Departmentの人間向け表示と入口の唯一の定義。内部IDは変更しない。 */
 export const DEPARTMENT_NAV: DepartmentNavItem[] = [
   { id: "creator", label: "note・X", icon: "✍️", href: "/ceo/departments/creator", detailHref: "/content", secretaryId: "personal-note", employeeIds: ["personal-note", "creator-content", "creator-research", "creator-kpi"], homeMetrics: ["x_impressions", "revenue"], description: "投稿・反応・収益を見る" },
-  { id: "fund", label: "株式", icon: "📈", href: "/ceo/departments/fund", detailHref: "/investing", secretaryId: "personal-fund", employeeIds: ["personal-fund"], homeMetrics: ["portfolio_value", "unrealized_pl"], description: "保有資産と判断候補を見る" },
+  { id: "fund", label: "株式", icon: "📈", href: "/ceo/departments/fund", detailHref: "/investing", secretaryId: "personal-fund", employeeIds: ["personal-fund", "fund-research"], homeMetrics: ["portfolio_value", "unrealized_pl", "thesis_alerts"], description: "保有資産と判断候補を見る" },
   { id: "operations", label: "AI会社改善", icon: "⚙️", href: "/ceo/departments/operations", detailHref: "/company", secretaryId: "executive-kaizen", employeeIds: ["executive-kaizen"], homeMetrics: ["automation", "intervention"], description: "自動化と問題を見る" },
   { id: "knowledge", label: "知識", icon: "🧠", href: "/ceo/departments/knowledge", detailHref: "/knowledge", secretaryId: "executive-inbox", employeeIds: ["executive-inbox"], homeMetrics: ["total", "pending"], description: "Knowledgeと確認待ちを見る" },
   { id: "planning", label: "今日・予定", icon: "🌅", href: "/ceo/departments/planning", detailHref: "/planning", secretaryId: "personal-morning", employeeIds: ["personal-morning"], homeMetrics: ["today_tasks", "blocked"], description: "今日のTaskと予定を見る" },
@@ -70,6 +70,7 @@ export const AGENT_DEPARTMENT_HREF: Record<string, string> = {
   "creator-research": DEPARTMENT_NAV_BY_ID.creator.href,
   "creator-kpi": DEPARTMENT_NAV_BY_ID.creator.href,
   "personal-fund": DEPARTMENT_NAV_BY_ID.fund.href,
+  "fund-research": DEPARTMENT_NAV_BY_ID.fund.href,
   "executive-kaizen": DEPARTMENT_NAV_BY_ID.operations.href,
   "executive-inbox": DEPARTMENT_NAV_BY_ID.knowledge.href,
   "personal-morning": DEPARTMENT_NAV_BY_ID.planning.href,

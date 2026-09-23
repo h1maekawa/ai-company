@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { BUSINESS_DEPARTMENT_NAV, DEPARTMENT_NAV, KNOWLEDGE_NAV, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 import type { DepartmentMetric, DepartmentReadModel } from "@/app/lib/mobile-ceo/departments";
+import { formatMetricValue, UNKNOWN_LABEL } from "@/app/lib/mobile-ceo/controlCenter";
 
 type DepartmentMap = Partial<Record<NavigationDepartmentId, DepartmentReadModel | null>>;
 type Attention = { id: string; title: string; href: string };
@@ -13,13 +14,13 @@ function allMetrics(model: DepartmentReadModel) {
   return [model.northStar, ...model.outcomes, ...model.operations];
 }
 
+/** 円は ¥2,101,420 形式、UNKNOWN は「未取得」。表示だけ整形し内部値は丸めない。 */
 function formatMetric(metric: DepartmentMetric | undefined) {
-  if (!metric || metric.value === null) return "UNKNOWN";
-  return `${metric.value.toLocaleString("ja-JP")}${metric.unit ?? ""}`;
+  return formatMetricValue(metric, { sign: metric?.metric === "unrealized_pl" });
 }
 
 function statusOf(model: DepartmentReadModel | null | undefined) {
-  if (!model) return { label: "UNKNOWN", tone: "bg-slate-500" };
+  if (!model) return { label: UNKNOWN_LABEL, tone: "bg-slate-500" };
   const decisionRequired = model.operations.find((metric) => metric.metric === "decision_required")?.value ?? 0;
   const ciFailure = model.operations.concat(model.outcomes).find((metric) => metric.metric === "ci_failure")?.value ?? 0;
   if (model.problems.length > 0 || decisionRequired > 0 || ciFailure > 0) return { label: "要確認", tone: "bg-amber-400" };
@@ -60,8 +61,11 @@ export function DepartmentOverview() {
       if (!model) return [];
       const decision = model.operations.find((metric) => metric.metric === "decision_required" && metric.value !== null && metric.value > 0);
       const ciFailure = model.outcomes.find((metric) => metric.metric === "ci_failure" && metric.value !== null && metric.value > 0);
+      // Thesis Alert は Thesis の実データ（WEAKENED / INVALIDATED）だけ。株価下落では出さない。
+      const thesis = model.operations.find((metric) => metric.metric === "thesis_alerts" && metric.value !== null && metric.value > 0);
       return [
         ...(decision ? [{ id: `${item.id}-decision`, title: `${item.label}: 判断待ち ${decision.value}件`, href: item.href }] : []),
+        ...(thesis ? [{ id: `${item.id}-thesis`, title: `${item.label}: Thesis Alert ${thesis.value}件`, href: item.href }] : []),
         ...(ciFailure ? [{ id: `${item.id}-ci`, title: `${item.label}: CI失敗 ${ciFailure.value}件`, href: item.href }] : []),
         ...model.problems.slice(0, 1).map((problem, index) => ({ id: `${item.id}-problem-${index}`, title: `${item.label}: ${problem}`, href: item.href })),
       ];
