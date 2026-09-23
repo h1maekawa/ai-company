@@ -1,16 +1,41 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState, type FormEvent } from "react";
 import { Microscope } from "lucide-react";
 import { InvestingShell } from "@/components/investing/Shell";
 import { Badge, Card, CardHeader, EmptyState, Skeleton } from "@/components/investing/ui";
 import type { EmployeeReadModel } from "@/components/mobile-ceo/EmployeeWorkspace";
 import type { WatchTheme } from "@/app/lib/investing/watchlist";
 import { displayStatus, formatRelativeTime } from "@/app/lib/mobile-ceo/controlCenter";
+import type { CanonicalResearchArtifact } from "@/app/lib/company/research/types";
+import { artifactFreshness, ResearchArtifactView } from "@/components/investing/ResearchArtifactView";
 import { latestRecommendations, useJson, type FundRecommendationView } from "../usePortfolio";
 
 type ResearchItem = { id: string; topic: string; title: string; summary: string; sourceName?: string; sourceUrl?: string; fetchedAt: string; freshnessStatus: string; reliability: string };
-type ResearchResponse = { items: ResearchItem[] | null; health: Array<{ status: string; lastSuccessfulRun: string | null }> | null };
+type ResearchResponse = { items: ResearchItem[] | null; intelligence: CanonicalResearchArtifact[] | null; health: Array<{ status: string; lastSuccessfulRun: string | null }> | null };
+const ROUTE_TO: Record<string, string> = { fund: "投資判断はFund Managerの担当です（株式部門のチャットへ）", creator: "投稿・記事の作成はCreatorの担当です（コンテンツスタジオへ）", finance: "家計・資金は家計の担当です" };
+
+function ArtifactList({ title, hint, artifacts, selected, onSelect }: { title: string; hint: string; artifacts: CanonicalResearchArtifact[]; selected: string | null; onSelect: (id: string) => void }) {
+  return (
+    <Card padded={false}>
+      <div className="px-5 pt-5"><CardHeader title={title} hint={hint} /></div>
+      {artifacts.length === 0 ? <p className="px-5 pb-5 text-sm text-sub">まだありません。</p> : (
+        <ul className="divide-y divide-hairline/60">
+          {artifacts.map((artifact) => (
+            <li key={artifact.id}>
+              <button type="button" onClick={() => onSelect(artifact.id)} aria-pressed={selected === artifact.id} className="flex min-h-11 w-full flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-left hover:bg-white/[0.03]">
+                <span className="text-sm text-white">{artifact.topic}</span>
+                <Badge>{artifact.intelligence.topicKey}</Badge>
+                <span className="text-[11px] text-sub">{artifact.intelligence.status} · {artifactFreshness(artifact)} · {artifact.intelligence.asOf.slice(0, 10)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
 const STATUS: Record<string, string> = { IDLE: "待機中", THINKING: "作業中", RESEARCHING: "調査中", EXECUTING: "作業中", REVIEWING: "レビュー中", WAITING_APPROVAL: "CEO確認待ち", COMPLETE: "完了", ERROR: "問題あり" };
 
 function Unknown({ reason }: { reason: string }) {
@@ -33,10 +58,56 @@ export default function InvestmentResearchPage() {
   const candidates = latestRecommendations(recommendations.data?.recommendations).slice(0, 12);
   const items = (research.data?.items ?? []).slice().reverse();
   const policyThemes = Object.entries(policy.data?.policy.themes ?? {});
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [askMessage, setAskMessage] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const intelligence = (research.data?.intelligence ?? []).filter((artifact) => artifact.intelligence.primaryDepartment !== "creator").slice().sort((a, b) => b.intelligence.asOf.localeCompare(a.intelligence.asOf));
+  const themes = intelligence.filter((artifact) => artifact.intelligence.playbookId === "theme-research");
+  const companies = intelligence.filter((artifact) => artifact.intelligence.playbookId === "company-research");
+  const selected = intelligence.find((artifact) => artifact.id === selectedId) ?? null;
+  const latestTheme = themes.find((artifact) => artifact.intelligence.investmentExt?.bottlenecks?.length || artifact.intelligence.investmentExt?.valueChain?.length) ?? null;
+
+  useEffect(() => { const id = new URLSearchParams(window.location.search).get("artifact"); if (id) setSelectedId(id); }, []);
+
+  async function ask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!question.trim() || asking) return;
+    setAsking(true); setAskMessage("");
+    try {
+      const response = await fetch("/api/company/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }) });
+      const payload = await response.json();
+      if (response.status === 409 && payload.routeTo) setAskMessage(ROUTE_TO[payload.routeTo] ?? "Researchではない依頼です");
+      else if (!response.ok) setAskMessage(String(payload.error ?? "Researchに失敗しました"));
+      else {
+        setAskMessage(payload.reused ? `${String(payload.artifact.intelligence.asOf).slice(0, 10)}時点の既存Researchを再利用しました` : payload.refreshed ? "既存Researchを更新しました" : "Researchを作成しました");
+        setSelectedId(payload.artifact.id);
+        setQuestion("");
+        research.reload();
+      }
+    } catch { setAskMessage("Researchに失敗しました"); } finally { setAsking(false); }
+  }
 
   return (
     <InvestingShell title="Research">
       <div className="space-y-4">
+        <Card>
+          <CardHeader title="Ask Research" hint="会社・テーマ・市場を調べます（売買判断はしません）" />
+          <form onSubmit={ask} className="flex flex-col gap-2 sm:flex-row">
+            <input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="例: HBMのValue Chainを調べて / MUを分析して" aria-label="Researchの依頼" className="min-h-11 min-w-0 flex-1 rounded-xl border border-hairline bg-white/[0.03] px-3 text-sm text-white" />
+            <button disabled={asking} className="min-h-11 rounded-xl bg-brand px-5 text-sm font-semibold text-white disabled:opacity-50">{asking ? "調査中…" : "Research"}</button>
+          </form>
+          {askMessage ? <p role="status" className="mt-2 text-xs text-amber-200">{askMessage}</p> : null}
+        </Card>
+
+        {selected ? <Card><ResearchArtifactView artifact={selected} /></Card> : null}
+
+        <ArtifactList title="Recent Research" hint="Research & Intelligence（最新順）" artifacts={intelligence.slice(0, 8)} selected={selectedId} onSelect={setSelectedId} />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ArtifactList title="Theme Research" hint="何が伸びる → 何が不足する → 誰が恩恵を受ける" artifacts={themes} selected={selectedId} onSelect={setSelectedId} />
+          <ArtifactList title="Company Research" hint="企業を理解するためのResearch" artifacts={companies} selected={selectedId} onSelect={setSelectedId} />
+        </div>
+
         <Card>
           <CardHeader title="Researcher Status" hint="Investment Researcher（fund-research）" />
           {employees.loading ? <Skeleton className="h-16" /> : !researcher ? <Unknown reason="AI社員の状態を取得できませんでした" /> : (
@@ -74,8 +145,14 @@ export default function InvestmentResearchPage() {
           </Card>
 
           <Card>
-            <CardHeader title="Value Chain / Bottlenecks" hint="何が足りなくなる？ ボトルネックは？" />
-            <Unknown reason="Value Chain分析のInvestment Skillが未登録のため、構造化データがありません。推測で埋めずに未取得としています。" />
+            <CardHeader title="Value Chain / Bottlenecks" hint={latestTheme ? `${latestTheme.topic} · ${latestTheme.intelligence.status} · ${artifactFreshness(latestTheme)}` : "何が足りなくなる？ ボトルネックは？"} />
+            {latestTheme ? (
+              <div className="space-y-2 text-sm">
+                {latestTheme.intelligence.investmentExt?.valueChain?.length ? <p className="text-slate-200">{latestTheme.intelligence.investmentExt.valueChain.join(" → ")}</p> : null}
+                <ul className="space-y-1">{(latestTheme.intelligence.investmentExt?.bottlenecks ?? []).map((item) => <li key={item.name} className="text-slate-200">{item.name} <span className="text-[11px] text-sub">{item.factRefs.length ? `Evidence ${item.factRefs.length}件` : "Evidenceなし"}</span></li>)}</ul>
+                <button type="button" onClick={() => setSelectedId(latestTheme.id)} className="min-h-11 text-xs text-brand">詳細と出典を見る</button>
+              </div>
+            ) : <Unknown reason="Theme Researchがまだありません。上の Ask Research でテーマを調べると、Evidence付きで表示されます。" />}
           </Card>
         </div>
 
