@@ -6,6 +6,7 @@ import { DEPARTMENT_NAV_BY_ID } from "@/app/lib/config/navigation";
 import type { DepartmentId, DepartmentMetric, DepartmentReadModel, DepartmentDirectiveDraft } from "@/app/lib/mobile-ceo/departments";
 import { DepartmentChat } from "./DepartmentChat";
 import { EmployeeWorkspace } from "./EmployeeWorkspace";
+import { EngineeringWorkerControl } from "./EngineeringWorkerControl";
 import { PageState, Section } from "./MobilePrimitives";
 
 function MetricCard({ item }: { item: DepartmentMetric }) {
@@ -45,6 +46,7 @@ export function DepartmentPage({ id }: { id: DepartmentId }) {
   if (!model) return <PageState retry={() => void load()}>{error}</PageState>;
   const important = [model.northStar, ...model.outcomes].slice(0, 3);
   return <div className="space-y-4">
+    {id === "engineering" ? <EngineeringWorkerControl /> : null}
     {model.problems.length ? <Section title="確認事項"><ul className="space-y-2 text-sm text-amber-200">{model.problems.map((item) => <li key={item}>{item}</li>)}</ul></Section> : null}
     {model.workflows?.length || model.currentWork.length ? <Section title="現在の仕事"><div className="space-y-2 text-sm">{model.workflows?.map((workflow) => <details key={workflow.id} className="rounded-xl border border-slate-700 bg-slate-900 p-3"><summary className="min-h-11 cursor-pointer"><strong className="block">{workflow.title}</strong><span className="text-xs text-slate-400">{workflow.completed} / {workflow.total} Step完了 · {workflow.status}</span></summary><ol className="mt-3 space-y-2">{workflow.steps.map((step) => <li key={step.id} className="rounded-lg bg-slate-950 p-2"><div className="flex justify-between gap-2"><span>{step.title}</span><span>{step.status}</span></div><p className="mt-1 text-xs text-slate-500">担当: {step.assignedAgentId ?? "UNKNOWN"} · Depends on: {step.dependsOn.join(", ") || "なし"}</p><p className="mt-1 break-all text-[10px] text-slate-600">Inputs: {step.inputRefs.join(", ") || "なし"}<br/>Outputs: {step.outputRefs.join(", ") || "なし"}<br/>Knowledge: {step.knowledgeRefs.join(", ") || "なし"}</p></li>)}</ol></details>)}{model.currentWork.map((item) => <div key={item} className="rounded-lg bg-slate-800 p-3">{item}</div>)}</div></Section> : null}
     <EmployeeWorkspace departmentId={id}/>
