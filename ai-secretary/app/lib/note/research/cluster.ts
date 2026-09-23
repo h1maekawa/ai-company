@@ -13,6 +13,7 @@ import { ALL_GENRE_IDS, Brand } from "../types";
 import { hashId } from "./fetcher";
 import {
   ExperienceEntry,
+  ContentPerformance,
   ResearchItem,
   TrendCluster,
   detectHighRisk,
@@ -198,7 +199,108 @@ export type ScoringContext = {
   experiences: ExperienceEntry[];
   /** 過去に扱ったテーマ（重複減点用） */
   pastTitles: string[];
+  performance?: ContentPerformance[];
+  /** 同一入力で再現できるよう、実行側は採点基準時刻を渡せる。 */
+  now?: string;
 };
+
+/**
+ * Hot移行期間の候補選別。
+ * 全件Legacyなら従来動作を保ち、1件でも採点済みならMEDIUM/HIGHだけを採用する。
+ * undefinedを「LOWではない」として通さないことが重要。
+ */
+export function filterHotConfidenceCandidates(clusters: TrendCluster[]): TrendCluster[] {
+  const hasScoredCandidate = clusters.some((candidate) => candidate.hotConfidence !== undefined);
+  if (!hasScoredCandidate) return clusters;
+  return clusters.filter(
+    (candidate) => candidate.hotConfidence === "MEDIUM" || candidate.hotConfidence === "HIGH"
+  );
+}
+
+function scoreHotV1(
+  items: ResearchItem[],
+  genreIds: string[],
+  brandFitScore: number,
+  originalityScore: number,
+  ctx: ScoringContext,
+  now: Date
+): NonNullable<TrendCluster["hotScoreBreakdown"]> & {
+  score: number;
+  confidence: NonNullable<TrendCluster["hotConfidence"]>;
+} {
+  const engagementEvidence = items.filter((item) => {
+    const value = item.publicMetrics;
+    return value && [value.likes, value.replies, value.reposts].some((metric) => metric !== undefined);
+  });
+  const momentumSignal = engagementEvidence.reduce((sum, item) => {
+    const value = item.publicMetrics!;
+    const weightedEngagement =
+      (value.likes ?? 0) + (value.reposts ?? 0) * 2 + (value.replies ?? 0) * 2;
+    if (!item.publishedAt) return sum + weightedEngagement;
+    const publishedAt = new Date(item.publishedAt).getTime();
+    if (!Number.isFinite(publishedAt)) return sum + weightedEngagement;
+    const ageHours = Math.max(1, (now.getTime() - publishedAt) / 3_600_000);
+    return sum + weightedEngagement / ageHours;
+  }, 0);
+  const momentum = engagementEvidence.length > 0
+    ? clamp(Math.log10(momentumSignal + 1) * 7, 25)
+    : null;
+
+  const dated = items
+    .map((item) => item.publishedAt)
+    .filter((value): value is string => value !== undefined)
+    .map((value) => new Date(value).getTime())
+    .filter(Number.isFinite);
+  const newestAgeHours = dated.length > 0 ? Math.max(0, (now.getTime() - Math.max(...dated)) / 3_600_000) : null;
+  const freshness = newestAgeHours === null ? null : clamp(15 * Math.max(0, 1 - newestAgeHours / (24 * 7)), 15);
+
+  const sourceIdentity = (item: ResearchItem): string => {
+    if (item.sourceAccountId) return `${item.platform}:account:${item.sourceAccountId}`;
+    try {
+      return `${item.platform}:host:${new URL(item.sourceUrl).hostname.toLowerCase().replace(/^www\./, "")}`;
+    } catch {
+      // URLが壊れていてもURL単位に水増しせず、同一platformのunknown sourceとして扱う。
+      return `${item.platform}:host:unknown`;
+    }
+  };
+  const independentSources = new Set(items.map(sourceIdentity)).size;
+  const crossSourceEvidence = clamp(independentSources * 5, 15);
+  const brandFit = clamp((brandFitScore / 25) * 20, 20);
+  const originality = clamp((originalityScore / 15) * 10, 10);
+
+  const measured = (ctx.performance ?? []).filter(
+    (record) => record.platform === "x" && record.impressions !== undefined
+  );
+  const matching = measured.filter((record) => genreIds.includes(record.genreId));
+  let ownPerformanceFit: number | null = null;
+  if (measured.length >= 10 && matching.length >= 3) {
+    const allAverage = measured.reduce((sum, record) => sum + record.impressions!, 0) / measured.length;
+    const matchAverage = matching.reduce((sum, record) => sum + record.impressions!, 0) / matching.length;
+    const evidenceWeight = measured.length >= 30 ? 1 : 0.5;
+    ownPerformanceFit = clamp(7.5 + (matchAverage / Math.max(1, allAverage) - 1) * 7.5 * evidenceWeight, 15);
+  }
+
+  const topicTokens = tokenize(items.map((item) => `${item.title ?? ""} ${item.textExcerpt}`).join(" "));
+  const repeated = ctx.pastTitles.some((title) => overlapCoefficient(topicTokens, tokenize(title)) > 0.6);
+  const repetitionPenalty = repeated ? 10 : 0;
+  const components = [
+    { value: momentum, weight: 25 },
+    { value: freshness, weight: 15 },
+    { value: crossSourceEvidence, weight: 15 },
+    { value: brandFit, weight: 20 },
+    { value: ownPerformanceFit, weight: 15 },
+    { value: originality, weight: 10 },
+  ];
+  const availableWeight = components.reduce((sum, part) => sum + (part.value === null ? 0 : part.weight), 0);
+  const availablePoints = components.reduce((sum, part) => sum + (part.value ?? 0), 0);
+  const score = availableWeight > 0 ? clamp((availablePoints / availableWeight) * 100 - repetitionPenalty, 100) : 0;
+  const confidence = availableWeight >= 90 && measured.length >= 30
+    ? "HIGH"
+    : availableWeight >= 70 && (measured.length >= 10 || independentSources >= 2)
+      ? "MEDIUM"
+      : "LOW";
+  return { momentum, freshness, crossSourceEvidence, brandFit, ownPerformanceFit, originality, repetitionPenalty, availableWeight, measuredPostCount: measured.length, score, confidence };
+}
 
 function applyPenalties(
   items: ResearchItem[],
@@ -257,7 +359,8 @@ export function buildClusters(
   ctx: ScoringContext,
   existing: TrendCluster[] = []
 ): TrendCluster[] {
-  const now = new Date().toISOString();
+  const nowDate = ctx.now ? new Date(ctx.now) : new Date();
+  const now = nowDate.toISOString();
   const groups = groupItems(items);
   const existingById = new Map(existing.map((c) => [c.id, c]));
 
@@ -284,6 +387,8 @@ export function buildClusters(
     const totalScore = riskLabel ? 0 : Math.max(0, raw - deduction);
 
     const prior = existingById.get(id);
+    const genreIds = [...new Set(group.flatMap((g) => g.detectedGenreIds))];
+    const hot = scoreHotV1(group, genreIds, brandFitScore, originalityScore, ctx, nowDate);
 
     return {
       id,
@@ -293,7 +398,7 @@ export function buildClusters(
         .filter((p): p is string => Boolean(p) && p !== "（未分析）")
         .slice(0, 2)
         .join(" / ") || `${group.length}件の類似トピック`,
-      genreIds: [...new Set(group.flatMap((g) => g.detectedGenreIds))],
+      genreIds,
       researchItemIds: group.map((g) => g.id),
       sourceCount: group.length,
       firstDetectedAt: prior?.firstDetectedAt ?? now,
@@ -304,6 +409,9 @@ export function buildClusters(
       monetizationFitScore,
       originalityScore,
       totalScore,
+      hotScore: riskLabel ? 0 : hot.score,
+      hotConfidence: hot.confidence,
+      hotScoreBreakdown: hot,
       penalties,
       blocked: Boolean(riskLabel),
       blockReason: riskLabel ? `${riskLabel}に関する題材のため自動公開対象外` : undefined,
@@ -313,7 +421,7 @@ export function buildClusters(
     };
   });
 
-  return clusters.sort((a, b) => b.totalScore - a.totalScore);
+  return clusters.sort((a, b) => (b.hotScore ?? b.totalScore) - (a.hotScore ?? a.totalScore));
 }
 
 /**
@@ -334,7 +442,7 @@ export function selectTopCandidates(
     (cluster) =>
       cluster.status === "candidate" &&
       !cluster.blocked &&
-      cluster.totalScore > 0 &&
+      (cluster.hotScore ?? cluster.totalScore) > 0 &&
       (!genreId || cluster.genreIds.includes(genreId)) &&
       (!platform ||
         cluster.researchItemIds.some((id) => itemById.get(id)?.platform === platform))
@@ -343,7 +451,7 @@ export function selectTopCandidates(
     cluster.genreIds.some((id) => preferredGenreIds.includes(id)) ? 1 : 0;
   if (!focusTopic?.trim()) {
     return [...candidates]
-      .sort((a, b) => b.totalScore - a.totalScore || preference(b) - preference(a))
+      .sort((a, b) => (b.hotScore ?? b.totalScore) - (a.hotScore ?? a.totalScore) || preference(b) - preference(a))
       .slice(0, 5);
   }
 
@@ -371,7 +479,7 @@ export function selectTopCandidates(
       (a, b) =>
         Number(b.hasFreshItem) - Number(a.hasFreshItem) ||
         b.relevance - a.relevance ||
-        b.cluster.totalScore - a.cluster.totalScore ||
+        (b.cluster.hotScore ?? b.cluster.totalScore) - (a.cluster.hotScore ?? a.cluster.totalScore) ||
         preference(b.cluster) - preference(a.cluster)
     )
     .slice(0, 5)

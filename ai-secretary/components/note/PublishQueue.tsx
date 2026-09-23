@@ -5,6 +5,7 @@ import { Send, ShieldAlert, TriangleAlert } from "lucide-react";
 import { Card, CardHeader, EmptyState, Skeleton } from "@/components/ui/primitives";
 import { usePublishQueue, useResearchSettings } from "@/app/note/useResearch";
 import { X_MAX_WEIGHTED_LENGTH, xWeightedLength } from "@/app/lib/note/operations";
+import { X_AUTOMATION_PERSONA_NAME } from "@/app/lib/note/types";
 
 /** X下書き・note記事・投稿ジョブと、安全装置のスイッチ */
 export function PublishQueue() {
@@ -16,6 +17,18 @@ export function PublishQueue() {
   const pending = state.socialDrafts.filter(
     (d) => d.status !== "discarded" && d.status !== "published"
   );
+  const confirmFlagChange = (
+    label: string,
+    nextValue: boolean,
+    save: () => Promise<unknown>
+  ) => {
+    const effect = nextValue
+      ? "次回の日次実行から、新しい投稿案をBufferへ自動予約します。"
+      : "次回の日次実行から新規予約を停止します。Bufferにある既存予約は取り消しません。";
+    if (window.confirm(`${label}を${nextValue ? "ON" : "OFF"}にします。\n\n${effect}`)) {
+      void save();
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -30,16 +43,16 @@ export function PublishQueue() {
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
             <Toggle
-              label="投稿全体を有効にする"
-              hint="これがOFFなら他の設定に関係なく投稿しません"
+              label="投稿全体（緊急停止に使用）"
+              hint="OFFで新しいBuffer予約を停止。既存予約は取り消しません"
               checked={settings.flags.publishingEnabled}
-              onChange={(v) => settings.save({ flags: { publishingEnabled: v } })}
+              onChange={(v) => confirmFlagChange("投稿全体", v, () => settings.save({ flags: { publishingEnabled: v } }))}
             />
             <Toggle
-              label="X自動投稿（Buffer予約）"
-              hint="OFFでも下書き保存はできます"
+              label={`${X_AUTOMATION_PERSONA_NAME} 常時承認`}
+              hint="ONなら安全ゲート通過後、個別承認なしでBuffer予約します"
               checked={settings.flags.xAutoPublish}
-              onChange={(v) => settings.save({ flags: { xAutoPublish: v } })}
+              onChange={(v) => confirmFlagChange(`${X_AUTOMATION_PERSONA_NAME}の常時承認`, v, () => settings.save({ flags: { xAutoPublish: v } }))}
             />
             <Toggle
               label="note自動公開"

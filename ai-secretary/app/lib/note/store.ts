@@ -20,6 +20,7 @@ import {
   LEGACY_DEFAULT_BRAND_TEXT,
   TeachingProgram,
   XAccount,
+  migrateXAutomationPersonaName,
   defaultBrand,
   defaultProgram,
   defaultXAccounts,
@@ -415,11 +416,10 @@ function migrateXAccountsToMaemichi(existing: XAccount[]): XAccount[] {
   const [first, ...rest] = existing;
   const maemichi: XAccount = {
     ...first,
-    label: "まえみち",
     genreIds: [...ALL_GENRE_IDS],
   };
   const others = rest.map((a) => ({ ...a, genreIds: [] }));
-  return [maemichi, ...others];
+  return migrateXAutomationPersonaName([maemichi, ...others]);
 }
 
 export async function loadBrand(): Promise<BrandFile> {
@@ -452,7 +452,9 @@ export async function loadBrand(): Promise<BrandFile> {
   if (data.brand.identity?.version === BRAND_VERSION) {
     const defaults = defaultBrand();
     const saved = data.brand;
-    return {
+    const sourceXAccounts = savedXAccounts.length > 0 ? savedXAccounts : defaultXAccounts();
+    const xAccounts = migrateXAutomationPersonaName(sourceXAccounts);
+    const loaded: BrandFile = {
       brand: {
         ...defaults,
         ...saved,
@@ -466,8 +468,13 @@ export async function loadBrand(): Promise<BrandFile> {
       },
       channels: channels.length > 0 ? channels : DEFAULT_CHANNELS,
       program,
-      xAccounts: savedXAccounts.length > 0 ? savedXAccounts : defaultXAccounts(),
+      xAccounts,
     };
+    // 現行Brand versionでも旧default labelだけは一度保存する。custom labelではwriteしない。
+    if (xAccounts.some((account, index) => account !== sourceXAccounts[index])) {
+      await saveBrand(loaded);
+    }
+    return loaded;
   }
 
   if (data.brand.identity?.version === "maemichi-v1") {

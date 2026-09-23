@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/x-daily-publish",
-      "schedule": "0 23 * * *"
+      "schedule": "10 22 * * *"
     },
     {
       "path": "/api/cron/content-nightly-review",

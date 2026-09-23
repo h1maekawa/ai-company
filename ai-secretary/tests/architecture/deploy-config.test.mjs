@@ -69,6 +69,17 @@ test("cronのpathが重複していない（同一pathの多重登録は二重�
   }
 });
 
+test("X日次実行はResearchの10分後（07:10 JST）に固定する", () => {
+  const research = vercel.crons.find(
+    (entry) => entry.path === "/api/cron/note-daily-research"
+  );
+  const xPublish = vercel.crons.find(
+    (entry) => entry.path === "/api/cron/x-daily-publish"
+  );
+  assert.equal(research?.schedule, "0 22 * * *");
+  assert.equal(xPublish?.schedule, "10 22 * * *");
+});
+
 /**
  * Phase 10-B.1 Cadence Expansion（2026-09-15）
  *
