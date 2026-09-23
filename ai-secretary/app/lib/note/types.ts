@@ -186,6 +186,18 @@ export type XAccount = {
   directAffiliate: boolean;
 };
 
+/** 内部X自動運用Personaの表示名。ブランド名・外部プロフィール名とは別物。 */
+export const X_AUTOMATION_PERSONA_NAME = "maemichi-ai君";
+
+/** 明確な旧defaultだけを移行し、利用者が編集したlabelは保持する。 */
+export function migrateXAutomationPersonaName(accounts: XAccount[]): XAccount[] {
+  return accounts.map((account) =>
+    account.id === "maemichi" && account.label === "まえみち"
+      ? { ...account, label: X_AUTOMATION_PERSONA_NAME }
+      : account
+  );
+}
+
 /** 全ジャンルのidをまとめて割り当てるためのショートカット */
 export const ALL_GENRE_IDS = DEFAULT_GENRES.map((g) => g.id);
 
@@ -193,7 +205,7 @@ export function defaultXAccounts(): XAccount[] {
   return [
     {
       id: "maemichi",
-      label: "まえみち",
+      label: X_AUTOMATION_PERSONA_NAME,
       handle: "",
       role: "人生の寄り道を日常的に記録するアカウント。AI・読書・投資・仕事・副業・習慣は人生の一部として扱う。先生として教えるのではなく、友達に話すくらいの距離感で、実際に試したこと、迷い、失敗、途中経過、日常で感じたことを自然体で共有する。投稿単体の有益さだけでなく、この人の日常や考え方をこれからも見たいと思われることを優先する。",
       genreIds: [...ALL_GENRE_IDS],

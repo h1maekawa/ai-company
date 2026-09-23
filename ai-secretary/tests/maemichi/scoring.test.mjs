@@ -83,6 +83,187 @@ test("採点は決定的（同じ入力なら同じ点）", () => {
   assert.equal(a[0].id, b[0].id, "IDも安定していること");
 });
 
+test("Hot Score v1 は欠損メトリクスを0ではなくUNKNOWNとして残す", () => {
+  const [candidate] = cluster.buildClusters([item()], {
+    ...baseCtx,
+    now: "2026-07-30T01:00:00.000Z",
+  });
+  assert.equal(candidate.hotScoreBreakdown.momentum, null);
+  assert.equal(candidate.hotScoreBreakdown.ownPerformanceFit, null);
+  assert.equal(candidate.hotScoreBreakdown.measuredPostCount, 0);
+  assert.equal(candidate.hotConfidence, "LOW");
+});
+
+test("MomentumはimpressionsだけではUNKNOWNのまま", () => {
+  const [candidate] = cluster.buildClusters([
+    item({ publicMetrics: { impressions: 10_000 } }),
+  ], { ...baseCtx, now: "2026-07-30T01:00:00.000Z" });
+  assert.equal(candidate.hotScoreBreakdown.momentum, null);
+});
+
+test("Momentumはengagement metricが1つでも取得できれば数値になる", () => {
+  const [candidate] = cluster.buildClusters([
+    item({ publicMetrics: { likes: 0 } }),
+  ], { ...baseCtx, now: "2026-07-30T01:00:00.000Z" });
+  assert.equal(typeof candidate.hotScoreBreakdown.momentum, "number");
+  assert.equal(candidate.hotScoreBreakdown.momentum, 0, "実測0はUNKNOWNと区別する");
+});
+
+test("同じengagementなら公開からの時間が短い投稿ほどMomentumが高い", () => {
+  const now = "2026-07-30T12:00:00.000Z";
+  const metrics = { likes: 60, replies: 10, reposts: 10 };
+  const [recent] = cluster.buildClusters([
+    item({ publishedAt: "2026-07-30T10:00:00.000Z", publicMetrics: metrics }),
+  ], { ...baseCtx, now });
+  const [old] = cluster.buildClusters([
+    item({ publishedAt: "2026-07-23T12:00:00.000Z", publicMetrics: metrics }),
+  ], { ...baseCtx, now });
+  assert.ok(recent.hotScoreBreakdown.momentum > old.hotScoreBreakdown.momentum);
+});
+
+test("FreshnessはpublishedAtだけを使い、recentはoldより高い", () => {
+  const now = "2026-07-30T12:00:00.000Z";
+  const [recent] = cluster.buildClusters([
+    item({ publishedAt: "2026-07-30T10:00:00.000Z" }),
+  ], { ...baseCtx, now });
+  const [old] = cluster.buildClusters([
+    item({ publishedAt: "2026-07-20T12:00:00.000Z" }),
+  ], { ...baseCtx, now });
+  const [unknown] = cluster.buildClusters([
+    item({ publishedAt: undefined, fetchedAt: "2026-07-30T11:59:00.000Z" }),
+  ], { ...baseCtx, now });
+  assert.ok(recent.hotScoreBreakdown.freshness > old.hotScoreBreakdown.freshness);
+  assert.equal(unknown.hotScoreBreakdown.freshness, null);
+});
+
+test("Cross-sourceは同一domainの複数URLを1 sourceとして数える", () => {
+  const sameDomain = ["a", "b", "c"].map((suffix, index) => item({
+    id: `same-${index}`,
+    sourceUrl: `https://example.com/${suffix}`,
+  }));
+  const differentDomains = ["example.com", "other.com", "third.com"].map((host, index) => item({
+    id: `different-${index}`,
+    sourceUrl: `https://${host}/article`,
+  }));
+  const [same] = cluster.buildClusters(sameDomain, baseCtx);
+  const [different] = cluster.buildClusters(differentDomains, baseCtx);
+  assert.equal(same.hotScoreBreakdown.crossSourceEvidence, 5);
+  assert.ok(different.hotScoreBreakdown.crossSourceEvidence > same.hotScoreBreakdown.crossSourceEvidence);
+});
+
+test("Cross-sourceはXの異なるsourceAccountIdを独立sourceとして数える", () => {
+  const items = ["account-a", "account-b"].map((sourceAccountId, index) => item({
+    id: `x-${index}`,
+    platform: "x",
+    sourceAccountId,
+    sourceUrl: `https://x.com/${sourceAccountId}/status/${index + 1}`,
+  }));
+  const [candidate] = cluster.buildClusters(items, baseCtx);
+  assert.equal(candidate.hotScoreBreakdown.crossSourceEvidence, 10);
+});
+
+test("本人実績は10投稿未満では加点せず、10投稿から参考値にする", () => {
+  const records = Array.from({ length: 10 }, (_, index) => ({
+    contentId: `p${index}`,
+    platform: "x",
+    purpose: "reach",
+    genreId: "ai",
+    publishedAt: "2026-07-29T00:00:00.000Z",
+    measuredAt: "2026-07-30T00:00:00.000Z",
+    impressions: 100 + index,
+  }));
+  const [tooFew] = cluster.buildClusters([item()], { ...baseCtx, performance: records.slice(0, 9) });
+  const [enough] = cluster.buildClusters([item()], { ...baseCtx, performance: records });
+  assert.equal(tooFew.hotScoreBreakdown.ownPerformanceFit, null);
+  assert.equal(typeof enough.hotScoreBreakdown.ownPerformanceFit, "number");
+  assert.equal(enough.hotScoreBreakdown.measuredPostCount, 10);
+});
+
+function performanceRecords(total, matching, prefix) {
+  return Array.from({ length: total }, (_, index) => ({
+    contentId: `${prefix}-${index}`,
+    platform: "x",
+    purpose: "reach",
+    genreId: index < matching ? "ai" : "reading",
+    publishedAt: "2026-07-29T00:00:00.000Z",
+    measuredAt: "2026-07-30T00:00:00.000Z",
+    impressions: index < matching ? 200 : 100,
+  }));
+}
+
+test("Own Performanceは全体20件でも対象genreが1件ならUNKNOWN", () => {
+  const [candidate] = cluster.buildClusters([item()], {
+    ...baseCtx,
+    performance: performanceRecords(20, 1, "single"),
+  });
+  assert.equal(candidate.hotScoreBreakdown.ownPerformanceFit, null);
+});
+
+test("Own Performanceは全体10件以上かつ対象genre 3件以上で計算する", () => {
+  const [candidate] = cluster.buildClusters([item()], {
+    ...baseCtx,
+    performance: performanceRecords(20, 3, "partial"),
+  });
+  assert.equal(typeof candidate.hotScoreBreakdown.ownPerformanceFit, "number");
+});
+
+test("Own Performanceは30件以上でpartialではなくfull weightを使う", () => {
+  const [partial] = cluster.buildClusters([item()], {
+    ...baseCtx,
+    performance: performanceRecords(20, 3, "partial-weight"),
+  });
+  const [full] = cluster.buildClusters([item()], {
+    ...baseCtx,
+    performance: performanceRecords(30, 3, "full-weight"),
+  });
+  assert.ok(
+    full.hotScoreBreakdown.ownPerformanceFit > partial.hotScoreBreakdown.ownPerformanceFit
+  );
+});
+
+test("過去テーマとの反復はHot Scoreにも減点として記録する", () => {
+  const [candidate] = cluster.buildClusters([item()], {
+    ...baseCtx,
+    pastTitles: ["AIで議事録を自動化した手順を公開します"],
+  });
+  assert.equal(candidate.hotScoreBreakdown.repetitionPenalty, 10);
+});
+
+test("Hot Confidenceの新旧混在時はLegacyを候補へ混ぜない", () => {
+  const legacy = { id: "legacy" };
+  const low = { id: "low", hotConfidence: "LOW" };
+  const medium = { id: "medium", hotConfidence: "MEDIUM" };
+  const high = { id: "high", hotConfidence: "HIGH" };
+  assert.deepEqual(
+    cluster.filterHotConfidenceCandidates([legacy, low, medium, high]).map((item) => item.id),
+    ["medium", "high"]
+  );
+});
+
+test("Hot Confidenceが全件Legacyなら従来候補へfallbackする", () => {
+  const legacy = [{ id: "legacy-a" }, { id: "legacy-b" }];
+  assert.deepEqual(cluster.filterHotConfidenceCandidates(legacy), legacy);
+});
+
+test("採点済みがLOWだけならLegacyが混在していても全件見送る", () => {
+  const candidates = cluster.filterHotConfidenceCandidates([
+    { id: "legacy" },
+    { id: "low", hotConfidence: "LOW" },
+  ]);
+  assert.deepEqual(candidates, []);
+});
+
+test("LOW onlyは見送り、HIGH + LOWはHIGHだけを残す", () => {
+  assert.deepEqual(cluster.filterHotConfidenceCandidates([{ id: "low", hotConfidence: "LOW" }]), []);
+  assert.deepEqual(
+    cluster.filterHotConfidenceCandidates([
+      { id: "high", hotConfidence: "HIGH" },
+      { id: "low", hotConfidence: "LOW" },
+    ]).map((candidate) => candidate.id),
+    ["high"]
+  );
+});
+
 test("配点が仕様の上限を超えない", () => {
   const items = [
     item({ id: "a", sourceUrl: "u1", publicMetrics: { likes: 99999, reposts: 9999 } }),
@@ -352,6 +533,28 @@ test("ブランドv1初期値だけをv2へ移行し、利用者編集は残す"
 
   v1.identity.xProfile = "利用者が編集したプロフィール";
   assert.equal(noteTypes.migrateBrandV1ToV2(v1).identity.xProfile, "利用者が編集したプロフィール");
+});
+
+test("X automation Persona名はSSOTを使い旧defaultだけを移行する", () => {
+  const base = noteTypes.defaultXAccounts()[0];
+  assert.equal(base.label, noteTypes.X_AUTOMATION_PERSONA_NAME);
+
+  const oldDefault = { ...base, id: "maemichi", label: "まえみち" };
+  const custom = { ...base, id: "maemichi", label: "まえみち投資" };
+  const migrated = noteTypes.migrateXAutomationPersonaName([oldDefault, custom]);
+  assert.equal(migrated[0].label, noteTypes.X_AUTOMATION_PERSONA_NAME);
+  assert.equal(migrated[1].label, "まえみち投資");
+  assert.equal(migrated[1], custom, "custom labelは書換対象にしない");
+});
+
+test("X Persona migrationはBrand identityを変更しない", () => {
+  const brand = noteTypes.defaultBrand();
+  const identity = structuredClone(brand.identity);
+  noteTypes.migrateXAutomationPersonaName([
+    { ...noteTypes.defaultXAccounts()[0], label: "まえみち" },
+  ]);
+  assert.deepEqual(brand.identity, identity);
+  assert.equal(brand.identity.name, "まえみち");
 });
 
 test("投稿指標は0除算せず、未取得をundefinedで維持する", () => {

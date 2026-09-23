@@ -4,6 +4,7 @@ import { usableExperiences } from "@/app/lib/note/research/experience";
 import { generateXPosts } from "@/app/lib/note/research/generate";
 import { tryGenerateInvestmentDraft } from "@/app/lib/note/investing/xBridge";
 import { loadStyleProfile } from "@/app/lib/note/styleProfile";
+import { filterHotConfidenceCandidates } from "@/app/lib/note/research/cluster";
 import {
   appendHistory,
   loadClusters,
@@ -65,11 +66,13 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       loadStyleProfile(),
     ]);
 
-  const candidates = clusters.filter((candidate) => candidate.status === "candidate" && !candidate.blocked);
+  const eligible = clusters.filter((candidate) => candidate.status === "candidate" && !candidate.blocked);
+  // 全件Legacyなら旧スコアへfallback。新旧混在時はLegacyを紛れ込ませず、MEDIUM/HIGHだけを使う。
+  const candidates = filterHotConfidenceCandidates(eligible);
   const tokyoDayNumber = Number(new Date(Date.now() + 9 * 3_600_000).toISOString().slice(8, 10));
   const explorationDay = tokyoDayNumber % 5 === 0; // 約20%は新しいTopic/Patternを探索する。
   const cluster = candidates.sort((left, right) => {
-    if (explorationDay) return right.totalScore - left.totalScore;
+    if (explorationDay) return (right.hotScore ?? right.totalScore) - (left.hotScore ?? left.totalScore);
     const priority = (candidate: typeof left) => {
       const topic = settings.growthStrategy.topicPriority.indexOf(candidate.id);
       const genre = Math.min(...candidate.genreIds.map((id) => {
@@ -78,17 +81,17 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       }), 99);
       return (topic < 0 ? 99 : topic) * 100 + genre;
     };
-    return priority(left) - priority(right) || right.totalScore - left.totalScore;
+    return priority(left) - priority(right) || (right.hotScore ?? right.totalScore) - (left.hotScore ?? left.totalScore);
   })[0];
 
   if (!cluster) {
-    const slack = await postToSlack("本日のX投稿候補はありませんでした。リサーチ結果を確認してください。");
     return {
       skipped: true,
-      reason: "利用可能な候補がありません",
+      reason: eligible.length > 0
+        ? "Hot判定の信頼度がLOWのみのため、本日の自動投稿を見送りました"
+        : "利用可能な候補がありません",
       generated: 0,
-      slackDelivered: slack.ok,
-      slackError: slack.error,
+      escalated: false,
     };
   }
 
@@ -103,7 +106,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     {
       stepId: "research.select",
       status: "done",
-      result: `候補「${cluster.title}」を選定（score ${cluster.totalScore}）`,
+      result: `候補「${cluster.title}」を選定（Hot ${cluster.hotScore ?? "旧:" + cluster.totalScore} / confidence ${cluster.hotConfidence ?? "legacy"}）`,
     },
   ];
 
@@ -263,7 +266,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
             contentId: safeDraft.id,
             action: "毎日自動化でBufferへ予約",
             at: now,
-            detail: `${slot.role} / 予定 ${post.data.dueAt ?? scheduledAt}`,
+            detail: `${slot.role} / 予定 ${post.data.dueAt ?? scheduledAt} / cluster ${cluster.id} / Hot ${cluster.hotScore ?? "legacy"}`,
           });
           scheduleMessages.push(`予約完了: ${slot.time} ${slot.role}`);
         } else {

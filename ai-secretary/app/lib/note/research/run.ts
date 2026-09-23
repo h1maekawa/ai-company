@@ -113,7 +113,7 @@ export async function runResearch(options?: {
 
   const clusters = buildClusters(
     savedItems,
-    { brand: brandFile.brand, experiences, pastTitles },
+    { brand: brandFile.brand, experiences, pastTitles, performance: performance.records, now: ranAt },
     existingClusters
   );
   const saved = await saveClusters(clusters);

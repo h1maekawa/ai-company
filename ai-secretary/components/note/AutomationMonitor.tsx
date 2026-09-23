@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CalendarClock, CheckCircle2, Inbox, Settings } from "lucide-react";
 import type { ApprovalQueueEntry, AutomationStatus } from "@/app/lib/note/automation/status";
 import { OPERATION_MODE_HINTS, OPERATION_MODE_LABELS } from "@/app/lib/note/research/types";
+import { X_AUTOMATION_PERSONA_NAME } from "@/app/lib/note/types";
 import { FreshnessBadge } from "@/components/ui/Freshness";
 import { Skeleton } from "@/components/ui/primitives";
 
@@ -105,7 +106,7 @@ export function AutomationMonitor() {
       <div className="rounded-2xl border border-hairline bg-ink-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs text-sub">運用モード</p>
+            <p className="text-xs text-sub">Creator: {X_AUTOMATION_PERSONA_NAME}</p>
             <div className="mt-1.5 flex items-center gap-2">
               <span
                 className={`rounded-full border px-3 py-1 text-sm font-semibold ${MODE_STYLE[mode]}`}

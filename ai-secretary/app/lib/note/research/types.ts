@@ -211,6 +211,21 @@ export type TrendCluster = {
   originalityScore: number;
   totalScore: number;
 
+  /** Hot Score v1。取得不能な指標は breakdown 上で null（UNKNOWN）にする。 */
+  hotScore?: number;
+  hotConfidence?: "LOW" | "MEDIUM" | "HIGH";
+  hotScoreBreakdown?: {
+    momentum: number | null;
+    freshness: number | null;
+    crossSourceEvidence: number;
+    brandFit: number;
+    ownPerformanceFit: number | null;
+    originality: number;
+    repetitionPenalty: number;
+    availableWeight: number;
+    measuredPostCount: number;
+  };
+
   /** 減点の理由（人が読んで納得できるように残す） */
   penalties: string[];
   /** 高リスク題材などで自動公開対象外にする */
