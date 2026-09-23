@@ -112,3 +112,39 @@ test("Next Reviewは実データのnextReviewAtだけ。無ければ未取得", 
   const review = model.operations.find((x) => x.metric === "next_review");
   assert.equal(review.value, null); assert.equal(review.displayValue, undefined);
 });
+
+test("Research PolicyのresearcherAgentIdはAgent Registryに実在する（Fundはfund-research）", () => {
+  const root = path.join(process.env.QA_DIST, "out");
+  const { DEPARTMENT_RESEARCH_POLICIES, researchPolicy } = require(path.join(root, "app/lib/company/research/policies.js"));
+  const { getSecretaryById } = require(path.join(root, "app/lib/config/departments.js"));
+  const { DEPARTMENT_NAV_BY_ID } = require(path.join(root, "app/lib/config/navigation.js"));
+  // AI社員ではなくローカルのEngineering Worker processを指す既知の例外。ここに無いIDは実在必須。
+  const NON_REGISTRY_RESEARCHERS = new Set(["engineering-worker"]);
+  for (const policy of DEPARTMENT_RESEARCH_POLICIES) {
+    if (NON_REGISTRY_RESEARCHERS.has(policy.researcherAgentId)) continue;
+    assert.ok(getSecretaryById(policy.researcherAgentId), `${policy.departmentId}: ${policy.researcherAgentId} はAgent Registryに存在しません`);
+  }
+  const fund = researchPolicy("fund");
+  assert.equal(fund.researcherAgentId, "fund-research");
+  assert.equal(getSecretaryById("fund-research").departmentRole, "research");
+  assert.ok(DEPARTMENT_NAV_BY_ID.fund.employeeIds.includes(fund.researcherAgentId), "Fund所属AI社員であること");
+});
+
+test("Human Decision Feedbackはsilent truncationしない（501件超でも古い判断が残る）", () => {
+  const proposal = Object.freeze({ id: "skill_improvement_x", status: "PROPOSED", body: "AI提案本文" });
+  const existing = Array.from({ length: 501 }, (_, i) => cc.createHumanDecisionFeedback({ id: `h${i}`, targetType: "skill-improvement", targetId: proposal.id, decision: "HOLD", now: new Date(Date.UTC(2026, 0, 1, 0, 0, i)) }));
+  const snapshot = existing.map((record) => record.id);
+  const record = cc.createHumanDecisionFeedback({ id: "h-new", targetType: "skill-improvement", targetId: proposal.id, decision: "APPROVED", note: "CEO補足" });
+  const next = cc.appendHumanDecisionFeedback(existing, record);
+  assert.equal(next.length, 502);
+  assert.equal(next[0].id, "h0", "最古のrecordが残る");
+  assert.equal(next.at(-1).id, "h-new", "新しいrecordは末尾");
+  assert.deepEqual(existing.map((r) => r.id), snapshot, "既存配列をmutationしない");
+  assert.equal(existing.length, 501);
+  assert.deepEqual(proposal, { id: "skill_improvement_x", status: "PROPOSED", body: "AI提案本文" }, "元Proposalは変更されない");
+  for (const item of next) {
+    assert.equal(item.codeChanged, false); assert.equal(item.registryChanged, false);
+    assert.equal(item.policyChanged, false); assert.equal(item.engineeringStarted, false);
+  }
+  assert.equal(cc.appendHumanDecisionFeedback.length, 2, "件数上限パラメータを持たない");
+});
