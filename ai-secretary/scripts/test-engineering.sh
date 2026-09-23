@@ -5,6 +5,6 @@ cd "$(dirname "$0")/.."
 dist="$(mktemp -d "${TMPDIR:-/tmp}/ai-company-engineering-tests.XXXXXX")"
 trap 'rm -rf "$dist"' EXIT
 export ENGINEERING_DIST="$dist"
-npx tsc app/lib/engineering/worker.ts app/lib/engineering/adapters.ts app/lib/engineering/security.ts app/lib/engineering/stateStore.ts app/lib/engineering/credentials.ts app/lib/engineering/doctor.ts \
+npx tsc app/lib/engineering/worker.ts app/lib/engineering/adapters.ts app/lib/engineering/security.ts app/lib/engineering/stateStore.ts app/lib/engineering/credentials.ts app/lib/engineering/doctor.ts app/lib/engineering/githubRequests.ts app/lib/engineering/activeMachineControl.ts \
   --outDir "$dist" --module commonjs --target es2020 --esModuleInterop --skipLibCheck
 node --test tests/engineering/*.test.mjs
