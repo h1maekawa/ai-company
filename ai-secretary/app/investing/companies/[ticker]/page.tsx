@@ -8,6 +8,8 @@ import { InvestingShell } from "@/components/investing/Shell";
 import { Badge, Card, CardHeader, Skeleton } from "@/components/investing/ui";
 import type { WatchTheme } from "@/app/lib/investing/watchlist";
 import { formatJpy, formatPct } from "@/app/lib/investing/types";
+import type { CanonicalResearchArtifact } from "@/app/lib/company/research/types";
+import { artifactFreshness } from "@/components/investing/ResearchArtifactView";
 import { latestRecommendations, useJson, usePortfolio, type FundRecommendationView } from "../../usePortfolio";
 
 const HORIZONS = [["short", "Short"], ["medium", "Medium"], ["long", "Long"]] as const;
@@ -43,6 +45,8 @@ export default function CompanyDetailPage() {
   const portfolio = usePortfolio();
   const watchlist = useJson<{ themes: WatchTheme[] }>("/api/investing/watchlist");
   const recommendations = useJson<{ recommendations: FundRecommendationView[] }>("/api/fund/recommendations");
+  const research = useJson<{ intelligence: CanonicalResearchArtifact[] | null }>("/api/company/research?departmentId=fund");
+  const companyResearch = (research.data?.intelligence ?? []).find((artifact) => artifact.intelligence.topicKey === `company:${ticker}`) ?? null;
 
   const position = portfolio.data?.positions.find((item) => item.code.toUpperCase() === ticker) ?? null;
   const watched = watchlist.data?.themes.flatMap((theme) => theme.items.map((item) => ({ ...item, theme: theme.theme }))).find((item) => item.ticker.toUpperCase() === ticker) ?? null;
@@ -118,6 +122,11 @@ export default function CompanyDetailPage() {
           <p className="text-sm text-slate-200">評価額 {formatJpy(position.marketValueJpy)} · 含み損益 {formatJpy(position.pnlJpy, { sign: true })}（{formatPct(position.pnlPct, { sign: true })}）</p>
         </Card>
       ) : null}
+
+      <Card className="mt-4">
+        <CardHeader title="Company Research（R&I）" hint={companyResearch ? `${companyResearch.intelligence.status} · ${artifactFreshness(companyResearch)} · As of ${companyResearch.intelligence.asOf.slice(0, 10)}` : "Research & Intelligence"} />
+        {companyResearch ? <Link href={`/investing/research?artifact=${encodeURIComponent(companyResearch.id)}`} className="inline-flex min-h-11 items-center text-xs text-brand">出典付きのCompany Researchを見る</Link> : <p className="text-sm text-sub">未取得 <span className="block text-[11px]">Researchページの Ask Research で「{ticker}を分析して」と依頼できます。</span></p>}
+      </Card>
 
       <div className="mt-4 flex flex-wrap gap-2">
         <Link href="/investing/policy" className="inline-flex min-h-11 items-center rounded-xl bg-brand px-4 text-xs font-semibold text-white">分析を実行（投資判断エンジン）</Link>

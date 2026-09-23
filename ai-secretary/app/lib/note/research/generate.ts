@@ -234,6 +234,8 @@ export type GenerateXInput = {
   preferredPatterns?: string[];
   /** 本人のStyle Profile（要件P0.1）。Brand/Safetyより必ず下位で参照する。未指定なら影響しない */
   styleProfile?: StyleProfile;
+  /** R&I Artifact の出典付き事実（optional）。未指定なら従来どおり */
+  researchContext?: { artifactIds: string[]; block: string };
 };
 
 export type GenerateXResult = {
@@ -304,6 +306,8 @@ ${
       ? investmentBlock(investmentSeed!)
       : trendBlock(cluster, items)
 }
+
+${input.researchContext && !isDaily && !isInvestment ? input.researchContext.block : ""}
 
 ${isDaily ? "## 本人入力の扱い\n上の日常入力は今回本人が入力した内容です。書かれている範囲だけ本人の出来事・感情として使えます。" : experienceBlock(experiences)}
 
@@ -454,6 +458,7 @@ mediaSuggestionは text / diagram / screenshot / comparison / chart / video / no
     drafts.push({
       id: hashId("s", `${cluster.id}${post.angle ?? ""}${threadIndex}${now}${text.slice(0, 20)}`),
       trendClusterId: cluster.id,
+      ...(input.researchContext && !isDaily && !isInvestment ? { sourceArtifactIds: input.researchContext.artifactIds } : {}),
       xAccountId: account.id,
       purpose,
       genreId: genre.id,

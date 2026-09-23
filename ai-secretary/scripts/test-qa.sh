@@ -103,6 +103,7 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/company/research/intelligence/routing.ts",
     "$PWD/app/lib/company/research/intelligence/evidence.ts",
     "$PWD/app/lib/company/research/intelligence/engine.ts",
+    "$PWD/app/lib/company/research/intelligence/creatorContext.ts",
     "$PWD/app/lib/router/preRouter.ts",
     "$PWD/app/lib/knowledge/domain.ts",
     "$PWD/app/lib/skills/types.ts",

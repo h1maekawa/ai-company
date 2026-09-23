@@ -30,6 +30,8 @@ import {
 import type { SocialDraft } from "@/app/lib/note/research/types";
 import { recordPipelineSteps, type RecordStepInput } from "@/app/lib/agents/recorder";
 import { startTrace } from "@/app/lib/company/trace";
+import { loadExecutionState } from "@/app/lib/company/execution/store";
+import { buildCreatorResearchContext } from "@/app/lib/company/research/intelligence/creatorContext";
 
 export type DailyXResult = {
   skipped?: boolean;
@@ -131,6 +133,10 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
   if (!account) throw new Error("Xアカウント設定がありません");
 
   const usable = usableExperiences(experiences, cluster.matchedExperienceIds);
+  // R&I Artifact は optional な参照。読めなくても既存の生成はそのまま続ける
+  const researchContext = await loadExecutionState()
+    .then((state) => buildCreatorResearchContext(state.runtime?.researchArtifacts))
+    .catch(() => null);
   const generated: SocialDraft[] = [];
   const warnings: string[] = [];
   const generateStartedAt = Date.now();
@@ -170,6 +176,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       })),
       preferredPatterns: settings.growthStrategy.patternPriority,
       styleProfile,
+      ...(researchContext ? { researchContext } : {}),
     });
     const candidate = result.drafts.find((draft) => !draft.failureReason);
     if (candidate) generated.push(candidate);

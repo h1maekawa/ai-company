@@ -410,6 +410,8 @@ export type SocialDraft = {
   sourceResearchIds?: string[];
   sourceViewpointIds?: string[];
   sourceExperienceIds?: string[];
+  /** Research & Intelligence の Canonical Artifact id（sourceResearchIds は note Research Item のidで別物） */
+  sourceArtifactIds?: string[];
   /** Creator Missionからの監査可能なhandoff lineage（Knowledge本文は保存しない）。 */
   parentMissionId?: string;
   sourceStepId?: string;
