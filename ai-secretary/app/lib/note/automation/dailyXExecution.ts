@@ -131,7 +131,28 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
   const newlyGenerated: SocialDraft[] = [];
   const warnings: string[] = [];
   let generationFailures = 0;
+  const lineageConflicts: string[] = [];
   for (const slot of plan.slots.filter((item) => item.status === "planned")) {
+    /*
+     * Recovery: 前回Runで Draft保存は成功したが Plan保存だけ失敗した場合、Planは planned のまま残る。
+     * planId と planSlotId が完全一致する既存Draftがあれば、再生成せずその状態からPlanを回復する。
+     * 本文類似度や cluster で推測しない。複数ある異常状態では1件を選ばず fail-closed（自動予約しない）。
+     */
+    const lineage = drafts.filter((draft) => draft.planId === plan!.id && draft.planSlotId === slot.id);
+    if (lineage.length > 1) {
+      lineageConflicts.push(slot.id);
+      setSlot(slot, { status: "skipped", failureKind: "duplicate-lineage", failureReason: `同じslotのDraftが${lineage.length}件あります（${lineage.map((draft) => draft.id).join(", ")}）。人間の確認が必要です` });
+      await savePlan();
+      continue;
+    }
+    if (lineage.length === 1) {
+      const existing = lineage[0];
+      setSlot(slot, existing.failureReason
+        ? { status: "blocked", draftId: existing.id, failureKind: "safety-gate", failureReason: existing.failureReason }
+        : { status: "generated", draftId: existing.id, failureKind: undefined, failureReason: undefined });
+      await savePlan();
+      continue;
+    }
     const cluster = slot.candidateRef ? await deps.findCluster(slot.candidateRef.id) : null;
     if (!cluster) {
       setSlot(slot, { status: "skipped", failureKind: "candidate-missing", failureReason: "Planの候補clusterが見つかりません" });
@@ -255,7 +276,7 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
   const bufferFailureCount = messages.filter((message) => message.startsWith("予約失敗")).length;
   const bufferAuthOrConfigError = plan.slots.some((slot) => slot.status === "failed" && (slot.failureKind === "auth" || slot.failureKind === "config"));
   const secretOrPersonalDataDetected = newlyGenerated.some((draft) => draft.failureReason?.includes("機密情報") || draft.failureReason?.includes("個人情報"));
-  const escalate = generationFailures > 0 || safetyBlocked > 0 || bufferFailureCount >= 2 || bufferAuthOrConfigError || secretOrPersonalDataDetected || ambiguousCount > 0 || Boolean(haltedReason) || persistenceFailures.length > 0;
+  const escalate = generationFailures > 0 || lineageConflicts.length > 0 || safetyBlocked > 0 || bufferFailureCount >= 2 || bufferAuthOrConfigError || secretOrPersonalDataDetected || ambiguousCount > 0 || Boolean(haltedReason) || persistenceFailures.length > 0;
 
   let slack: { ok: boolean; error?: string } = { ok: true };
   if (escalate) {
@@ -264,6 +285,7 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
       `Plan ${plan.id}: ${plan.slots.map((slot) => `${slot.scheduledTime}=${slot.status}`).join(" / ")}`,
       newlyGenerated.length ? `本日のX投稿案を${newlyGenerated.length}件作成しました。` : "",
       generationFailures ? `投稿案を生成できなかったslotが${generationFailures}件あります（次回実行で再生成します）。` : "",
+      lineageConflicts.length ? `同じslotのDraftが複数あるため自動予約しません: ${lineageConflicts.join(", ")}` : "",
       messages.join(" / "),
       haltedReason ? `予約を停止しました: ${haltedReason}（slot ${haltedAtSlotId ?? "-"}）。人間の確認が必要です。` : "",
       ...persistenceFailures.map((failure) => `Buffer予約後の保存に失敗: bufferPostId=${failure.bufferPostId} / slot=${failure.planSlotId} / draft=${failure.draftId} / 予定=${failure.scheduledAt} / 失敗=${failure.failedSteps.join(",")}`),
