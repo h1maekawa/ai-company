@@ -13,6 +13,7 @@ import { loadXWorkspace } from "../x/store";
 import { buildWeeklyCeoReport, loadWeeklyCeoReports, saveWeeklyCeoReport, weeklyCeoReportSlackText } from "./weeklyReport";
 import { postToSlack } from "../../integrations/slack/blocks";
 import { weekKeyTokyo } from "../operations";
+import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
 
 export type NightlyGrowthResult = {
   reviewDate: string;
@@ -96,7 +97,7 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
       // 本人のX過去投稿（アーカイブ）。文体学習の「種」（TASK-N3 / 要件4）
       loadXWorkspace().catch(() => ({ ownedPosts: [], referenceNotes: [] })),
     ]);
-  const tokyoDate = new Date(now.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
+  const tokyoDate = tokyoDateKey(now);
   const pendingArticleIds = new Set(queue.jobs.filter((job) => job.kind === "note-metrics-sync" && (job.status === "pending" || job.status === "running")).map((job) => job.articleId));
   const existingJobIds = new Set(queue.jobs.map((job) => job.id));
   const metricJobs: PublishJob[] = queue.articles

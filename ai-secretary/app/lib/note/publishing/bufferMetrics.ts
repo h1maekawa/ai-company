@@ -2,15 +2,18 @@ import type { ContentPerformance, SocialDraft } from "../research/types";
 import { xWeightedLength } from "../operations";
 import { classifyStyle } from "../styleSignals";
 import { getPost, type BufferPostMetric, type BufferPostNode } from "./buffer";
+import { tokyoDateKey, tokyoDayStartMs } from "../tokyoDate";
 import type { PerformanceProvider, PerformanceProviderResult } from "./performanceProvider";
 
 type BufferPostFetcher = typeof getPost;
 
+const METRICS_SYNC_WINDOW_MS = 7 * 86_400_000;
+
 export function isDailyMetricsCandidate(draft: SocialDraft, now = new Date()): boolean {
   if (!draft.scheduledAt || !draft.bufferPostId) return false;
-  const tokyoDate = new Date(now.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
-  const todayStartedAt = new Date(`${tokyoDate}T00:00:00+09:00`).getTime();
-  return new Date(draft.scheduledAt).getTime() < todayStartedAt;
+  const scheduledAt = new Date(draft.scheduledAt).getTime();
+  // 当日投稿は対象外。公開後7日を超えた投稿は毎晩再取得しない（既存Recordは削除・変更しない）
+  return scheduledAt < tokyoDayStartMs(tokyoDateKey(now)) && now.getTime() - scheduledAt <= METRICS_SYNC_WINDOW_MS;
 }
 
 export function hasNewerBufferMetrics(
@@ -62,13 +65,17 @@ export function normalizeBufferMetrics(
   const reposts = values.get("reposts");
   const linkClicks = values.get("clicks");
   const style = classifyStyle(draft.text);
+  const publishedAt = post.sentAt ?? post.dueAt ?? draft.scheduledAt ?? measuredAt.toISOString();
+  const ageMs = measuredAt.getTime() - Date.parse(publishedAt);
   return {
     contentId: draft.id,
     trendClusterId: draft.trendClusterId,
     platform: "x",
     purpose: draft.purpose,
     genreId: draft.genreId,
-    publishedAt: post.sentAt ?? post.dueAt ?? draft.scheduledAt ?? measuredAt.toISOString(),
+    publishedAt,
+    // 公開からの経過時間（将来のPosting Slot学習で成熟度を判定するため）
+    ...(Number.isFinite(ageMs) && ageMs >= 0 ? { snapshotHours: Math.floor(ageMs / 3_600_000) } : {}),
     impressions,
     likes,
     replies,

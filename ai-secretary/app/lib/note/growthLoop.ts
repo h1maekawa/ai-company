@@ -4,10 +4,13 @@ import {
   diagnoseFunnel,
   evaluateWinningTopics,
 } from "./operations";
+import { tokyoDateKey } from "./tokyoDate";
 import type {
   ContentGrowthStrategy,
   ContentPerformance,
+  ContentPurpose,
   PerformanceWeights,
+  PurposeBucket,
   PurposeMix,
   StrategyConfidence,
   WinningTopicPolicy,
@@ -178,9 +181,24 @@ export function growthConfidence(sampleSize: number): StrategyConfidence {
   return sampleSize >= 10 ? "high" : sampleSize >= 3 ? "medium" : "low";
 }
 
-const PURPOSE_BOUNDS: Record<keyof PurposeMix, [number, number]> = {
+export const PURPOSE_BOUNDS: Record<keyof PurposeMix, [number, number]> = {
   reach: [50, 80], noteBridge: [10, 35], monetize: [5, 20],
 };
+
+/** 投稿目的 → 学習・配分の bucket。trust は信頼獲得でも「収益化」ではないので reach 側に入れる */
+export const PURPOSE_BUCKET: Record<ContentPurpose, PurposeBucket> = {
+  reach: "reach",
+  trust: "reach",
+  "note-bridge": "noteBridge",
+  affiliate: "monetize",
+  "paid-note": "monetize",
+  "x-monetization": "monetize",
+};
+
+/** 未知のpurposeは null（学習から除外する） */
+export function purposeBucket(purpose: string): PurposeBucket | null {
+  return (PURPOSE_BUCKET as Record<string, PurposeBucket | undefined>)[purpose] ?? null;
+}
 
 function clamp(value: number, [min, max]: [number, number]) {
   return Math.min(max, Math.max(min, value));
@@ -201,9 +219,9 @@ export function improveStrategy(
   if (confidence === "low") return { strategy, applied, skipped: ["投稿サンプルが3件未満のため自動変更なし"] };
 
   const purposeScores = new Map<keyof PurposeMix, number[]>();
-  const purposeKey = (purpose: string): keyof PurposeMix => purpose === "reach" ? "reach" : purpose === "note-bridge" ? "noteBridge" : "monetize";
   for (const record of records.filter((item) => item.platform === "x")) {
-    const key = purposeKey(record.purpose);
+    const key = purposeBucket(record.purpose);
+    if (!key) continue;
     purposeScores.set(key, [...(purposeScores.get(key) ?? []), contentPerformanceScore(record, weights)]);
   }
   const ranked = [...purposeScores.entries()].filter(([, scores]) => scores.length >= 2)
@@ -269,7 +287,7 @@ export function buildDailyGrowthReview(input: {
   const paid = sumObserved(last28, (record) => record.paidPurchases ?? record.noteSales);
   const freeViews = sumObserved(last28, (record) => record.freeNoteViews);
   return {
-    date: new Date(now.getTime() + 9 * 3_600_000).toISOString().slice(0, 10),
+    date: tokyoDateKey(now),
     measuredThrough: now.toISOString(),
     dataFreshness: { x: input.xFreshness ?? (x7.some((record) => record.metricsStale) ? "partial" : "fresh"), note: input.noteFreshness ?? "unavailable" },
     xSummary: summarizeX(yesterday), noteSummary: note,

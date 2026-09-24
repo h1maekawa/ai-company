@@ -4,6 +4,7 @@ import {
   saveResearchSettings,
 } from "@/app/lib/note/research/store";
 import { normalizeApprovalPolicy } from "@/app/lib/review/approvalPolicy";
+import { withPurposeMixUpdate } from "@/app/lib/note/research/types";
 
 export const dynamic = "force-dynamic";
 
@@ -21,15 +22,16 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
     const body = await req.json();
     const current = await loadResearchSettings();
     const modeExplicit = typeof body.flags?.socialOperationMode === "string";
+    // purposeMix の正は growthStrategy.purposeMix。画面の変更をそこへ保存し、旧 purposeMix は同値のミラーにする
     const saved = await saveResearchSettings(
-      {
+      withPurposeMixUpdate({
         x: { ...current.x, ...(body.x ?? {}) },
         // 工程ごとの承認要否（要件10）。壊れた値は既定へ倒される
         approvalPolicy: normalizeApprovalPolicy({
           ...current.approvalPolicy,
           ...(body.approvalPolicy ?? {}),
         }),
-        purposeMix: { ...current.purposeMix, ...(body.purposeMix ?? {}) },
+        purposeMix: current.purposeMix,
         flags: { ...current.flags, ...(body.flags ?? {}) },
         performanceWeights: {
           ...current.performanceWeights,
@@ -41,7 +43,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
         },
         noteTags: Array.isArray(body.noteTags) ? body.noteTags : current.noteTags,
         growthStrategy: current.growthStrategy,
-      },
+      }, body.purposeMix),
       { modeExplicit }
     );
     return NextResponse.json(saved);

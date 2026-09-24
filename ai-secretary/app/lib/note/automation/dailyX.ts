@@ -8,43 +8,42 @@ import { filterHotConfidenceCandidates } from "@/app/lib/note/research/cluster";
 import {
   appendHistory,
   loadClusters,
+  loadDailyXPlans,
   loadExperiences,
   loadResearchInbox,
   loadResearchSettings,
   loadSocialDrafts,
   saveClusters,
   saveSocialDrafts,
+  upsertDailyXPlan,
 } from "@/app/lib/note/research/store";
 import { createPost, isBufferConfigured } from "@/app/lib/note/publishing/buffer";
 import { prepareXDraftForPublishing } from "@/app/lib/note/safetyRepair";
 import {
-  canPublishToday,
-  claimOnce,
-  incrementToday,
+  claimStrict,
+  countForTokyoDate,
+  incrementForTokyoDate,
+  releaseClaim,
 } from "@/app/lib/note/publishing/queue";
 import { draftBlocks, postToSlack } from "@/app/lib/integrations/slack/blocks";
-import {
-  DEFAULT_X_SCHEDULE,
-  scheduledAtInTokyo,
-} from "@/app/lib/note/operations";
-import type { SocialDraft } from "@/app/lib/note/research/types";
-import { recordPipelineSteps, type RecordStepInput } from "@/app/lib/agents/recorder";
+import type { DailyXPlanSlot, SocialDraft, TrendCluster } from "@/app/lib/note/research/types";
+import { recordPipelineSteps } from "@/app/lib/agents/recorder";
 import { startTrace } from "@/app/lib/company/trace";
+import { executeDailyXPlan, type DailyXResult } from "./dailyXExecution";
 
-export type DailyXResult = {
-  skipped?: boolean;
-  reason?: string;
-  clusterId?: string;
-  generated: number;
-  scheduledDraftId?: string;
-  scheduledDraftIds?: string[];
-  safetyBlocked?: number;
-  /** Human Escalation（要件P1.6）: 異常検知でSlackへ送った場合のみtrue */
-  escalated?: boolean;
-  slackDelivered?: boolean;
-  slackError?: string;
-};
+export type { DailyXResult } from "./dailyXExecution";
+export { executeDailyXPlan } from "./dailyXExecution";
 
+/** x-daily-publish route の maxDuration(300) + 60s。処理中にLockが切れて二重起動しないようにする */
+export const DAILY_X_LOCK_TTL_SEC = 360;
+
+/** Phase 0 は Buffer channel が env の単一channelのため primary 固定 */
+const ACCOUNT_KEY = "primary";
+
+/**
+ * 毎日のX自動化。依存を束ねて executeDailyXPlan（Plan駆動・retry安全）を呼ぶだけにする。
+ * Safety Gate / Fact Gate / Buffer final safety / 運用モードの意味は変更しない。
+ */
 export async function runDailyXAutomation(): Promise<DailyXResult> {
   if (process.env.X_DAILY_AUTOMATION_ENABLED !== "true") {
     return {
@@ -62,295 +61,122 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       durationMs: Date.now() - startedAt,
     });
   };
-
+  /** 依存呼び出しの所要時間だけを記録する（本文・秘密は出さない） */
+  const timed = <A extends unknown[], R>(phase: string, fn: (...args: A) => Promise<R>) => async (...args: A): Promise<R> => {
+    const startedAt = Date.now();
+    try { return await fn(...args); } finally { logPhaseDuration(phase, startedAt); }
+  };
   const loadContextStartedAt = Date.now();
-  const [settings, clusters, items, experiences, brandFile, ideaFile, existingDrafts, styleProfile] =
-    await Promise.all([
-      loadResearchSettings(),
-      loadClusters(),
-      loadResearchInbox(),
-      loadExperiences(),
-      loadBrand(),
-      loadIdeas(),
-      loadSocialDrafts(),
-      loadStyleProfile(),
-    ]);
+  const [settings, items, experiences, brandFile, ideaFile, styleProfile] = await Promise.all([
+    loadResearchSettings(),
+    loadResearchInbox(),
+    loadExperiences(),
+    loadBrand(),
+    loadIdeas(),
+    loadStyleProfile(),
+  ]);
   logPhaseDuration("load-context", loadContextStartedAt);
+  const primaryAccount = brandFile.xAccounts[0];
+  if (!primaryAccount) throw new Error("Xアカウント設定がありません");
+  // 生成済み（同一Run）も類似チェックの対象に含める
+  const generatedThisRun: SocialDraft[] = [];
 
-  const candidateSelectStartedAt = Date.now();
-  const eligible = clusters.filter((candidate) => candidate.status === "candidate" && !candidate.blocked);
-  // 全件Legacyなら旧スコアへfallback。新旧混在時はLegacyを紛れ込ませず、MEDIUM/HIGHだけを使う。
-  const candidates = filterHotConfidenceCandidates(eligible);
-  const tokyoDayNumber = Number(new Date(Date.now() + 9 * 3_600_000).toISOString().slice(8, 10));
-  const explorationDay = tokyoDayNumber % 5 === 0; // 約20%は新しいTopic/Patternを探索する。
-  const cluster = candidates.sort((left, right) => {
-    if (explorationDay) return (right.hotScore ?? right.totalScore) - (left.hotScore ?? left.totalScore);
-    const priority = (candidate: typeof left) => {
-      const topic = settings.growthStrategy.topicPriority.indexOf(candidate.id);
-      const genre = Math.min(...candidate.genreIds.map((id) => {
-        const index = settings.growthStrategy.genrePriority.indexOf(id);
-        return index < 0 ? 99 : index;
-      }), 99);
-      return (topic < 0 ? 99 : topic) * 100 + genre;
-    };
-    return priority(left) - priority(right) || (right.hotScore ?? right.totalScore) - (left.hotScore ?? left.totalScore);
-  })[0];
-  logPhaseDuration("candidate-select", candidateSelectStartedAt);
-
-  if (!cluster) {
-    return {
-      skipped: true,
-      reason: eligible.length > 0
-        ? "Hot判定の信頼度がLOWのみのため、本日の自動投稿を見送りました"
-        : "利用可能な候補がありません",
-      generated: 0,
-      escalated: false,
-    };
-  }
-
-  /*
-   * 役割ごとの実行記録（要件3）。処理そのものは変えず、誰が何をやったかだけ残す。
-   * この実行全体を1つのトレースにまとめる（Phase 4 §5）。
-   * 候補選定 → 生成 → ゲート → 予約 が同じ traceId になることで、
-   * Workflow Candidate が手順として検出できるようになる。
-   */
-  const stepLog: RecordStepInput[] = [
+  const result = await executeDailyXPlan(
     {
-      stepId: "research.select",
-      status: "done",
-      result: `候補「${cluster.title}」を選定（Hot ${cluster.hotScore ?? "旧:" + cluster.totalScore} / confidence ${cluster.hotConfidence ?? "legacy"}）`,
+      accountKey: ACCOUNT_KEY,
+      strategy: settings.growthStrategy,
+      maxXPostsPerDay: settings.flags.maxXPostsPerDay,
+      autopilot: settings.flags.publishingEnabled && settings.flags.xAutoPublish,
+      bufferConfigured: isBufferConfigured(),
+      primaryAccountId: primaryAccount.id,
     },
-  ];
-
-  const genreId = cluster.genreIds[0] ?? DEFAULT_GENRES[0].id;
-  const genre =
-    ideaFile.genres.find((candidate) => candidate.id === genreId) ??
-    DEFAULT_GENRES.find((candidate) => candidate.id === genreId) ??
-    DEFAULT_GENRES[0];
-  const account = accountForGenre(brandFile.xAccounts, genre.id) ?? brandFile.xAccounts[0];
-  if (!account) throw new Error("Xアカウント設定がありません");
-
-  const usable = usableExperiences(experiences, cluster.matchedExperienceIds);
-  const generated: SocialDraft[] = [];
-  const warnings: string[] = [];
-  const generateStartedAt = Date.now();
-  for (const slot of DEFAULT_X_SCHEDULE) {
-    // 投資→X連携（要件4・13・16）: 信頼枠でだけ試みる。材料が無い/Fact Gate却下なら通常生成へfallback
-    if (slot.purpose === "trust" && settings.flags.investmentBridgeEnabled) {
-      const investmentDraft = await tryGenerateInvestmentDraft({
-        brand: brandFile.brand,
-        genre,
-        account,
-        purpose: slot.purpose,
-        pastPosts: [...existingDrafts, ...generated].map((draft) => ({
-          label: `過去投稿(${draft.id})`,
-          text: draft.text,
-        })),
-        styleProfile,
-      }).catch((error) => {
-        console.error("[daily-x] 投資→X連携に失敗。通常投稿へfallbackします:", error);
-        return null;
-      });
-      if (investmentDraft) {
-        generated.push(investmentDraft);
-        continue;
-      }
-    }
-    const result = await generateXPosts({
-      cluster,
-      items: items.filter((item) => cluster.researchItemIds.includes(item.id)),
-      experiences: usable,
-      brand: brandFile.brand,
-      genre,
-      account,
-      purpose: slot.purpose,
-      pastPosts: [...existingDrafts, ...generated].map((draft) => ({
-        label: `過去投稿(${draft.id})`,
-        text: draft.text,
-      })),
-      preferredPatterns: settings.growthStrategy.patternPriority,
-      styleProfile,
-    });
-    const candidate = result.drafts.find((draft) => !draft.failureReason);
-    if (candidate) generated.push(candidate);
-    if (result.warning) warnings.push(result.warning);
-  }
-  logPhaseDuration("generate", generateStartedAt);
-  if (generated.length === 0) {
-    await recordPipelineSteps(
-      [
-        ...stepLog,
-        { stepId: "writer.generate", status: "failed", failureReason: warnings[0] ?? "生成できませんでした" },
-      ],
-      trace
-    );
-    throw new Error(warnings[0] ?? "X投稿案を生成できませんでした");
-  }
-  stepLog.push({
-    stepId: "writer.generate",
-    status: "done",
-    result: `投稿案を${generated.length}件生成`,
-  });
-
-  const safetyGateStartedAt = Date.now();
-  const gated = [];
-  for (const draft of generated) {
-    const prepared = await prepareXDraftForPublishing({
-      draft,
-      brand: brandFile.brand,
-      experiences: usable,
-    });
-    gated.push({ draft: prepared.draft, gate: prepared });
-  }
-  const prepared = gated.map(({ draft, gate }) =>
-    gate.safe ? draft : { ...draft, failureReason: gate.reasons.join(" / ") }
-  );
-  const gateBlockedCount = prepared.filter((draft) => Boolean(draft.failureReason)).length;
-  logPhaseDuration("safety-gate", safetyGateStartedAt);
-  stepLog.push({
-    stepId: "fact_check.gate",
-    status: "done",
-    result:
-      gateBlockedCount > 0
-        ? `${prepared.length}件を検査し、${gateBlockedCount}件が要確認`
-        : `${prepared.length}件すべて通過`,
-  });
-
-  const saveDraftsStartedAt = Date.now();
-  let drafts = [...prepared, ...existingDrafts];
-  await saveSocialDrafts(drafts);
-  await saveClusters(
-    clusters.map((candidate) =>
-      candidate.id === cluster.id ? { ...candidate, status: "used" as const } : candidate
-    )
-  );
-  logPhaseDuration("save-drafts", saveDraftsStartedAt);
-
-  const scheduledDraftIds: string[] = [];
-  const scheduleMessages: string[] = [];
-  const safeDrafts = prepared.filter((draft) => !draft.failureReason).slice(0, 3);
-
-  const bufferScheduleStartedAt = Date.now();
-  if (settings.flags.publishingEnabled && settings.flags.xAutoPublish && safeDrafts.length > 0) {
-    if (!isBufferConfigured()) {
-      scheduleMessages.push("自動予約は行いませんでした: Bufferの環境変数が未設定です。");
-    } else {
-      for (const safeDraft of safeDrafts) {
-        const slot =
-          DEFAULT_X_SCHEDULE.find((candidate) => candidate.purpose === safeDraft.purpose) ??
-          DEFAULT_X_SCHEDULE[0];
-        const limit = await canPublishToday("x", settings.flags.maxXPostsPerDay);
-        if (!limit.allowed) {
-          scheduleMessages.push(`上限到達: ${slot.time}（${settings.flags.maxXPostsPerDay}件/日）`);
-          break;
+    {
+      now: () => new Date(),
+      loadPlan: async (date, accountKey) => (await loadDailyXPlans()).find((plan) => plan.date === date && plan.accountKey === accountKey) ?? null,
+      savePlan: async (plan) => { await upsertDailyXPlan(plan); },
+      loadCandidates: timed("candidate-select", async () => {
+        const eligible = (await loadClusters()).filter((candidate) => candidate.status === "candidate" && !candidate.blocked);
+        // 全件Legacyなら旧スコアへfallback。新旧混在時はLegacyを紛れ込ませず、MEDIUM/HIGHだけを使う。
+        return { eligibleCount: eligible.length, candidates: filterHotConfidenceCandidates(eligible) };
+      }),
+      findCluster: async (id) => (await loadClusters()).find((cluster) => cluster.id === id) ?? null,
+      markClustersUsed: async (ids) => {
+        const clusters = await loadClusters();
+        if (!clusters.some((cluster) => ids.includes(cluster.id) && cluster.status !== "used")) return;
+        await saveClusters(clusters.map((cluster) => (ids.includes(cluster.id) ? { ...cluster, status: "used" as const } : cluster)));
+      },
+      generateForSlot: timed("generate", async (slot: DailyXPlanSlot, cluster: TrendCluster) => {
+        const genreId = cluster.genreIds[0] ?? DEFAULT_GENRES[0].id;
+        const genre =
+          ideaFile.genres.find((candidate) => candidate.id === genreId) ??
+          DEFAULT_GENRES.find((candidate) => candidate.id === genreId) ??
+          DEFAULT_GENRES[0];
+        const account = accountForGenre(brandFile.xAccounts, genre.id) ?? primaryAccount;
+        const usable = usableExperiences(experiences, cluster.matchedExperienceIds);
+        const existingDrafts = await loadSocialDrafts();
+        const pastPosts = [...existingDrafts, ...generatedThisRun].map((draft) => ({ label: `過去投稿(${draft.id})`, text: draft.text }));
+        // 投資→X連携（要件4・13・16）: trust枠でだけ試みる。材料が無い/Fact Gate却下なら通常生成へfallback
+        if (slot.purpose === "trust" && settings.flags.investmentBridgeEnabled) {
+          const investmentDraft = await tryGenerateInvestmentDraft({ brand: brandFile.brand, genre, account, purpose: slot.purpose, pastPosts, styleProfile }).catch((error) => {
+            console.error("[daily-x] 投資→X連携に失敗。通常投稿へfallbackします:", error);
+            return null;
+          });
+          if (investmentDraft) { generatedThisRun.push(investmentDraft); return { draft: investmentDraft }; }
         }
-        let scheduledAt = scheduledAtInTokyo(new Date(), slot.time);
-        if (new Date(scheduledAt).getTime() <= Date.now()) {
-          scheduledAt = scheduledAtInTokyo(new Date(Date.now() + 86_400_000), slot.time);
-        }
-        const tokyoDay = new Date(new Date(scheduledAt).getTime() + 9 * 3_600_000)
-          .toISOString()
-          .slice(0, 10);
-        const idempotencyKey = `daily-x:${tokyoDay}:${slot.time}`;
-        if (!(await claimOnce(idempotencyKey))) {
-          scheduleMessages.push(`予約済み: ${slot.time}`);
-          continue;
-        }
-        const post = await createPost({
-          draft: safeDraft,
-          safetyContext: { brand: brandFile.brand, experiences: usable },
+        const generated = await generateXPosts({
+          cluster,
+          items: items.filter((item) => cluster.researchItemIds.includes(item.id)),
+          experiences: usable,
+          brand: brandFile.brand,
+          genre,
+          account,
+          purpose: slot.purpose,
+          pastPosts,
+          preferredPatterns: settings.growthStrategy.patternPriority,
+          styleProfile,
+        });
+        const draft = generated.drafts.find((candidate) => !candidate.failureReason) ?? null;
+        if (draft) generatedThisRun.push(draft);
+        return { draft, warning: generated.warning };
+      }),
+      safetyGate: timed("safety-gate", async (draft: SocialDraft) => {
+        const cluster = (await loadClusters()).find((item) => item.id === draft.trendClusterId);
+        const prepared = await prepareXDraftForPublishing({ draft, brand: brandFile.brand, experiences: usableExperiences(experiences, cluster?.matchedExperienceIds ?? []) });
+        return { draft: prepared.draft, safe: prepared.safe, reasons: prepared.reasons };
+      }),
+      loadDrafts: loadSocialDrafts,
+      saveDrafts: timed("save-drafts", async (drafts: SocialDraft[]) => { await saveSocialDrafts(drafts); }),
+      claimStrict: (key) => claimStrict(key),
+      releaseClaim: (key) => releaseClaim(key),
+      countForTokyoDate: (dateKey) => countForTokyoDate("x", dateKey, { strict: true }),
+      incrementForTokyoDate: (dateKey) => incrementForTokyoDate("x", dateKey),
+      createPost: timed("buffer-schedule", async (draft: SocialDraft, scheduledAt: string) => {
+        const cluster = (await loadClusters()).find((item) => item.id === draft.trendClusterId);
+        return createPost({
+          draft,
+          safetyContext: { brand: brandFile.brand, experiences: usableExperiences(experiences, cluster?.matchedExperienceIds ?? []) },
           mode: "customScheduled",
           scheduledAt,
           maxScheduled: settings.flags.maxBufferScheduled,
         });
-        if (post.ok) {
-          scheduledDraftIds.push(safeDraft.id);
-          const now = new Date().toISOString();
-          drafts = drafts.map((draft) =>
-            draft.id === safeDraft.id
-              ? {
-                  ...draft,
-                  status: "queued" as const,
-                  bufferPostId: post.data.id,
-                  scheduledAt: post.data.dueAt ?? scheduledAt,
-                  updatedAt: now,
-                }
-              : draft
-          );
-          await saveSocialDrafts(drafts);
-          await incrementToday("x");
-          await appendHistory({
-            id: `h${Date.now().toString(36)}`,
-            platform: "x",
-            contentId: safeDraft.id,
-            action: "毎日自動化でBufferへ予約",
-            at: now,
-            detail: `${slot.role} / 予定 ${post.data.dueAt ?? scheduledAt} / cluster ${cluster.id} / Hot ${cluster.hotScore ?? "legacy"}`,
-          });
-          scheduleMessages.push(`予約完了: ${slot.time} ${slot.role}`);
-        } else {
-          scheduleMessages.push(`予約失敗 ${slot.time}: ${post.error.message}`);
-        }
-      }
+      }),
+      appendHistory: (entry) => appendHistory(entry),
+      notifySlack: (text, drafts) => postToSlack(text, drafts.flatMap((draft) => draftBlocks(draft))),
+      logError: (message, detail) => console.error(message, JSON.stringify(detail)),
     }
-  } else if (!settings.flags.publishingEnabled || !settings.flags.xAutoPublish) {
-    scheduleMessages.push("自動投稿フラグがOFFのため下書き保存で停止しました。");
-  }
-  logPhaseDuration("buffer-schedule", bufferScheduleStartedAt);
-
-  // Human Escalation（要件P1.6）: 通常成功時は毎回通知しない。異常時のみSlackへ送る。
-  // 通常の実行結果はWeekly CEO Reportへ集約する。
-  const safetyBlocked = prepared.filter((draft) => Boolean(draft.failureReason)).length;
-  stepLog.push(
-    scheduledDraftIds.length > 0
-      ? {
-          stepId: "publisher.schedule",
-          status: "done",
-          result: `${scheduledDraftIds.length}件をBufferへ予約`,
-        }
-      : {
-          stepId: "publisher.schedule",
-          status: "failed",
-          failureReason: scheduleMessages.join(" / ") || "予約しませんでした",
-        }
   );
-  await recordPipelineSteps(stepLog, trace);
 
-  const bufferFailureCount = scheduleMessages.filter((m) => m.startsWith("予約失敗")).length;
-  const bufferAuthOrConfigError = scheduleMessages.some(
-    (m) => m.includes("未設定です") || m.includes("認証")
-  );
-  const secretOrPersonalDataDetected = prepared.some(
-    (draft) => draft.failureReason?.includes("機密情報") || draft.failureReason?.includes("個人情報")
-  );
-  const escalate =
-    safetyBlocked > 0 || bufferFailureCount >= 2 || bufferAuthOrConfigError || secretOrPersonalDataDetected;
+  await recordPipelineSteps(
+    [
+      { stepId: "research.select", status: result.planId ? "done" : "failed", ...(result.planId ? { result: `Plan ${result.planId}` } : { failureReason: result.reason ?? "Planを作成できませんでした" }) },
+      { stepId: "writer.generate", status: "done", result: `投稿案を${result.generated}件生成` },
+      { stepId: "fact_check.gate", status: "done", result: `Safety/Fact Gate却下 ${result.safetyBlocked ?? 0}件` },
+      (result.scheduledDraftIds?.length ?? 0) > 0
+        ? { stepId: "publisher.schedule", status: "done", result: `${result.scheduledDraftIds!.length}件をBufferへ予約` }
+        : { stepId: "publisher.schedule", status: "failed", failureReason: result.haltedReason ?? result.reason ?? "予約しませんでした" },
+    ],
+    trace
+  ).catch((error) => console.error("[daily-x] pipeline記録に失敗（非致命）:", error));
 
-  let slack: { ok: boolean; error?: string } = { ok: true };
-  if (escalate) {
-    slack = await postToSlack(
-      [
-        "⚠️ SNS事業部 異常検知",
-        `本日のX投稿案を${prepared.length}件作成しました。`,
-        scheduleMessages.join(" / "),
-        warnings.length > 0 ? `注意: ${[...new Set(warnings)].join(" / ")}` : "",
-        safetyBlocked > 0 ? `Safety/Fact Gateで${safetyBlocked}件却下しました。` : "",
-        secretOrPersonalDataDetected ? "機密情報・個人情報らしき文字列を検出したため却下しました。" : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-      prepared.flatMap((draft) => draftBlocks(draft))
-    );
-  }
-
-  return {
-    clusterId: cluster.id,
-    generated: prepared.length,
-    scheduledDraftId: scheduledDraftIds[0],
-    scheduledDraftIds,
-    safetyBlocked,
-    escalated: escalate,
-    slackDelivered: slack.ok,
-    slackError: slack.error,
-  };
+  return result;
 }

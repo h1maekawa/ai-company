@@ -14,13 +14,26 @@ const BUFFER_ENDPOINT = "https://api.buffer.com";
 export type BufferMode = "saveToDraft" | "addToQueue" | "customScheduled";
 
 export type BufferError = {
-  kind: "auth" | "rate-limit" | "mutation" | "channel" | "config" | "network" | "slot-limit" | "validation";
+  /**
+   * ambiguous = 送信済みかどうか分からない（タイムアウト・通信例外・5xx・応答解析不能・IDの無い成功応答）。
+   * 自動retryしてはいけない。network は後方互換のため型に残す（新しくは返さない）。
+   */
+  kind: "auth" | "rate-limit" | "mutation" | "channel" | "config" | "network" | "slot-limit" | "validation" | "ambiguous";
   message: string;
   /** 人が次に何をすればよいか */
   hint?: string;
 };
 
 export type BufferResult<T> = { ok: true; data: T } | { ok: false; error: BufferError };
+
+const BUFFER_TIMEOUT_MS = 20_000;
+
+/** 結果不明（Buffer側で作成済みの可能性がある）か。true のとき自動retry・claim解放をしない */
+export function isAmbiguousBufferError(error: BufferError): boolean {
+  return error.kind === "ambiguous" || error.kind === "network";
+}
+
+const AMBIGUOUS_HINT = "Buffer側で予約済みの可能性があります。自動再試行はしません。Buffer画面で確認してください";
 
 function config(): { key: string; org: string; channel: string } | null {
   const key = process.env.BUFFER_API_KEY;
@@ -65,14 +78,15 @@ async function graphql<T>(
         Authorization: `Bearer ${cfg.key}`,
       },
       body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(BUFFER_TIMEOUT_MS),
     });
   } catch (error) {
     return {
       ok: false,
       error: {
-        kind: "network",
-        message: error instanceof Error ? error.message : "Bufferへ接続できませんでした",
-        hint: "下書きは保持しています。時間をおいて再試行してください",
+        kind: "ambiguous",
+        message: error instanceof Error ? `Bufferとの通信が完了しませんでした: ${error.message}` : "Bufferとの通信が完了しませんでした",
+        hint: AMBIGUOUS_HINT,
       },
     };
   }
@@ -98,11 +112,15 @@ async function graphql<T>(
     };
   }
 
+  if (res.status >= 500) {
+    return { ok: false, error: { kind: "ambiguous", message: `Bufferがサーバーエラーを返しました（${res.status}）`, hint: AMBIGUOUS_HINT } };
+  }
+
   let body: GraphQLResponse<T>;
   try {
     body = (await res.json()) as GraphQLResponse<T>;
   } catch {
-    return { ok: false, error: { kind: "network", message: "Bufferの応答を解析できませんでした" } };
+    return { ok: false, error: { kind: "ambiguous", message: "Bufferの応答を解析できませんでした", hint: AMBIGUOUS_HINT } };
   }
 
   if (body.errors?.length) {
@@ -121,7 +139,7 @@ async function graphql<T>(
   }
 
   if (!body.data) {
-    return { ok: false, error: { kind: "mutation", message: "Bufferが空の応答を返しました" } };
+    return { ok: false, error: { kind: "ambiguous", message: "Bufferが空の応答を返しました", hint: AMBIGUOUS_HINT } };
   }
   return { ok: true, data: body.data };
 }
@@ -262,7 +280,18 @@ export async function preflightPost(
   // 予約系のときだけ枠を確認する（下書き保存は枠を消費しない）
   if (input.mode !== "saveToDraft" && typeof input.maxScheduled === "number") {
     const count = await countScheduled();
-    if (count.ok && count.data >= input.maxScheduled) {
+    // 枠を確認できないときは送らない（fail-closed）。上限を超えて予約するより安全側に倒す
+    if (count.ok === false) {
+      return {
+        ok: false,
+        error: {
+          kind: "slot-limit",
+          message: "Bufferの予約枠を確認できません",
+          hint: "下書きは保持しています。Bufferの接続を確認してから再試行してください",
+        },
+      };
+    }
+    if (count.data >= input.maxScheduled) {
       return {
         ok: false,
         error: {
@@ -340,7 +369,7 @@ export async function createPost(
   }
   const post = result.data.createPost?.post;
   if (!post?.id) {
-    return { ok: false, error: { kind: "mutation", message: "Bufferが投稿IDを返しませんでした" } };
+    return { ok: false, error: { kind: "ambiguous", message: "Bufferが投稿IDを返しませんでした", hint: AMBIGUOUS_HINT } };
   }
   return {
     ok: true,

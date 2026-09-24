@@ -23,6 +23,7 @@ import {
   NoteArticleDraft,
   PublishJob,
   PurposeMix,
+  DailyXPlan,
   ReferenceNoteCreator,
   ReferenceXAccount,
   ResearchItem,
@@ -42,6 +43,7 @@ import {
   socialOperationModeBooleans,
 } from "./types";
 import type { DailyGrowthReview } from "../growthLoop";
+import { tokyoDateKey } from "../tokyoDate";
 
 const ROOT = "memory/personal/note";
 
@@ -58,6 +60,7 @@ export const RESEARCH_PATHS = {
   noteQueue: `${ROOT}/note-publish-queue.md`,
   viewpoints: `${ROOT}/viewpoint-library.md`,
   growthReviews: `${ROOT}/daily-growth-reviews.md`,
+  dailyXPlans: `${ROOT}/daily-x-plans.md`,
 } as const;
 
 function extractJson<T>(markdown: string): T | null {
@@ -249,7 +252,8 @@ export async function saveResearchSettings(
     xBrowserAutomationEnabled: false as const,
     xPaidApiEnabled: process.env.X_API_ENABLED === "true" && file.flags.xPaidApiEnabled,
   };
-  const safeFile = { ...file, flags };
+  // purposeMix の正は growthStrategy.purposeMix。旧 purposeMix は後方互換のミラーで常に同値にする
+  const safeFile = { ...file, flags, purposeMix: { ...file.growthStrategy.purposeMix } };
   const { x, purposeMix, performanceWeights, winningTopicPolicy } = safeFile;
   const human = [
     "## Xリサーチ",
@@ -718,4 +722,38 @@ export async function saveGrowthReviews(reviews: DailyGrowthReview[]): Promise<D
     { reviews }
   ));
   return reviews;
+}
+
+/* ─── Daily X Plan ───────────────────────── */
+
+export type DailyXPlanFile = { plans: DailyXPlan[] };
+const DAILY_X_PLAN_RETENTION_DAYS = 30;
+
+export async function loadDailyXPlans(): Promise<DailyXPlan[]> {
+  const data = await readJson<DailyXPlanFile>(RESEARCH_PATHS.dailyXPlans);
+  return Array.isArray(data?.plans) ? data.plans : [];
+}
+
+/** 直近30日（Tokyo日付）だけを保持して保存する */
+export async function saveDailyXPlans(plans: DailyXPlan[], now = new Date()): Promise<DailyXPlan[]> {
+  const cutoff = tokyoDateKey(new Date(now.getTime() - DAILY_X_PLAN_RETENTION_DAYS * 86_400_000));
+  const kept = plans.filter((plan) => plan.date >= cutoff).sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  const human = kept.slice(0, 14).map((plan) => [
+    `## ${plan.date}（${plan.accountKey}）`,
+    ...plan.slots.map((slot) => `- ${slot.scheduledTime} ${slot.purpose}${slot.exploration ? "（探索）" : ""}: **${slot.status}**${slot.failureKind ? ` — ${slot.failureKind}` : ""}`),
+  ].join("\n")).join("\n\n");
+  await write(RESEARCH_PATHS.dailyXPlans, buildDoc(
+    "note_daily_x_plans",
+    "X自動投稿の当日計画です。当日Planは再計算せず、slotの状態だけが更新されます。",
+    human || "（まだありません）",
+    { plans: kept }
+  ));
+  return kept;
+}
+
+/** 同じidのPlanを置き換えて保存する */
+export async function upsertDailyXPlan(plan: DailyXPlan): Promise<DailyXPlan> {
+  const plans = await loadDailyXPlans();
+  await saveDailyXPlans([...plans.filter((item) => item.id !== plan.id), plan]);
+  return plan;
 }

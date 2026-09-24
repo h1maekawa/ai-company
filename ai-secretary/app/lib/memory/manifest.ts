@@ -41,6 +41,7 @@ export const MEMORY_MANIFEST = {
       "memory/personal/note/content-recommendations.md",
       "memory/personal/note/content-plans.md",
       "memory/personal/note/daily-growth-reviews.md",
+      "memory/personal/note/daily-x-plans.md",
     ],
     fund: [
       "memory/personal/fund/watchlist.md",

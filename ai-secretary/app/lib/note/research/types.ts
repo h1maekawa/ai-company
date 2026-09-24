@@ -391,6 +391,79 @@ export function defaultPurposeMix(): PurposeMix {
   return { reach: 70, noteBridge: 20, monetize: 10 };
 }
 
+/**
+ * purposeMix の更新（SSOT = growthStrategy.purposeMix）。
+ * 画面からの変更を growthStrategy.purposeMix へ入れ、旧 purposeMix は同値のミラーにする。
+ */
+export function withPurposeMixUpdate<T extends { purposeMix: PurposeMix; growthStrategy: ContentGrowthStrategy }>(
+  settings: T,
+  update?: Partial<PurposeMix> | null
+): T {
+  const purposeMix = { ...settings.growthStrategy.purposeMix, ...(update ?? {}) };
+  return { ...settings, purposeMix: { ...purposeMix }, growthStrategy: { ...settings.growthStrategy, purposeMix } };
+}
+
+/* ─── Daily X Plan（当日の投稿計画。retryで再計算しない） ───────────── */
+
+export type PurposeBucket = "reach" | "noteBridge" | "monetize";
+
+export type DailyXSlotStatus =
+  | "planned"     // 未生成
+  | "generated"   // Draft生成・Safety通過、未予約
+  | "blocked"     // Safety/Fact Gateで不合格（当日は再生成しない）
+  | "scheduled"   // Buffer予約成功（終端）
+  | "failed"      // Bufferが明示的に拒否（retry可）
+  | "ambiguous"   // 送信結果不明（自動retry禁止、人間確認）
+  | "missed"      // 予定時刻を過ぎた（終端、繰り越さない）
+  | "skipped";    // 上限到達・候補なし・対象外アカウント等で実行しない
+
+export type DailyXStrategySnapshot = {
+  /** clamp・正規化後の値 */
+  purposeMix: PurposeMix;
+  /** clamp後の値（15〜30） */
+  explorationRate: number;
+  topicPriority: string[];
+  genrePriority: string[];
+  patternPriority: XPostPattern[];
+  maxXPostsPerDay: number;
+  strategyUpdatedAt?: string;
+};
+
+export type DailyXPlanSlot = {
+  /** daily-x:{date}:{accountKey}:{slotIndex}（時刻を含めない） */
+  id: string;
+  slotIndex: number;
+  purpose: ContentPurpose;
+  bucket: PurposeBucket;
+  /** "HH:MM" JST */
+  scheduledTime: string;
+  scheduledAt: string;
+  /** Phase 0 は default のみ */
+  timeSource: "default";
+  exploration: boolean;
+  /** Phase 0 は cluster のみ。R&I統合時に artifact を union へ追加する */
+  candidateRef?: { kind: "cluster"; id: string };
+  status: DailyXSlotStatus;
+  draftId?: string;
+  bufferPostId?: string;
+  failureKind?: string;
+  failureReason?: string;
+  updatedAt: string;
+};
+
+export type DailyXPlan = {
+  /** daily-x:{date}:{accountKey} */
+  id: string;
+  /** Tokyo YYYY-MM-DD */
+  date: string;
+  /** Phase 0 は "primary" 固定（Buffer channel が env の単一channelのため） */
+  accountKey: string;
+  strategySnapshot: DailyXStrategySnapshot;
+  slots: DailyXPlanSlot[];
+  generatedAt: string;
+  updatedAt: string;
+};
+
 /* ─── X投稿ドラフト ───────────────────────────── */
 
 export type SocialDraftStatus =
@@ -410,6 +483,15 @@ export type SocialDraft = {
   sourceResearchIds?: string[];
   sourceViewpointIds?: string[];
   sourceExperienceIds?: string[];
+  /** Daily X Plan からの lineage（Performanceとの紐付けは従来どおり contentId = draft.id） */
+  planId?: string;
+  planSlotId?: string;
+  exploration?: boolean;
+  strategySnapshot?: {
+    purposeMix: PurposeMix;
+    explorationRate: number;
+    strategyUpdatedAt?: string;
+  };
   /** Creator Missionからの監査可能なhandoff lineage（Knowledge本文は保存しない）。 */
   parentMissionId?: string;
   sourceStepId?: string;

@@ -191,17 +191,17 @@ test("dailyXは秘密や本文を含めず主要フェーズの所要時間を�
     "save-drafts",
     "buffer-schedule",
   ]) {
-    assert.ok(source.includes(`logPhaseDuration("${phase}"`), `${phase} の計測が必要です`);
+    // Plan駆動化後は依存呼び出しを timed("phase", ...) で包んで計測する
+    assert.ok(source.includes(`logPhaseDuration("${phase}"`) || source.includes(`timed("${phase}"`), `${phase} の計測が必要です`);
   }
   assert.match(source, /traceId: trace\.traceId/);
   assert.match(source, /durationMs: Date\.now\(\) - startedAt/);
 });
 
 test("dailyXはREVIEW時に下書き保存で止まりBuffer予約へ進まない", () => {
+  // Plan駆動化（SNS Autopilot Phase 0）後も、予約は autopilot（publishingEnabled && xAutoPublish）のときだけ
   const source = fs.readFileSync(path.join(process.cwd(), "app/lib/note/automation/dailyX.ts"), "utf8");
-  assert.match(
-    source,
-    /settings\.flags\.publishingEnabled && settings\.flags\.xAutoPublish && safeDrafts\.length > 0/
-  );
-  assert.match(source, /自動投稿フラグがOFFのため下書き保存で停止しました/);
+  const execution = fs.readFileSync(path.join(process.cwd(), "app/lib/note/automation/dailyXExecution.ts"), "utf8");
+  assert.match(source, /autopilot: settings\.flags\.publishingEnabled && settings\.flags\.xAutoPublish/);
+  assert.match(execution, /if \(!ctx\.autopilot\) \{\s*messages\.push\("自動投稿フラグがOFFのため下書き保存で停止しました。"\)/);
 });
