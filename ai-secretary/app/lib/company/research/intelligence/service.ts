@@ -2,11 +2,18 @@ import { callAI, type AIProvider } from "../../../ai/client";
 import { captureKnowledgeCandidate } from "../../../knowledge/captureService";
 import { executionTransaction } from "../../execution/transaction";
 import { loadExecutionState, saveExecutionState } from "../../execution/store";
-import { dedupeResearch, retainResearchArtifacts } from "../platform";
+import { dedupeResearch, retainResearchArtifacts, withinRuntimeBudget } from "../platform";
 import { createWebSearchProvider } from "../webProvider";
 import type { CanonicalResearchArtifact, IntelligenceArtifact, ResearchRoutingResult } from "../types";
 import { classifyResearch } from "./routing";
 import { isCanonicalArtifact, runResearchIntelligence } from "./engine";
+
+/**
+ * H: classification / provider search / synthesis / save / knowledge capture を含む
+ * request全体の期限。既存の withinRuntimeBudget（timeout wrapper）を再利用し、新Runtimeは作らない。
+ * route maxDuration（120s）より短くし、Vercel 504を正常な制御手段にしない。
+ */
+export const REQUEST_DEADLINE_MS = 100_000;
 
 /**
  * Interactive Research（User → Executive Router → R&I）の入口。
@@ -52,20 +59,24 @@ export async function runInteractiveResearch(input: { question: string; provider
   const question = input.question.trim().slice(0, 1000);
   if (!question) throw new Error("QUESTION_REQUIRED");
   const now = input.now ?? new Date();
+  const deadlineAt = now.getTime() + REQUEST_DEADLINE_MS;
   const state = await loadExecutionState();
   const existing = canonicalArtifacts(state.runtime?.researchArtifacts);
   const recentKeys = [...new Set(existing.slice().sort((a, b) => b.intelligence.asOf.localeCompare(a.intelligence.asOf)).map((artifact) => artifact.intelligence.topicKey))].slice(0, 50);
-  const llm = (message: string, systemPrompt: string) => callAI(message, systemPrompt, { provider: input.provider, responseFormat: "json" });
+  const rawLlm = (message: string, systemPrompt: string) => callAI(message, systemPrompt, { provider: input.provider, responseFormat: "json" });
+  // 分類・合成のどちらのLLM呼び出しも、request全体deadlineの残り時間でtimeoutする
+  const llm = (message: string, systemPrompt: string) => withinRuntimeBudget(rawLlm(message, systemPrompt), Math.max(1, deadlineAt - Date.now()));
 
-  // LLM分類は1回だけ。以降は決定的
+  // LLM分類は1回だけ（timeoutしてもclassifyResearch内部でtheme-researchへ安全側fallbackする）。以降は決定的
   const routing = await classifyResearch(question, recentKeys, llm);
   const web = createWebSearchProvider();
-  const result = await runResearchIntelligence({ routing, question, artifacts: existing, deps: { search: (query) => web.search(query), synthesize: llm, now } });
+  const result = await runResearchIntelligence({ routing, question, artifacts: existing, deps: { search: (query) => web.search(query), synthesize: llm, now, deadlineAt } });
   if (result.reused) return { routing, ...result };
 
   const previous = existing.find((artifact) => artifact.id === result.artifact.id);
   let artifact = result.artifact;
-  if (shouldCaptureKnowledge(artifact, previous)) {
+  // deadlineを過ぎていたらKnowledge Captureは行わない（非必須の処理でrequestを長引かせない）
+  if (Date.now() < deadlineAt && shouldCaptureKnowledge(artifact, previous)) {
     const capture = await captureKnowledgeCandidate({ content: knowledgeContent(artifact), source: "research", title: `${artifact.topic}（${artifact.intelligence.playbookId}）`, organize: false });
     artifact = { ...artifact, intelligence: { ...artifact.intelligence, knowledgeCapture: capture.ok ? { status: capture.status ?? "captured", path: capture.path } : { status: "failed", reason: capture.error } } };
   } else if (previous?.intelligence.knowledgeCapture) {
