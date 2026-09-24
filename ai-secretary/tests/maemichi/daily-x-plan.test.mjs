@@ -68,6 +68,37 @@ test("T6 weekly allocation: 70/20/10・3slot → reach 15 / noteBridge 4 / monet
   }
 });
 
+test("T7a normalizePurposeMix: 正規化後も全bucketがPURPOSE_BOUNDS内かつ合計100", () => {
+  const inputs = [
+    { reach: 0, noteBridge: 0, monetize: 20 },
+    { reach: 100, noteBridge: 0, monetize: 90 },
+    { reach: 0, noteBridge: 100, monetize: 0 },
+    { reach: 100, noteBridge: 100, monetize: 100 },
+    { reach: 70, noteBridge: 20, monetize: 10 },
+    { reach: 0, noteBridge: 0, monetize: 0 },
+    { reach: Number.NaN, noteBridge: -5, monetize: 1000 },
+  ];
+  for (const mix of inputs) {
+    const out = plan.normalizePurposeMix(mix);
+    assert.ok(Math.abs(out.reach + out.noteBridge + out.monetize - 100) < 1e-9, `sum ${JSON.stringify(mix)}`);
+    for (const key of ["reach", "noteBridge", "monetize"]) {
+      const [min, max] = growth.PURPOSE_BOUNDS[key];
+      assert.ok(out[key] >= min - 1e-9 && out[key] <= max + 1e-9, `${key}=${out[key]} for ${JSON.stringify(mix)}`);
+    }
+    assert.deepEqual(plan.normalizePurposeMix(mix), out, "決定的");
+  }
+  const regression = plan.normalizePurposeMix({ reach: 0, noteBridge: 0, monetize: 20 });
+  assert.ok(regression.monetize <= 20, "旧実装は 62.5 / 12.5 / 25 で上限20%を超えていた");
+  assert.deepEqual(plan.normalizePurposeMix({ reach: 70, noteBridge: 20, monetize: 10 }), { reach: 70, noteBridge: 20, monetize: 10 }, "範囲内で合計100なら不変");
+});
+
+test("T7b 週次quotaは正規化後の値を使い、monetize上限20%を超えない", () => {
+  const weekly = plan.allocateWeeklyPurposes({ purposeMix: { reach: 0, noteBridge: 0, monetize: 20 }, slotsPerDay: 3 });
+  assert.ok(weekly.filter((item) => item === "monetize").length <= Math.ceil(21 * 0.2));
+  const built = plan.buildDailyXPlan(input({ strategy: strategy({ purposeMix: { reach: 0, noteBridge: 0, monetize: 20 } }) }));
+  assert.ok(built.strategySnapshot.purposeMix.monetize <= 20);
+});
+
 test("T7 allocation bounds: PURPOSE_BOUNDS外のmixもclamp・正規化される", () => {
   const normalized = plan.normalizePurposeMix({ reach: 100, noteBridge: 0, monetize: 90 });
   assert.ok(Math.abs(normalized.reach + normalized.noteBridge + normalized.monetize - 100) < 1e-9);
