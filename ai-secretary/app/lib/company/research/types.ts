@@ -12,7 +12,9 @@ export type ResearchQuery = {
   allowedDomains?: string[];
   blockedDomains?: string[];
 };
-export type ResearchProviderItem = { title: string; summary: string; sourceUrl?: string; sourceName?: string; publishedAt?: string; reliability?: ResearchReliability; tags?: string[]; relatedKnowledgeIds?: string[] };
+export type ResearchProviderItem = { title: string; summary: string; sourceUrl?: string; sourceName?: string; publishedAt?: string; reliability?: ResearchReliability; tags?: string[]; relatedKnowledgeIds?: string[];
+  /** URLを持たないProvider（market/api等）が結果を一意に識別するための任意id。URLが無くてもEvidenceとして扱える */
+  evidenceId?: string };
 export type ResearchProviderResult = { items: ResearchProviderItem[]; warnings?: string[]; checkedAt?: string };
 export type ResearchProvider = { id: string; sourceType: ResearchSourceType; search(input: ResearchQuery): Promise<ResearchProviderResult> };
 
@@ -27,6 +29,8 @@ export type ResearchItem = {
   sourceType: ResearchSourceType; sourceUrl?: string; sourceName?: string; publishedAt?: string; fetchedAt: string;
   freshnessStatus: ResearchFreshness; reliability: ResearchReliability; tags: string[]; relatedKnowledgeIds: string[]; fingerprint: string;
   conflictStatus?: "NONE" | "CONFLICTING_SOURCES";
+  /** URLの無いProvider Evidenceの識別子（Providerが付けたもの）。無ければ呼び出し側が item.id を使ってよい */
+  evidenceId?: string;
 };
 export type ResearchArtifact = { id: string; topic: string; summary: string; researchItemIds: string[]; departmentContexts: Record<string, string>; usedBy: Array<{ type: "mission" | "agent" | "content" | "investment-analysis"; id: string }>; createdAt: string;
   /** Research & Intelligence が作る Canonical Artifact の本体。Department cron の要約Artifactには無い。 */
@@ -55,13 +59,30 @@ export type ResearchRoutingResult = {
   userHypothesis?: string;
 };
 
+/** Factの種別。Regexで文章から推測せず、Research synthesis schema（LLM出力）で明示させる。不正値はfail-safeで general */
+export const FACT_KINDS = ["general", "financial", "earnings", "valuation"] as const;
+export type FactKind = (typeof FACT_KINDS)[number];
+
 /** Fact単位のSource。LLM自体はSourceにならない。URLは当該実行でProviderが返したものだけ。 */
 export type ResearchFact = {
+  /** 決定的なstable id（statement正規化 + provider identityから生成。Random UUIDは使わない）。Refreshでfacts順序が変わっても参照が壊れない */
+  id: string;
   statement: string;
-  source: { url?: string; name?: string; reliability: ResearchReliability; publishedAt?: string; fetchedAt: string };
+  kind: FactKind;
+  source: {
+    url?: string;
+    /** URLを持たないProvider Evidence（market/api等）の識別子。URLが無くてもEvidenceとして扱う */
+    evidenceId?: string;
+    /** Evidenceを返したProviderの種別（ResearchItem.sourceType） */
+    providerId?: string;
+    name?: string;
+    reliability: ResearchReliability;
+    publishedAt?: string;
+    fetchedAt: string;
+  };
 };
-/** facts[] の index */
-export type FactRef = number;
+/** facts[] の stable id への参照（配列indexではない） */
+export type FactRef = string;
 
 export type InvestmentExt = {
   growthDrivers?: { statement: string; factRefs: FactRef[] }[];

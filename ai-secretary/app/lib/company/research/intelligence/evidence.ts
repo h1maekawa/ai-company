@@ -1,16 +1,17 @@
-import type { IntelligenceArtifactStatus, ResearchFact, ResearchPlaybookId, ResearchReliability } from "../types";
+import { createHash } from "node:crypto";
+import { FACT_KINDS, type FactKind, type IntelligenceArtifactStatus, type ResearchFact, type ResearchPlaybookId, type ResearchReliability } from "../types";
 
 /**
- * Source Safety。
+ * Source Safety / Evidence Integrity。
  * - LLMはSourceではない。FactのURLは当該Research実行でProviderが返したURL（allowlist）だけ。
- * - allowlist外のURLは捨て、そのFactは Evidence なしとして扱う（VERIFIED判定に数えない）。
- * - reliability UNKNOWN を PRIMARY 扱いしない。
+ * - URLの無いProvider Evidence（market/api等）も、URLが無い=Evidenceなし扱いにはしない（evidenceIdで保持する）。
+ * - reliability UNKNOWN を PRIMARY 扱いしない。host名だけで安易にPRIMARYへ昇格しない（明確なOfficial Sourceだけ）。
  */
 
 const COUNTABLE: ResearchReliability[] = ["PRIMARY", "HIGH", "MEDIUM"];
 const STRONG: ResearchReliability[] = ["PRIMARY", "HIGH"];
-/** 決算・財務数値・バリュエーションに関するFact。投資Researchでは PRIMARY / HIGH の出典でしか確定扱いしない */
-const FINANCIAL = /revenue|sales|eps|earnings|margin|guidance|valuation|p\/e|\bper\b|ev\/ebitda|free cash flow|\bfcf\b|operating income|net income|売上|利益|決算|マージン|粗利|バリュエーション|株価収益率|ガイダンス|純利益|営業利益/iu;
+/** 財務数値に関するFact kind。PRIMARY / HIGH の出典でしか確定扱いしない */
+const STRONG_ONLY_KINDS: FactKind[] = ["financial", "earnings", "valuation"];
 
 export function normalizeUrl(value: string | undefined): string | undefined {
   if (!value) return undefined;
@@ -21,18 +22,38 @@ export function sourceAllowlist(urls: Array<string | undefined>): Set<string> {
   return new Set(urls.map(normalizeUrl).filter((url): url is string => Boolean(url)));
 }
 
-/** 公式開示・IRは PRIMARY。それ以外は Provider の判定をそのまま使う（引き上げない） */
+/**
+ * 公式開示（sec.gov / *.gov）だけを自動PRIMARYにする。
+ * "ir.example.com" のようなhost名の接頭辞だけでPRIMARYへ昇格させない（誰でも登録できるため偽装できてしまう）。
+ * 判断できなければProviderが示したreliabilityをそのまま使う（URLが無くてもEvidenceなし扱いにはしない）。
+ */
 export function classifyReliability(url: string | undefined, providerReliability: ResearchReliability | undefined): ResearchReliability {
   const base = providerReliability ?? "UNKNOWN";
   const normalized = normalizeUrl(url);
-  if (!normalized) return base === "PRIMARY" ? "UNKNOWN" : base;
+  if (!normalized) return base;
   const host = new URL(normalized).hostname.toLowerCase();
-  if (host === "sec.gov" || host.endsWith(".sec.gov") || host.endsWith(".gov") || /^(?:ir|investors?)\./.test(host)) return "PRIMARY";
+  if (host === "sec.gov" || host.endsWith(".sec.gov") || host.endsWith(".gov")) return "PRIMARY";
   return base;
 }
 
-export function isFinancialStatement(statement: string): boolean {
-  return FINANCIAL.test(statement);
+/** LLM出力の kind を検証する。不正値・未設定は fail-safe で general（文章Regexからは推測しない） */
+export function normalizeFactKind(value: unknown): FactKind {
+  return (FACT_KINDS as readonly string[]).includes(value as string) ? (value as FactKind) : "general";
+}
+
+/** URL または evidenceId のどちらかがあれば Evidence ありとみなす */
+export function hasEvidence(fact: Pick<ResearchFact, "source">): boolean {
+  return Boolean(fact.source.url || fact.source.evidenceId);
+}
+
+/**
+ * Factの決定的なstable id。statement正規化 + provider identity（url優先、無ければevidenceId、それも無ければname）からfingerprintを作る。
+ * Random UUIDは使わない。同じ内容のFactは常に同じidになるため、Refreshでfacts配列の順序が変わっても参照が壊れない。
+ */
+export function factId(input: { statement: string; source: { url?: string; evidenceId?: string; name?: string } }): string {
+  const normalizedStatement = input.statement.trim().toLowerCase().replace(/\s+/g, " ");
+  const identity = input.source.url ?? input.source.evidenceId ?? input.source.name ?? "unknown";
+  return `fact_${createHash("sha256").update(`${identity}|${normalizedStatement}`).digest("hex").slice(0, 20)}`;
 }
 
 function withinTtl(fetchedAt: string, ttlHours: number, now: Date): boolean {
@@ -40,25 +61,34 @@ function withinTtl(fetchedAt: string, ttlHours: number, now: Date): boolean {
   return Number.isFinite(at) && now.getTime() - at <= ttlHours * 3_600_000;
 }
 
-/** VERIFIEDに数えてよいFactか（Δ11） */
-export function isQualifyingFact(fact: ResearchFact, context: { ttlHours: number; now: Date; investment: boolean }): boolean {
-  if (!fact.source.url) return false;
+/** VERIFIEDに数えてよいFactか。financial / earnings / valuation は PRIMARY / HIGH のみ、general は MEDIUM 以上まで */
+export function isQualifyingFact(fact: ResearchFact, context: { ttlHours: number; now: Date }): boolean {
+  if (!hasEvidence(fact)) return false;
   if (!COUNTABLE.includes(fact.source.reliability)) return false;
   if (!withinTtl(fact.source.fetchedAt, context.ttlHours, context.now)) return false;
-  if (context.investment && isFinancialStatement(fact.statement) && !STRONG.includes(fact.source.reliability)) return false;
+  if (STRONG_ONLY_KINDS.includes(fact.kind) && !STRONG.includes(fact.source.reliability)) return false;
   return true;
 }
 
-export function artifactStatus(facts: ResearchFact[], context: { ttlHours: number; now: Date; investment: boolean; providerEvidence: boolean }): IntelligenceArtifactStatus {
-  if (!context.providerEvidence || facts.length === 0) return "UNVERIFIED";
-  const qualifying = facts.filter((fact) => isQualifyingFact(fact, context)).length;
-  if (qualifying === 0) return "UNVERIFIED";
-  return qualifying === facts.length ? "VERIFIED" : "PARTIAL";
+/**
+ * Artifact全体のstatus。
+ * Refreshで保持した古い（TTL切れの）Factは分母（denominator）に入れない — activeFacts = TTL内のFactだけで判定する。
+ * Provider Evidence自体を取得できなかった場合はUNVERIFIED。
+ */
+export function artifactStatus(facts: ResearchFact[], context: { ttlHours: number; now: Date; providerEvidence: boolean }): IntelligenceArtifactStatus {
+  if (!context.providerEvidence) return "UNVERIFIED";
+  const activeFacts = facts.filter((fact) => withinTtl(fact.source.fetchedAt, context.ttlHours, context.now));
+  if (activeFacts.length === 0) return "UNVERIFIED";
+  const qualifying = activeFacts.filter((fact) => isQualifyingFact(fact, context));
+  if (qualifying.length === 0) return "UNVERIFIED";
+  return qualifying.length === activeFacts.length ? "VERIFIED" : "PARTIAL";
 }
 
-/** 投資Researchで Evidence不足の財務Factを Unknown へ残すための一覧 */
-export function unverifiedFinancialFacts(facts: ResearchFact[]): string[] {
-  return facts.filter((fact) => isFinancialStatement(fact.statement) && !(fact.source.url && STRONG.includes(fact.source.reliability))).map((fact) => `財務Factの出典が不十分なため未確定: ${fact.statement.slice(0, 160)}`);
+/** financial / earnings / valuation のうち、出典が不十分（URL/evidenceId無し、またはPRIMARY/HIGH未満）なFactをUnknownへ残すための一覧 */
+export function underEvidencedStrongFacts(facts: ResearchFact[]): string[] {
+  return facts
+    .filter((fact) => STRONG_ONLY_KINDS.includes(fact.kind) && !(hasEvidence(fact) && STRONG.includes(fact.source.reliability)))
+    .map((fact) => `${fact.kind}Factの出典が不十分なため未確定: ${fact.statement.slice(0, 160)}`);
 }
 
 export function isInvestmentPlaybook(playbookId: ResearchPlaybookId): boolean {
@@ -66,11 +96,10 @@ export function isInvestmentPlaybook(playbookId: ResearchPlaybookId): boolean {
 }
 
 /**
- * Refresh時（Δ8）: 今回取得できなかった旧Factは fetchedAt を元の値のまま残す。
- * 新しいFactを先頭に置き、既存 factRefs（新Factへの参照）がずれないようにする。
+ * Refresh時: 今回取得できなかった旧Factは fetchedAt を元の値のまま残す。
+ * fact.id が内容から決定的に決まるため、重複判定・参照の安定性はidだけで成立する（新しいFactを先頭に置く）。
  */
 export function mergeRefreshedFacts(fresh: ResearchFact[], previous: ResearchFact[]): ResearchFact[] {
-  const key = (fact: ResearchFact) => `${fact.source.url ?? ""}|${fact.statement.trim().toLowerCase()}`;
-  const seen = new Set(fresh.map(key));
-  return [...fresh, ...previous.filter((fact) => !seen.has(key(fact)))];
+  const seen = new Set(fresh.map((fact) => fact.id));
+  return [...fresh, ...previous.filter((fact) => !seen.has(fact.id))];
 }
