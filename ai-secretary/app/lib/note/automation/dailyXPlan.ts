@@ -29,19 +29,25 @@ export function dailyXSlotId(date: string, accountKey: string, slotIndex: number
   return `${dailyXPlanId(date, accountKey)}:${slotIndex}`;
 }
 
-/** PURPOSE_BOUNDS でclampし、合計100へ正規化する */
+/**
+ * PURPOSE_BOUNDS 内に収めたまま合計100へ正規化する（bounded normalization）。
+ * 1) 各bucketをboundsへclamp
+ * 2) 合計が100を超える分は「下限までの余裕」に比例して減らし、足りない分は「上限までの余裕」に比例して増やす
+ * 下限の合計(65) ≤ 100 ≤ 上限の合計(135) なので1回の調整で必ず成立し、どのbucketもboundsを越えない。
+ * 決定的（同じ入力なら同じ結果）。
+ */
 export function normalizePurposeMix(mix: PurposeMix): PurposeMix {
-  const clamped = {
-    reach: clamp(Number(mix.reach) || 0, PURPOSE_BOUNDS.reach),
-    noteBridge: clamp(Number(mix.noteBridge) || 0, PURPOSE_BOUNDS.noteBridge),
-    monetize: clamp(Number(mix.monetize) || 0, PURPOSE_BOUNDS.monetize),
-  };
-  const total = clamped.reach + clamped.noteBridge + clamped.monetize;
-  return {
-    reach: (clamped.reach / total) * 100,
-    noteBridge: (clamped.noteBridge / total) * 100,
-    monetize: (clamped.monetize / total) * 100,
-  };
+  const keys = BUCKET_ORDER;
+  const value = Object.fromEntries(keys.map((key) => [key, clamp(Number.isFinite(Number(mix[key])) ? Number(mix[key]) : 0, PURPOSE_BOUNDS[key])])) as PurposeMix;
+  const total = keys.reduce((sum, key) => sum + value[key], 0);
+  if (total > 100) {
+    const room = keys.reduce((sum, key) => sum + (value[key] - PURPOSE_BOUNDS[key][0]), 0);
+    for (const key of keys) value[key] -= ((total - 100) * (value[key] - PURPOSE_BOUNDS[key][0])) / room;
+  } else if (total < 100) {
+    const room = keys.reduce((sum, key) => sum + (PURPOSE_BOUNDS[key][1] - value[key]), 0);
+    for (const key of keys) value[key] += ((100 - total) * (PURPOSE_BOUNDS[key][1] - value[key])) / room;
+  }
+  return value;
 }
 
 /**

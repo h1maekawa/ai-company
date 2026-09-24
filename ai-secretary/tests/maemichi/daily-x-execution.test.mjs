@@ -37,6 +37,7 @@ function harness(options = {}) {
     savePlan: async (plan) => {
       if (state.fail.savePlanAlways) throw new Error("plan save failed");
       if (state.fail.savePlanWhenScheduled && plan.slots.some((slot) => slot.status === "scheduled")) { state.fail.savePlanWhenScheduled = false; throw new Error("plan save failed"); }
+      if (state.fail.savePlanWhenStatus && plan.slots.some((slot) => slot.status === state.fail.savePlanWhenStatus)) { state.fail.savePlanWhenStatus = undefined; throw new Error("plan save failed"); }
       state.plans.set(plan.id, structuredClone(plan));
     },
     loadCandidates: async () => ({ eligibleCount: state.clusters.length, candidates: state.clusters }),
@@ -351,4 +352,61 @@ test("Safety/Fact Gate不合格は blocked（当日は再生成しない）", as
   const generate = h.state.calls.generate;
   await h.run();
   assert.equal(h.state.calls.generate, generate);
+});
+
+test("T27a generation persistence recovery: Draft保存成功・Plan保存失敗 → 次回は再生成せずgeneratedへ回復", async () => {
+  const h = harness({ ctx: { maxXPostsPerDay: 1, autopilot: false }, fail: { savePlanWhenStatus: "generated" } });
+  await assert.rejects(h.run());
+  assert.equal(h.plan().slots[0].status, "planned", "Planはplannedのまま");
+  const saved = h.state.drafts.find((draft) => draft.planSlotId === h.plan().slots[0].id);
+  assert.ok(saved, "Draftは保存済み");
+  const text = saved.text;
+  const generate = h.state.calls.generate;
+  await h.run();
+  assert.equal(h.state.calls.generate, generate, "LLM再生成0回");
+  assert.equal(h.plan().slots[0].status, "generated");
+  assert.equal(h.plan().slots[0].draftId, saved.id);
+  assert.equal(h.state.drafts.filter((draft) => draft.planSlotId === h.plan().slots[0].id).length, 1);
+  assert.equal(h.state.drafts.find((draft) => draft.id === saved.id).text, text, "本文を変更しない");
+});
+
+test("T27a' 回復したDraftは通常フローで予約される（autopilot）", async () => {
+  const h = harness({ ctx: { maxXPostsPerDay: 1 }, fail: { savePlanWhenStatus: "generated" } });
+  await assert.rejects(h.run());
+  const saved = h.state.drafts.find((draft) => draft.planSlotId === h.plan().slots[0].id);
+  await h.run();
+  assert.equal(h.state.calls.generate, 1);
+  assert.deepEqual(h.state.calls.postedDrafts, [saved.id]);
+  assert.equal(h.plan().slots[0].status, "scheduled");
+});
+
+test("T27b Safety不合格Draft保存成功・blocked保存失敗 → 次回は生成0回でblockedへ回復、createPost 0回", async () => {
+  const h = harness({ ctx: { maxXPostsPerDay: 1 }, blockSlot: 0, fail: { savePlanWhenStatus: "blocked" } });
+  await assert.rejects(h.run());
+  const saved = h.state.drafts.find((draft) => draft.planSlotId === h.plan().slots[0].id);
+  assert.ok(saved.failureReason);
+  await h.run();
+  assert.equal(h.state.calls.generate, 1);
+  assert.equal(h.plan().slots[0].status, "blocked");
+  assert.equal(h.plan().slots[0].failureKind, "safety-gate");
+  assert.equal(h.plan().slots[0].draftId, saved.id);
+  assert.equal(h.state.calls.createPost, 0);
+});
+
+test("T27c 同じplanSlotIdのDraftが複数 → 1件を選ばず自動予約しない・Human Escalation", async () => {
+  const h0 = harness({ ctx: { autopilot: false } });
+  await h0.run();
+  const plan = structuredClone(h0.plan());
+  const slot = plan.slots[0];
+  const original = h0.state.drafts.find((draft) => draft.id === slot.draftId);
+  slot.status = "planned"; delete slot.draftId;
+  const drafts = [...h0.state.drafts, { ...original, id: "duplicate-draft" }];
+  const h = harness({ plans: [plan], drafts });
+  const result = await h.run();
+  assert.equal(h.state.calls.generate, 0, "再生成もしない");
+  assert.equal(h.plan().slots[0].status, "skipped");
+  assert.equal(h.plan().slots[0].failureKind, "duplicate-lineage");
+  assert.ok(!h.state.calls.postedDrafts.includes(original.id) && !h.state.calls.postedDrafts.includes("duplicate-draft"), "どちらもpublishしない");
+  assert.equal(result.escalated, true);
+  assert.match(h.state.calls.slack.join("\n"), /同じslotのDraftが複数/);
 });
