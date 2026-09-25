@@ -19,7 +19,7 @@ export async function executeMissionSkill(input: {
   const implementation = getSkillImplementation(input.skillId);
   if (!implementation) return { ...base, ok: false, error: "SKILL_HANDLER_NOT_REGISTERED" };
   try {
-    const result = implementation.run(implementation.buildMissionInput(input.objective, input.context));
+    const result = await implementation.run(implementation.buildMissionInput(input.objective, input.context));
     if (!result.markdown.trim() || result.markdown.length > 50_000)
       return { ...base, ok: false, error: "INVALID_SKILL_OUTPUT" };
     return { ...base, ok: true, ...result };

@@ -54,7 +54,7 @@ export async function executeSkill(
       };
     }
 
-    const result = implementation.run(input ?? {});
+    const result = await implementation.run(input ?? {});
 
     // 学び候補のCapture（非致命。失敗してもSkill結果は返す）
     const wantCapture =

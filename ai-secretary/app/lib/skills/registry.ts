@@ -187,6 +187,26 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
       "朝会レポートMarkdown（今日やること/最重要/止まっていること/投資注目/note注目/HD営業進捗/売上最大行動）",
     status: "planned",
   },
+  {
+    id: "get_cashflow_summary", name: "13週CF Summary", category: "external", status: "implemented",
+    description: "Crestix CF Engine由来の現在残高・1週/1ヶ月/13週・最低残高・資金ショートを取得する。",
+    allowedSecretaries: ["executive-assistant", "personal-finance"], inputSchemaDescription: "なし", outputSchemaDescription: "cashflow:v1 Summary",
+  },
+  {
+    id: "get_cashflow_week_detail", name: "13週CF Week Detail", category: "external", status: "implemented",
+    description: "指定Weekの期首・入出金内訳・純増減・期末残高を取得する。",
+    allowedSecretaries: ["executive-assistant", "personal-finance"], inputSchemaDescription: "weekNumber（1〜13）", outputSchemaDescription: "cashflow:v1 Week Detail",
+  },
+  {
+    id: "get_cashflow_alerts", name: "13週CF Alerts", category: "external", status: "implemented",
+    description: "CF Engineが生成した資金ショート・最低残高・入金遅延・大型支払・カード集中Alertを取得する。",
+    allowedSecretaries: ["executive-assistant", "personal-finance"], inputSchemaDescription: "なし", outputSchemaDescription: "cashflow:v1 Alerts",
+  },
+  {
+    id: "simulate_cashflow_scenario", name: "13週CF Scenario", category: "external", status: "implemented",
+    description: "非破壊・一時的なScenarioをCF Engineで計算し、Baseとの差分を取得する。",
+    allowedSecretaries: ["executive-assistant", "personal-finance"], inputSchemaDescription: "revenueAdjustmentPercent / additionalInflows / additionalOutflows / adjustments", outputSchemaDescription: "cashflow:v1 Base/Scenario comparison",
+  },
 
 ];
 
