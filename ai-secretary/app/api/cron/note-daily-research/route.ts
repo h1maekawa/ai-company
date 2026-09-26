@@ -11,6 +11,9 @@ import {
 import { runMarketIntake, type MarketIntakeResult } from "@/app/lib/agents/market";
 import { recordPipelineSteps, type RecordStepInput } from "@/app/lib/agents/recorder";
 import { startTrace } from "@/app/lib/company/trace";
+import { getExecutionStore } from "@/app/lib/company/execution/store";
+import { deliverNotifications } from "@/app/lib/notifications/router";
+import { buildXResearchEvents, xResearchAdapters } from "@/app/lib/notifications/xResearch";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -100,10 +103,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         : "",
     ].filter(Boolean);
 
-    const slack = await postToSlack(
+    const channel = process.env.X_NOTIFICATION_CHANNEL ?? "slack";
+    const slack = channel === "line" ? { ok: false, error: undefined } : await postToSlack(
       notes.length > 0 ? `${summary}\n${notes.join("\n")}` : summary,
       blocks.length > 0 ? blocks : undefined
     );
+    const lineDeliveries = channel === "slack" ? [] : await deliverNotifications(
+      buildXResearchEvents(result.topCandidates, items),
+      getExecutionStore(),
+      xResearchAdapters("line")
+    ).catch(() => []);
 
     return NextResponse.json({
       ok: true,
@@ -113,6 +122,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       xSkippedReason: result.xSkippedReason,
       slackDelivered: slack.ok,
       slackError: slack.error,
+      lineDelivered: lineDeliveries.some((delivery) => delivery.status === "SENT"),
+      lineError: lineDeliveries.find((delivery) => delivery.status === "FAILED")?.error,
       marketIntake,
       marketIntakeError,
     });
