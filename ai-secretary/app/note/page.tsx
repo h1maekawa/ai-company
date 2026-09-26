@@ -25,6 +25,7 @@ import { ReferenceAccounts } from "@/components/note/ReferenceAccounts";
 import { ContentToday } from "@/components/note/ContentToday";
 import { ContentResults } from "@/components/note/ContentResults";
 import { XWorkspace } from "@/components/note/x/XWorkspace";
+import { XQuickOpinion } from "@/components/note/growth/XQuickOpinion";
 import type { Idea } from "@/app/lib/note/types";
 import { useBrand, useIdeas } from "./useNote";
 
@@ -122,6 +123,7 @@ function NoteDepartment() {
 
         {view === "create" && (
           <div className="space-y-4">
+            <XQuickOpinion onOpenDrafts={() => setView("review")} />
             <ContentStudio onOpenDrafts={() => setView("review")} />
 
             <section className="rounded-2xl border border-hairline bg-ink-card">

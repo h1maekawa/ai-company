@@ -37,6 +37,8 @@ type Body = {
   growthGoal?: GrowthGoal;
   outputType?: OutputType;
   xLength?: XPostLength;
+  sourceItemId?: string;
+  variantMode?: "default" | "opinion-only";
 };
 
 function purposeForGoal(goal?: GrowthGoal): ContentPurpose {
@@ -75,8 +77,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         { status: 422 }
       );
     }
+    if (body.sourceItemId && !cluster.researchItemIds.includes(body.sourceItemId)) {
+      return NextResponse.json({ error: "sourceItemId がこの候補に含まれていません" }, { status: 422 });
+    }
+    if (body.variantMode === "opinion-only" && !body.personalAngle?.trim()) {
+      return NextResponse.json({ error: "本人の意見を入力してください" }, { status: 422 });
+    }
 
     const clusterItems = items.filter((i) => cluster.researchItemIds.includes(i.id));
+    const generationItems = body.sourceItemId
+      ? clusterItems.filter((item) => item.id === body.sourceItemId)
+      : clusterItems;
     const genreId = cluster.genreIds[0] ?? DEFAULT_GENRES[0].id;
     const genre =
       ideaFile.genres.find((g) => g.id === genreId) ??
@@ -104,14 +115,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const response: Record<string, unknown> = { clusterId: cluster.id };
 
     if (kind === "x" || kind === "both") {
-      const account = accountForGenre(brandFile.xAccounts, genre.id) ?? brandFile.xAccounts[0];
+      const account = body.variantMode === "opinion-only" ? brandFile.xAccounts[0] : accountForGenre(brandFile.xAccounts, genre.id) ?? brandFile.xAccounts[0];
       if (!account) {
         return NextResponse.json({ error: "Xアカウントが登録されていません" }, { status: 422 });
       }
 
       const result = await generateXPosts({
         cluster,
-        items: clusterItems,
+        items: generationItems,
         experiences: selected,
         brand: brandFile.brand,
         genre,
@@ -123,6 +134,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         authorViewpoint: body.personalAngle?.trim() || undefined,
         outputType: body.outputType,
         length: body.xLength,
+        variantMode: body.variantMode,
+        sourceResearchIds: body.sourceItemId ? [body.sourceItemId] : cluster.researchItemIds,
       });
 
       if (result.drafts.length > 0) {
