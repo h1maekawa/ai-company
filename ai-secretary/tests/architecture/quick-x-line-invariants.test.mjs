@@ -19,10 +19,20 @@ test("LINE uses the Notification Hub and keeps secrets server-side", () => {
   assert.match(research, /x-research:\$\{tokyoDate\(now\)\}:\$\{cluster\.id\}/);
   assert.match(research, /clusterId/);
   assert.match(research, /sourceItemId/);
+  assert.match(research, /quickX: "1"/);
+  assert.match(line, /AI Companyでこの候補を開く/);
+  assert.match(line, /リンク先で元記事を確認し、音声またはテキスト/);
+  assert.doesNotMatch(line, /元記事・詳細/);
   assert.match(research, /value === "line" \|\| value === "both"/);
   assert.match(cron, /deliverNotifications/);
   assert.match(cron, /slackDelivered/);
   assert.match(cron, /lineDelivered/);
+});
+
+test("Slack content notification is an AI Company entry point", () => {
+  const slack = read("app/lib/notifications/slack.ts");
+  assert.match(slack, /event\.sourceType === "content" \? "AI Companyで開く" : "AI Companyで確認"/);
+  assert.match(slack, /notificationDeepLink\(event\)/);
 });
 
 test("Quick X validates source and opinion, generates one draft, and queues through Buffer", () => {
@@ -41,4 +51,8 @@ test("Quick X validates source and opinion, generates one draft, and queues thro
   assert.match(ui, /`quick-x:\$\{draft\.id\}`/);
   assert.match(ui, /target="_blank" rel="noopener noreferrer"/);
   assert.match(ui, /投稿案は保存しましたが/);
+  assert.match(ui, /通知から開いた候補/);
+  assert.match(ui, /この候補は現在利用できません。最新候補から選択してください。/);
+  assert.match(ui, /他の候補を見る/);
+  assert.match(ui, />元記事を開く</);
 });

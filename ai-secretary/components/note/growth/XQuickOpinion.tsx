@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import type { ResearchItem, SocialDraft, TrendCluster } from "@/app/lib/note/research/types";
+import type { SocialDraft, TrendCluster } from "@/app/lib/note/research/types";
+import { resolveQuickXRoute, type QuickXCandidate } from "@/app/lib/note/quickXSelection";
 
-type Candidate = TrendCluster & { items: ResearchItem[] };
+type Candidate = QuickXCandidate;
 type SpeechRecognitionLike = {
   lang: string;
   continuous: boolean;
@@ -25,7 +26,9 @@ function confidence(value?: TrendCluster["hotConfidence"]): number {
 export function XQuickOpinion({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   const params = useSearchParams();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidatesLoaded, setCandidatesLoaded] = useState(false);
   const [selected, setSelected] = useState<{ clusterId: string; sourceItemId: string } | null>(null);
+  const [showOtherCandidates, setShowOtherCandidates] = useState(false);
   const [personalAngle, setPersonalAngle] = useState("");
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
@@ -43,22 +46,21 @@ export function XQuickOpinion({ onOpenDrafts }: { onOpenDrafts: () => void }) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? "候補の読み込みに失敗しました");
     setCandidates(data.clusters ?? []);
+    setCandidatesLoaded(true);
   }
 
   useEffect(() => { void loadCandidates().catch((e) => setError(e.message)); }, []);
+  const routeState = useMemo(() => resolveQuickXRoute(candidates, {
+    quickX: params.get("quickX"),
+    clusterId: params.get("clusterId"),
+    sourceItemId: params.get("sourceItemId"),
+  }), [candidates, params]);
   useEffect(() => {
-    if (selected || ranked.length === 0) return;
-    const clusterId = params.get("clusterId");
-    const sourceItemId = params.get("sourceItemId");
-    const target = ranked.find((cluster) => cluster.id === clusterId);
-    const validSource = target?.items.find((item) => item.id === sourceItemId && target.researchItemIds.includes(item.id));
-    const fallback = ranked[0];
-    const fallbackSource = fallback.items[0];
-    if (target && validSource) setSelected({ clusterId: target.id, sourceItemId: validSource.id });
-    else if (fallbackSource) setSelected({ clusterId: fallback.id, sourceItemId: fallbackSource.id });
-  }, [params, ranked, selected]);
+    if (!candidatesLoaded || routeState.mode !== "deep-link") return;
+    setSelected(routeState.selection);
+  }, [candidatesLoaded, routeState]);
 
-  const selectedCluster = ranked.find((cluster) => cluster.id === selected?.clusterId);
+  const selectedCluster = candidates.find((cluster) => cluster.id === selected?.clusterId);
   const selectedSource = selectedCluster?.items.find((item) => item.id === selected?.sourceItemId);
   const SpeechRecognition = typeof window === "undefined" ? undefined : ((window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition);
 
@@ -88,6 +90,7 @@ export function XQuickOpinion({ onOpenDrafts }: { onOpenDrafts: () => void }) {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       setSelected(null);
+      setShowOtherCandidates(true);
       await loadCandidates();
     } catch (e) { setError(e instanceof Error ? e.message : "更新に失敗しました"); } finally { setBusy(false); }
   }
@@ -108,12 +111,20 @@ export function XQuickOpinion({ onOpenDrafts }: { onOpenDrafts: () => void }) {
     } catch (e) { setError(e instanceof Error ? e.message : "予約に失敗しました"); } finally { setBusy(false); }
   }
 
+  const deepLinkMode = candidatesLoaded && routeState.mode === "deep-link";
+  const invalidDeepLink = candidatesLoaded && routeState.mode === "invalid-deep-link";
+  const showCandidateList = !deepLinkMode || showOtherCandidates;
+
+  const opinionForm = selectedSource ? <div className="mt-5"><label className="text-sm font-semibold" htmlFor="quick-x-opinion">この記事についてどう思う？</label><textarea id="quick-x-opinion" value={personalAngle} onChange={(event) => setPersonalAngle(event.target.value)} rows={5} className="mt-2 w-full rounded-xl border border-hairline bg-ink-base p-3 text-sm" placeholder="30秒くらい、自分の言葉で話すか書いてください。"/><div className="mt-2 flex flex-wrap gap-2"><button type="button" disabled={!SpeechRecognition || listening} onClick={speak} className="rounded-lg border border-hairline px-3 py-2 text-xs disabled:opacity-50">{listening ? "聞いています…" : "🎙 話す"}</button><button type="button" disabled={busy || !personalAngle.trim()} onClick={() => void schedule()} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold disabled:opacity-50">{busy ? "処理中…" : "この意見でXに予約"}</button></div>{!SpeechRecognition && <p className="mt-2 text-xs text-sub">このブラウザでは音声入力を利用できません。テキストで入力してください。</p>}</div> : null;
+
   return <section className="rounded-2xl border border-brand/50 bg-ink-card p-5">
     <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold tracking-[.18em] text-gain">QUICK X</p><h2 className="mt-1 text-lg font-bold">X クイック投稿</h2><p className="mt-1 text-xs text-sub">記事を読んで、自分の意見を入れるだけで次の枠へ予約します。</p></div><button disabled={busy} onClick={() => void refresh()} className="rounded-lg border border-hairline px-3 py-2 text-xs disabled:opacity-50">最新の話題に更新</button></div>
-    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+    {deepLinkMode && selectedCluster && selectedSource && <div className="mt-4 rounded-xl border border-brand bg-brand/10 p-4"><p className="text-xs font-semibold text-gain">通知から開いた候補</p><h3 className="mt-1 text-lg font-bold">{selectedSource.title ?? selectedCluster.title}</h3><p className="mt-2 text-sm leading-relaxed text-sub">{selectedCluster.summary}</p><p className="mt-2 text-xs text-sub">Hot Score {selectedCluster.hotScore ?? selectedCluster.totalScore} / Confidence {selectedCluster.hotConfidence ?? "-"}</p><a href={selectedSource.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex rounded-lg border border-hairline px-3 py-2 text-sm font-semibold text-brand hover:border-brand">元記事を開く</a>{opinionForm}<button type="button" onClick={() => setShowOtherCandidates((shown) => !shown)} className="mt-4 text-xs text-sub underline">{showOtherCandidates ? "他の候補を閉じる" : "他の候補を見る"}</button></div>}
+    {invalidDeepLink && <div className="mt-4 rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm text-warning">この候補は現在利用できません。最新候補から選択してください。</div>}
+    {showCandidateList && <div className="mt-4 grid gap-3 sm:grid-cols-2">
       {ranked.map((cluster) => <article key={cluster.id} className={`rounded-xl border p-3 ${selected?.clusterId === cluster.id ? "border-brand bg-brand/10" : "border-hairline"}`}><button className="w-full text-left" onClick={() => cluster.items[0] && setSelected({ clusterId: cluster.id, sourceItemId: cluster.items[0].id })}><p className="font-semibold">{cluster.title}</p><p className="mt-1 text-xs text-sub">Hot Score {cluster.hotScore ?? cluster.totalScore} / {cluster.hotConfidence ?? "-"} / ソース{cluster.sourceCount}件</p><p className="mt-2 text-xs leading-relaxed text-sub">{cluster.summary}</p></button>{cluster.items.map((item) => <label key={item.id} className="mt-2 flex items-start gap-2 text-xs"><input type="radio" checked={selected?.sourceItemId === item.id} onChange={() => setSelected({ clusterId: cluster.id, sourceItemId: item.id })}/><span><a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-brand underline" onClick={(event) => event.stopPropagation()}>{item.title ?? "記事を開く"}</a>{item.authorName ? ` / ${item.authorName}` : ""}{item.platform ? ` / ${item.platform}` : ""}{item.publishedAt ? ` / ${new Date(item.publishedAt).toLocaleDateString("ja-JP")}` : ""}<span className="mt-1 block text-sub">{item.textExcerpt}</span></span></label>)}</article>)}
-    </div>
-    {selectedSource && <div className="mt-5"><label className="text-sm font-semibold" htmlFor="quick-x-opinion">この記事についてどう思う？</label><textarea id="quick-x-opinion" value={personalAngle} onChange={(event) => setPersonalAngle(event.target.value)} rows={5} className="mt-2 w-full rounded-xl border border-hairline bg-ink-base p-3 text-sm" placeholder="30秒くらい、自分の言葉で話すか書いてください。"/><div className="mt-2 flex flex-wrap gap-2"><button type="button" disabled={!SpeechRecognition || listening} onClick={speak} className="rounded-lg border border-hairline px-3 py-2 text-xs disabled:opacity-50">{listening ? "聞いています…" : "🎙 話す"}</button><button type="button" disabled={busy || !personalAngle.trim()} onClick={() => void schedule()} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold disabled:opacity-50">{busy ? "処理中…" : "この意見でXに予約"}</button></div>{!SpeechRecognition && <p className="mt-2 text-xs text-sub">このブラウザでは音声入力を利用できません。テキストで入力してください。</p>}</div>}
+    </div>}
+    {!deepLinkMode && selectedSource && opinionForm}
     {error && <div className="mt-4 whitespace-pre-line rounded-xl border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-200">{error}<div className="mt-2"><button onClick={onOpenDrafts} className="underline">確認画面へ</button></div></div>}
     {result && <div className="mt-4 rounded-xl border border-gain/40 bg-gain/10 p-4"><p className="font-semibold">✅ Xに予約しました</p>{result.dueAt && <p className="mt-2 text-sm">予定: {new Date(result.dueAt).toLocaleString("ja-JP")}</p>}<p className="mt-2 whitespace-pre-wrap text-sm">投稿: {result.draft.text}</p><p className="mt-2 text-xs">元記事: <a href={selectedSource?.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">{selectedSource?.title ?? selectedSource?.sourceUrl}</a></p><button onClick={onOpenDrafts} className="mt-3 text-sm underline">確認画面へ</button></div>}
   </section>;
