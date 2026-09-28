@@ -14,6 +14,8 @@ import { generateCandidateInBackground } from "@/app/lib/integrations/slack/gene
 import { buildEditorialBrief } from "@/app/lib/integrations/slack/editorial-brief";
 import {
   loadEditorialContext,
+  loadExactEditorialContext,
+  isActiveEditorialContext,
   newEditorialContext,
   saveEditorialContext,
   viewpointText,
@@ -89,14 +91,22 @@ export async function POST(req: Request): Promise<Response> {
   if (payload.type === "url_verification") return json({ challenge: payload.challenge });
 
   const event = payload.event;
-  const supported =
+  const directlySupported =
     event?.type === "app_mention" ||
     (event?.type === "message" && event.channel_type === "im");
   const audioFile = event?.files?.find(isSlackAudioFile);
   const supportedSubtype = !event?.subtype || event.subtype === "file_share";
-  if (!supported || !supportedSubtype || event?.bot_id || !event.channel || (!event.text && !audioFile)) {
+  if (!supportedSubtype || event?.bot_id || !event?.channel || (!event.text && !audioFile)) {
     return json({ ok: true });
   }
+  const activeEditorialThread =
+    event.type === "message" &&
+    event.channel_type !== "im" &&
+    Boolean(event.thread_ts) &&
+    isActiveEditorialContext(
+      event.thread_ts ? await loadExactEditorialContext(event.channel, event.thread_ts) : null
+    );
+  if (!directlySupported && !activeEditorialThread) return json({ ok: true });
   if (payload.event_id && !(await claimOnce(`slack-event:${payload.event_id}`))) {
     return json({ ok: true, deduped: true });
   }

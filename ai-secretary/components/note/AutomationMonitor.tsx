@@ -116,7 +116,7 @@ export function AutomationMonitor() {
               {effective ? (
                 <span className="inline-flex items-center gap-1 text-[11px] text-gain">
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  実際に自動で回っています
+                  自動投稿の稼働条件OK
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 text-[11px] text-loss">
@@ -149,6 +149,29 @@ export function AutomationMonitor() {
             ))}
           </ul>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-hairline bg-ink-card p-5">
+        <p className="text-sm font-semibold text-white">自動改善ループ</p>
+        <ol className="mt-3 grid gap-2 text-xs text-sub sm:grid-cols-5">
+          {["Research", "X自動投稿", "Performance Sync", "Strategy / Style改善", "翌日の生成へ反映"].map((step, index) => (
+            <li key={step} className="rounded-lg border border-hairline px-3 py-2">
+              <span className="mr-1 text-brand">{index + 1}.</span>{step}
+            </li>
+          ))}
+        </ol>
+        <div className="mt-3 grid gap-2 text-[11px] text-sub sm:grid-cols-2 lg:grid-cols-4">
+          <p>最終Performance Sync<br /><strong className="text-white">{status.improvementLoop.lastPerformanceSyncAt ? new Date(status.improvementLoop.lastPerformanceSyncAt).toLocaleString("ja-JP") : "未実行"}</strong></p>
+          <p>最終Nightly Growth Review<br /><strong className="text-white">{status.improvementLoop.lastNightlyGrowthReviewAt ? new Date(status.improvementLoop.lastNightlyGrowthReviewAt).toLocaleString("ja-JP") : "未実行"}</strong></p>
+          <p>Growth confidence<br /><strong className="text-white">{status.improvementLoop.growthConfidence ?? "未計測"}</strong></p>
+          <p>Applied changes<br /><strong className="text-white">{status.improvementLoop.appliedChanges}件</strong></p>
+        </div>
+        <div className="mt-3 text-[11px] text-sub">
+          <p className="font-medium text-white">Experiments</p>
+          {status.improvementLoop.experiments.length ? (
+            <ul className="mt-1 list-disc space-y-1 pl-4">{status.improvementLoop.experiments.map((experiment) => <li key={experiment}>{experiment}</li>)}</ul>
+          ) : <p className="mt-1">実験はまだありません。</p>}
+        </div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">

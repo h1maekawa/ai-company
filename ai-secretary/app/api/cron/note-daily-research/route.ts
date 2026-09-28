@@ -16,7 +16,7 @@ import { deliverNotifications } from "@/app/lib/notifications/router";
 import { buildXResearchEvents, xResearchAdapters } from "@/app/lib/notifications/xResearch";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * GET /api/cron/note-daily-research

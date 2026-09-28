@@ -111,6 +111,20 @@ test("SNS Autopilotの予約経路は fail-closed の claimStrict / strict count
   assert.doesNotMatch(strict, /localSeen|localLocks/, "strict claimはプロセス内fallbackを使わない");
 });
 
+test("Autopilot statusはRedis未設定をblockし、Cron timeoutは300秒", () => {
+  const status = fs.readFileSync(path.join(process.cwd(), "app/lib/note/automation/status.ts"), "utf8");
+  const monitor = fs.readFileSync(path.join(process.cwd(), "components/note/AutomationMonitor.tsx"), "utf8");
+  assert.match(status, /UPSTASH_REDIS_REST_URL/);
+  assert.match(status, /UPSTASH_REDIS_REST_TOKEN/);
+  assert.match(status, /lastNightlyGrowthReviewAt/);
+  assert.match(monitor, /自動投稿の稼働条件OK/);
+  assert.doesNotMatch(monitor, /実際に自動で回っています/);
+  assert.match(monitor, /自動改善ループ/);
+  assert.match(fs.readFileSync(path.join(process.cwd(), "app\/api\/cron\/note-daily-research\/route.ts"), "utf8"), /maxDuration = 300/);
+  assert.match(fs.readFileSync(path.join(process.cwd(), "app\/api\/cron\/content-nightly-review\/route.ts"), "utf8"), /maxDuration = 300/);
+  assert.match(fs.readFileSync(path.join(process.cwd(), "app\/api\/cron\/x-daily-publish\/route.ts"), "utf8"), /maxDuration = 300/);
+});
+
 /**
  * Phase 10-B.1 Cadence Expansion（2026-09-15）
  *
