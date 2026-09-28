@@ -113,6 +113,23 @@ export async function loadEditorialContext(
   return Date.parse(context.expiresAt) > Date.now() ? context : null;
 }
 
+/**
+ * channel内の通常messageを許可するときだけ使う完全一致lookup。
+ * root contextへのfallbackを行わず、別threadの会話を誤って取り込まない。
+ */
+export async function loadExactEditorialContext(
+  channel: string,
+  threadTs: string
+): Promise<SlackEditorialContext | null> {
+  const context = await redisSafeGet<SlackEditorialContext>(editorialContextKey(channel, threadTs));
+  if (!context) return null;
+  return Date.parse(context.expiresAt) > Date.now() ? context : null;
+}
+
+export function isActiveEditorialContext(context: SlackEditorialContext | null): boolean {
+  return Boolean(context && context.status !== "approved" && context.status !== "discarded");
+}
+
 export async function saveEditorialContext(
   channel: string,
   threadTs: string | undefined,

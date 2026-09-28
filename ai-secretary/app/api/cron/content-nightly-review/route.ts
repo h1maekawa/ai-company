@@ -4,7 +4,7 @@ import { runNightlyGrowthReview } from "@/app/lib/note/automation/nightlyGrowthR
 import { withLock } from "@/app/lib/note/publishing/queue";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const auth = verifyCronSecret(request);

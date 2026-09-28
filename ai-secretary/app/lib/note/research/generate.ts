@@ -234,6 +234,8 @@ export type GenerateXInput = {
   preferredPatterns?: string[];
   /** 本人のStyle Profile（要件P0.1）。Brand/Safetyより必ず下位で参照する。未指定なら影響しない */
   styleProfile?: StyleProfile;
+  variantMode?: "default" | "opinion-only";
+  sourceResearchIds?: string[];
 };
 
 export type GenerateXResult = {
@@ -288,7 +290,9 @@ ${policy!.claimRestrictions.length > 0 ? `禁止訴求: ${policy!.claimRestricti
                   ? "\n- opinion: 本人が承認済みの意見を中心にした投稿"
                   : ""
               }`
-            : `次の3案を必ず1つずつ作る。
+            : input.variantMode === "opinion-only"
+              ? `意見型を1案だけ作る。ニュースの説明ではなく本人の意見を中心にし、本人が入力していない感情・経験・結論・投資判断を追加しない。迷いも消さない。patternはopinionにする。`
+              : `次の3案を必ず1つずつ作る。
 - opinion: 意見型（意外性のある結論→理由→本人の考え→余韻）
 - save: 保存型（悩み・結論→3〜7要点→初心者向け補足→まとめ）
 - conversation: 会話型（考え→本人の立場→答えやすい具体的な質問）`;
@@ -434,7 +438,7 @@ mediaSuggestionは text / diagram / screenshot / comparison / chart / video / no
     }
   }
 
-  const selectedPosts = posts.slice(0, outputType === "x-and-note" ? 5 : 3);
+  const selectedPosts = posts.slice(0, input.variantMode === "opinion-only" ? 1 : outputType === "x-and-note" ? 5 : 3);
   for (const [postIndex, post] of selectedPosts.entries()) {
     const texts =
       outputType === "x-thread" && Array.isArray(post.threadParts) && post.threadParts.length >= 2
@@ -454,6 +458,7 @@ mediaSuggestionは text / diagram / screenshot / comparison / chart / video / no
     drafts.push({
       id: hashId("s", `${cluster.id}${post.angle ?? ""}${threadIndex}${now}${text.slice(0, 20)}`),
       trendClusterId: cluster.id,
+      sourceResearchIds: input.sourceResearchIds,
       xAccountId: account.id,
       purpose,
       genreId: genre.id,

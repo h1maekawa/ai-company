@@ -5,7 +5,8 @@ export const COMPANY_APPROVAL_ACTION = "company_approval_approve";
 export function notificationDeepLink(event: NotificationEvent) { const base = process.env.APP_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL; return base ? new URL(event.deepLink, base).toString() : event.deepLink; }
 export function slackNotificationBlocks(event: NotificationEvent): SlackBlock[] {
   const link = notificationDeepLink(event);
-  const elements: Record<string, unknown>[] = [{ type: "button", text: { type: "plain_text", text: "AI Companyで確認" }, url: link }];
+  const openLabel = event.sourceType === "content" ? "AI Companyで開く" : "AI Companyで確認";
+  const elements: Record<string, unknown>[] = [{ type: "button", text: { type: "plain_text", text: openLabel }, url: link }];
   if (event.sourceType === "approval" && event.approvalKind !== "CONTENT_DRAFT_REGISTRATION" && ["R0", "R1", "R2"].includes(event.riskLevel ?? "")) elements.unshift({ type: "button", text: { type: "plain_text", text: "承認" }, style: "primary", action_id: COMPANY_APPROVAL_ACTION, value: event.sourceId });
   return [{ type: "header", text: { type: "plain_text", text: "AI Company — 確認が必要です", emoji: true } }, { type: "section", text: { type: "mrkdwn", text: `*${event.title}*\n${event.summary}\nPriority: ${event.priority}${event.riskLevel ? `\nRisk: ${event.riskLevel}` : ""}` } }, { type: "actions", elements }];
 }

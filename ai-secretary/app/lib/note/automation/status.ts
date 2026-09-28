@@ -13,6 +13,7 @@ import {
 } from "@/app/lib/note/research/types";
 import {
   loadExperiences,
+  loadGrowthReviews,
   loadPerformance,
   loadResearchInbox,
   loadResearchSettings,
@@ -74,6 +75,13 @@ export type AutomationStatus = {
     lastMeasuredAt: string | null;
   };
   freshness: DataFreshness;
+  improvementLoop: {
+    lastPerformanceSyncAt: string | null;
+    lastNightlyGrowthReviewAt: string | null;
+    growthConfidence: "low" | "medium" | "high" | null;
+    appliedChanges: number;
+    experiments: string[];
+  };
 };
 
 function tokyoDate(iso: string): string {
@@ -89,6 +97,7 @@ export function collectBlockers(options: {
   mode: SocialOperationMode;
   automationEnabled: boolean;
   bufferConfigured: boolean;
+  redisConfigured: boolean;
 }): AutomationBlocker[] {
   const blockers: AutomationBlocker[] = [];
 
@@ -114,6 +123,13 @@ export function collectBlockers(options: {
         "BUFFER_ENABLED / BUFFER_API_KEY / BUFFER_ORGANIZATION_ID / BUFFER_X_CHANNEL_ID を設定してください",
     });
   }
+  if (!options.redisConfigured) {
+    blockers.push({
+      kind: "integration",
+      label: "Autopilot用Redisが未設定です",
+      howToFix: "UPSTASH_REDIS_REST_URL と UPSTASH_REDIS_REST_TOKEN を両方設定してください",
+    });
+  }
   return blockers;
 }
 
@@ -127,7 +143,7 @@ function approvalReason(draft: SocialDraft, mode: SocialOperationMode): string |
 }
 
 export async function getAutomationStatus(): Promise<AutomationStatus> {
-  const [settings, drafts, performance, publishedToday, brandFile, experiences, researchItems] =
+  const [settings, drafts, performance, publishedToday, brandFile, experiences, researchItems, growthReviews] =
     await Promise.all([
       loadResearchSettings(),
       loadSocialDrafts(),
@@ -136,13 +152,17 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       loadBrand(),
       loadExperiences(),
       loadResearchInbox(),
+      loadGrowthReviews(),
     ]);
 
   const mode =
     settings.flags.socialOperationMode ?? deriveSocialOperationMode(settings.flags);
   const automationEnabled = process.env.X_DAILY_AUTOMATION_ENABLED === "true";
   const bufferConfigured = isBufferConfigured();
-  const blockers = collectBlockers({ mode, automationEnabled, bufferConfigured });
+  const redisConfigured = Boolean(
+    process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+  );
+  const blockers = collectBlockers({ mode, automationEnabled, bufferConfigured, redisConfigured });
 
   const today = todayTokyo();
   const slots = drafts
@@ -201,6 +221,8 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       .filter((value): value is string => Boolean(value))
       .sort()
       .pop() ?? null;
+  const latestGrowthReview = [...growthReviews]
+    .sort((a, b) => b.measuredThrough.localeCompare(a.measuredThrough))[0];
 
   return {
     mode,
@@ -224,6 +246,13 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       asOf: lastSyncedAt,
       source: "Buffer実績同期",
       note: lastSyncedAt ? null : "まだ実績を同期していません（x-performance-sync 未実行）",
+    },
+    improvementLoop: {
+      lastPerformanceSyncAt: lastSyncedAt,
+      lastNightlyGrowthReviewAt: latestGrowthReview?.measuredThrough ?? null,
+      growthConfidence: latestGrowthReview?.confidence ?? null,
+      appliedChanges: latestGrowthReview?.appliedChanges.length ?? 0,
+      experiments: latestGrowthReview?.experiments ?? [],
     },
   };
 }

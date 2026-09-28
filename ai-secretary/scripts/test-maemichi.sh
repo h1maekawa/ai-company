@@ -42,6 +42,7 @@ npx tsc \
   app/lib/note/x/types.ts \
   app/lib/note/publishing/queue.ts \
   app/lib/note/tokyoDate.ts \
+  app/lib/note/quickXSelection.ts \
   app/lib/note/automation/dailyXPlan.ts \
   app/lib/note/automation/dailyXExecution.ts \
   app/lib/integrations/slack/verify.ts \
@@ -49,6 +50,8 @@ npx tsc \
   app/lib/integrations/slack/orchestrator.ts \
   app/lib/integrations/slack/voice.ts \
   app/lib/integrations/slack/editorial-context.ts \
+  app/lib/ai/client.ts \
+  app/lib/ai/errors.ts \
   app/lib/integrations/slack/editorial-questions.ts \
   app/lib/integrations/slack/editorial-brief.ts \
   app/lib/integrations/machine-auth.ts \

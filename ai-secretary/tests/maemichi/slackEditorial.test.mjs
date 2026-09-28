@@ -6,6 +6,7 @@ import path from "node:path";
 const DIST = process.env.MAEMICHI_DIST;
 const questions = await import(path.join(DIST, "integrations/slack/editorial-questions.js"));
 const conversation = await import(path.join(DIST, "integrations/slack/conversation.js"));
+const editorialContext = await import(path.join(DIST, "integrations/slack/editorial-context.js"));
 
 test("投資ニュースでは2〜4問の壁打ちを行う", () => {
   const result = questions.editorialQuestions({
@@ -34,6 +35,19 @@ test("本人の回答と確認意図を会話から分離する", () => {
   assert.equal(conversation.classifyConversation("私はメモリが気になる").type, "answer");
   assert.equal(conversation.classifyConversation("この内容で合っています").type, "confirm-viewpoint");
   assert.equal(conversation.classifyConversation("少し修正したい").type, "edit-viewpoint");
+});
+
+test("active EditorialContext threadはmentionなしmessageを受理できる", () => {
+  const active = editorialContext.newEditorialContext({ status: "awaiting-viewpoint" });
+  assert.equal(editorialContext.isActiveEditorialContext(active), true);
+});
+
+test("unrelated threadは完全一致Contextが無ければ無視する", () => {
+  assert.equal(editorialContext.isActiveEditorialContext(null), false);
+  assert.equal(editorialContext.isActiveEditorialContext(editorialContext.newEditorialContext({ status: "discarded" })), false);
+  const route = fs.readFileSync(path.resolve(process.cwd(), "app/api/integrations/slack/events/route.ts"), "utf8");
+  assert.match(route, /loadExactEditorialContext\(event\.channel, event\.thread_ts\)/);
+  assert.match(route, /if \(!directlySupported && !activeEditorialThread\) return json/);
 });
 
 test("ボタン経由の旧直接生成アクションを廃止する", () => {
