@@ -2,6 +2,8 @@ import { getProvider } from "@/app/lib/fund/marketData/provider";
 import { loadPortfolio } from "@/app/lib/investing/portfolio";
 import { loadWatchlist } from "@/app/lib/investing/watchlist";
 import { buildOpportunity, deriveMarketRegime } from "./engine";
+import { investmentIntelligenceEnabled } from "./flags";
+import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
 import { fetchEconomicNews } from "./providers/economicNews";
 import { loadMacroSnapshot } from "./providers/macro";
 import { fetchSecFundamentals, fetchSecTickerMap } from "./providers/sec";
@@ -10,12 +12,12 @@ import { saveIntelligenceToday } from "./store";
 import type { IntelligenceFreshness, IntelligenceToday, InvestmentEvidence, ProviderStatus } from "./types";
 
 function freshnessOf(date: string | null, now: Date): IntelligenceFreshness { if (!date) return "unknown"; return now.getTime() - new Date(`${date}T23:59:59Z`).getTime() <= 4 * 86_400_000 ? "daily" : "stale"; }
-export function investmentIntelligenceEnabled() { return process.env.INVESTING_INTELLIGENCE_ENABLED !== "false"; }
+export { investmentIntelligenceEnabled } from "./flags";
 
 export async function runDailyInvestmentResearch(now = new Date()): Promise<IntelligenceToday> {
   const provider = getProvider();
-  const [portfolio, watchlist, marketBars, macroResult, newsResult, sectors, cikMap] = await Promise.all([loadPortfolio(), loadWatchlist(), provider.getDailyBars("SPY", 205), loadMacroSnapshot(now), fetchEconomicNews(), loadSectorSnapshots(), fetchSecTickerMap()]);
-  const marketRegime = deriveMarketRegime(marketBars); const marketLast = marketBars?.at(-1) ?? null;
+  const [portfolio, watchlist, spyBars, nasdaqBars, soxBars, vixBars, macroResult, newsResult, sectors, cikMap] = await Promise.all([loadPortfolio(), loadWatchlist(), provider.getDailyBars("SPY", 205), provider.getDailyBars("QQQ", 205), provider.getDailyBars("^SOX", 205), provider.getDailyBars("^VIX", 21), loadMacroSnapshot(now), fetchEconomicNews(), loadSectorSnapshots(now), fetchSecTickerMap()]);
+  const marketRegimeDetail = deriveMarketRegime({ spy: spyBars, nasdaq: nasdaqBars, sox: soxBars, vix: vixBars, macro: macroResult.macro, now }); const marketRegime = marketRegimeDetail.regime; const marketLast = spyBars?.at(-1) ?? null;
   const marketEvidence: InvestmentEvidence[] = marketLast ? [{ id: `market_spy_${marketLast.date}`, sourceType: "market", sourceName: provider.name, sourceUrl: null, publishedAt: marketLast.date, fetchedAt: now.toISOString(), fact: `SPY終値 ${marketLast.close}、出来高 ${marketLast.volume}`, metric: "market_regime", value: marketRegime, freshness: freshnessOf(marketLast.date, now) }] : [];
   const candidates = new Map<string, { name: string; theme: string; held: boolean }>();
   for (const position of portfolio.positions) if (position.assetClass === "us_stock") candidates.set(position.code.toUpperCase(), { name: position.name, theme: "Portfolio", held: true });
@@ -33,7 +35,7 @@ export async function runDailyInvestmentResearch(now = new Date()): Promise<Inte
   }));
   opportunities.sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
   const providerStatus: ProviderStatus[] = [...macroResult.statuses, { provider: "SerpAPI", status: newsResult.status, checkedAt: now.toISOString() }, { provider: "SEC", status: !process.env.SEC_USER_AGENT ? "NOT_CONFIGURED" : secErrors > 0 && secOk === 0 ? "ERROR" : "OK", checkedAt: now.toISOString(), detail: `${secOk} symbols loaded` }];
-  const result: IntelligenceToday = { asOf: now.toISOString(), runId: `investment-${now.toISOString()}`, marketRegime, marketEvidence, macro: macroResult.macro, economicNews: newsResult.items, sectors, providerStatus,
+  const result: IntelligenceToday = { asOf: now.toISOString(), runId: `investment-${tokyoDateKey(now)}`, marketRegime, marketRegimeDetail, marketEvidence, macro: macroResult.macro, economicNews: newsResult.items, sectors, providerStatus,
     sectorStrength: sectors.map((item) => ({ name: item.name, score: item.score, reason: item.score === null ? "市場データ未取得" : `${item.proxy}: 20日momentum ${item.momentum20d?.toFixed(1) ?? "—"}%` })),
     themeStrength: [...new Set([...candidates.values()].map((item) => item.theme))].map((name) => ({ name, score: null, reason: "個別Evidenceを優先して判定" })), opportunities,
     portfolioAlerts: opportunities.filter((item) => item.portfolioAction === "RECHECK_THESIS" && (item.relativeVolume ?? 0) >= 2).map((item) => ({ ticker: item.ticker, level: "warning" as const, message: `RVOL ${item.relativeVolume?.toFixed(2)}x。投資仮説を再確認してください` })), economicEvents: [],
