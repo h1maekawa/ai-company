@@ -133,18 +133,20 @@ test("investing shows the five Investment areas and keeps every legacy route in 
     shell.indexOf("export const MORE_NAV_ITEMS")
   );
   const dailyLabels = [...daily.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(dailyLabels, ["Overview", "Research", "Companies", "Portfolio", "Learning"]);
+  assert.deepEqual(dailyLabels, ["今日", "市場", "機会", "保有", "調査"]);
   const dailyHrefs = [...daily.matchAll(/href: "([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(dailyHrefs, ["/investing", "/investing/research", "/investing/companies", "/investing/portfolio", "/investing/learning"]);
-  // モバイル下部ナビは4項目 + メニュー。Companiesはメニューから
+  assert.deepEqual(dailyHrefs, ["/investing", "/investing/market", "/investing/opportunities", "/investing/portfolio", "/investing/research"]);
+  // モバイル下部ナビは判断に必要な4項目 + メニュー。調査はメニューから
   const mobile = [...daily.matchAll(/label: "([^"]+)"[^\n]*mobile: true/g)].map((match) => match[1]);
-  assert.deepEqual(mobile, ["Overview", "Research", "Portfolio", "Learning"]);
+  assert.deepEqual(mobile, ["今日", "市場", "機会", "保有"]);
 
   const more = shell.slice(
     shell.indexOf("export const MORE_NAV_ITEMS"),
     shell.indexOf("/** 互換用")
   );
   for (const href of [
+    "/investing/companies",
+    "/investing/learning",
     "/investing/holdings",
     "/investing/news",
     "/investing/analysis",
@@ -159,7 +161,7 @@ test("investing shows the five Investment areas and keeps every legacy route in 
   ]) {
     assert.ok(more.includes(`href: "${href}"`), `${href} must stay in the investing menu`);
   }
-  for (const page of ["research", "companies", "companies/[ticker]", "portfolio", "learning", "holdings", "holdings/[code]", "news", "analysis", "allocation", "policy", "screening", "watchlist", "dividends", "transactions", "import", "settings"]) {
+  for (const page of ["market", "opportunities", "opportunities/[id]", "research", "companies", "companies/[ticker]", "portfolio", "learning", "holdings", "holdings/[code]", "news", "analysis", "allocation", "policy", "screening", "watchlist", "dividends", "transactions", "import", "settings"]) {
     assert.ok(exists(`app/investing/${page}/page.tsx`), `/investing/${page} must exist`);
   }
 });

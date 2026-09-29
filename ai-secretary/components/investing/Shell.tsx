@@ -44,15 +44,17 @@ const ICON = "h-[18px] w-[18px]";
  * モバイル下部ナビは Overview / Research / Portfolio / Learning + メニュー（Companiesはメニューから）。
  */
 export const DAILY_NAV_ITEMS: NavItem[] = [
-  { href: "/investing", label: "Overview", icon: <LayoutDashboard className={ICON} />, mobile: true },
-  { href: "/investing/research", label: "Research", icon: <Microscope className={ICON} />, mobile: true },
-  { href: "/investing/companies", label: "Companies", icon: <Building2 className={ICON} /> },
-  { href: "/investing/portfolio", label: "Portfolio", icon: <PieChart className={ICON} />, mobile: true },
-  { href: "/investing/learning", label: "Learning", icon: <Brain className={ICON} />, mobile: true },
+  { href: "/investing", label: "今日", icon: <LayoutDashboard className={ICON} />, mobile: true },
+  { href: "/investing/market", label: "市場", icon: <LineChart className={ICON} />, mobile: true },
+  { href: "/investing/opportunities", label: "機会", icon: <Sparkles className={ICON} />, mobile: true },
+  { href: "/investing/portfolio", label: "保有", icon: <PieChart className={ICON} />, mobile: true },
+  { href: "/investing/research", label: "調査", icon: <Microscope className={ICON} /> },
 ];
 
 /** 必要なときだけ開く。既存routeはすべて残す（Deep Linkは生きている） */
 export const MORE_NAV_ITEMS: NavItem[] = [
+  { href: "/investing/companies", label: "Companies", icon: <Building2 className={ICON} /> },
+  { href: "/investing/learning", label: "Learning", icon: <Brain className={ICON} /> },
   { href: "/investing/holdings", label: "保有株", icon: <Briefcase className={ICON} /> },
   { href: "/investing/news", label: "ニュース", icon: <Newspaper className={ICON} /> },
   { href: "/investing/analysis", label: "AI分析", icon: <Sparkles className={ICON} /> },
