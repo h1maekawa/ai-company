@@ -26,6 +26,7 @@ import { DEPARTMENT_IDS, DEPARTMENT_NAV_BY_ID, type NavigationDepartmentId } fro
 import { isDepartmentDirective, type DepartmentReadModel } from "@/app/lib/mobile-ceo/departments";
 import { GET as getDepartment } from "@/app/api/company/departments/[id]/route";
 import { formatResearchReply, runInteractiveResearch } from "@/app/lib/company/research/intelligence/service";
+import { answerCashflowQuestion } from "@/app/lib/cashflow/questionRouter";
 
 const ROLE_DEFAULT_TEMPLATE = `# 現在の役割
 
@@ -88,6 +89,18 @@ export async function POST(req: NextRequest) {
 
     if (!message?.trim()) {
       return NextResponse.json({ error: "メッセージが空です" }, { status: 400 });
+    }
+    const cashflowAnswer = await answerCashflowQuestion(message);
+    if (cashflowAnswer) {
+      return NextResponse.json({
+        reply: cashflowAnswer.markdown,
+        provider: "crestix-cf",
+        mode: mode ?? "company",
+        secretary: "executive-assistant",
+        tool: { name: cashflowAnswer.skillId, result: cashflowAnswer.output ?? null },
+        task: null,
+        directiveSuggestion: null,
+      });
     }
     if (requestedDepartmentId && !DEPARTMENT_IDS.includes(requestedDepartmentId as NavigationDepartmentId)) {
       return NextResponse.json({ error: "UNKNOWN_DEPARTMENT" }, { status: 400 });
