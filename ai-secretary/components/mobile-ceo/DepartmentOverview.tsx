@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { BUSINESS_DEPARTMENT_NAV, DEPARTMENT_NAV, KNOWLEDGE_NAV, type NavigationDepartmentId } from "@/app/lib/config/navigation";
-import type { DepartmentMetric, DepartmentReadModel } from "@/app/lib/mobile-ceo/departments";
-import { formatMetricValue, UNKNOWN_LABEL } from "@/app/lib/mobile-ceo/controlCenter";
+import type { DepartmentReadModel } from "@/app/lib/mobile-ceo/departments";
+import { UNKNOWN_LABEL } from "@/app/lib/mobile-ceo/controlCenter";
 
 type DepartmentMap = Partial<Record<NavigationDepartmentId, DepartmentReadModel | null>>;
 type Attention = { id: string; title: string; href: string };
@@ -12,11 +12,6 @@ type ConnectionHealth = { services?: Array<{ service: string; label: string; sta
 
 function allMetrics(model: DepartmentReadModel) {
   return [model.northStar, ...model.outcomes, ...model.operations];
-}
-
-/** 円は ¥2,101,420 形式、UNKNOWN は「未取得」。表示だけ整形し内部値は丸めない。 */
-function formatMetric(metric: DepartmentMetric | undefined) {
-  return formatMetricValue(metric, { sign: metric?.metric === "unrealized_pl" });
 }
 
 function statusOf(model: DepartmentReadModel | null | undefined) {
@@ -44,7 +39,8 @@ export function DepartmentOverview() {
 
     void fetch("/api/company/approvals").then((response) => response.ok ? response.json() : null).then((payload) => {
       if (!active || !payload) return;
-      setApprovals((Array.isArray(payload.pending) ? payload.pending : []).slice(0, 3).map((item: Record<string, unknown>, index: number) => ({ id: `approval-${String(item.id ?? index)}`, title: String(item.title ?? item.actionType ?? "承認待ち"), href: `/ceo/approvals#approval-${encodeURIComponent(String(item.id ?? ""))}` })));
+      const pending = Array.isArray(payload.pending) ? payload.pending : [];
+      setApprovals(pending.length ? [{ id: "approvals", title: `承認待ち ${pending.length}件`, href: "/ceo/approvals" }] : []);
     }).catch(() => undefined);
 
     void fetch("/api/system/connections").then((response) => response.ok ? response.json() as Promise<ConnectionHealth> : null).then((payload) => {
@@ -95,16 +91,13 @@ export function DepartmentOverview() {
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {BUSINESS_DEPARTMENT_NAV.map((item) => {
             const model = departments[item.id];
-            const metrics = model ? allMetrics(model) : [];
-            const selected = item.homeMetrics.map((key) => metrics.find((metric) => metric.metric === key));
             const status = statusOf(model);
+            const alertCount = model ? model.problems.length + allMetrics(model).filter((metric) => ["decision_required", "thesis_alerts", "ci_failure", "blocked"].includes(metric.metric) && (metric.value ?? 0) > 0).reduce((sum, metric) => sum + (metric.value ?? 0), 0) : 0;
             return (
               <Link key={item.id} href={item.href} className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/65 p-4 transition hover:border-violet-500/50 hover:bg-slate-900">
                 <h3 className="text-base font-semibold text-white"><span aria-hidden>{item.icon}</span> {item.label}</h3>
-                <dl className="mt-4 grid grid-cols-2 gap-3">
-                  {selected.map((metric, index) => <div key={item.homeMetrics[index]} className="min-w-0"><dt className="truncate text-[11px] text-slate-400">{metric?.label ?? "取得中"}</dt><dd className="mt-1 truncate text-lg font-bold text-white">{formatMetric(metric)}</dd></div>)}
-                </dl>
-                <p className="mt-4 flex items-center gap-2 text-xs text-slate-400"><span className={`h-2 w-2 rounded-full ${status.tone}`} aria-hidden />{status.label}</p>
+                <p className="mt-1 text-sm text-slate-400">{item.description}</p>
+                <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-400"><p className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${status.tone}`} aria-hidden />{status.label}</p>{alertCount > 0 ? <p className="text-amber-300">判断待ち {alertCount}</p> : null}</div>
               </Link>
             );
           })}

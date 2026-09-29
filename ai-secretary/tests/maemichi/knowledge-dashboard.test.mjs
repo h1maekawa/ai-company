@@ -51,10 +51,10 @@ test("共通Sidebarはnavigation設定をSSOTにしActiveとMobile導線を備�
   assert.match(shell, /MobileTabBar/);
 });
 
-test("HomeはSimple CEO Dashboardとして秘書・Attention・Departmentだけを表示する", () => {
+test("HomeはGlobal AIと重複せずAttention・仕事・Departmentだけを表示する", () => {
   const home = read("app/page.tsx");
   const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
-  assert.match(home, /AssistantPrompt/); assert.match(home, /DepartmentOverview/);
+  assert.doesNotMatch(home, /AssistantPrompt/); assert.match(home, /DepartmentOverview/);
   assert.match(overview, /CEO Attention/); assert.match(overview, /DEPARTMENT_NAV\.map/);
   assert.match(overview, /\["disconnected", "error"\]/);
   assert.doesNotMatch(home, /QUICK_ACTIONS|今日の状況|最近の動き|システム状態/);

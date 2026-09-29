@@ -2,7 +2,7 @@ import { BUSINESS_DEPARTMENT_NAV } from "@/app/lib/config/navigation";
 
 export type SystemMapNodeKind = "DEPARTMENT" | "SHARED_PLATFORM" | "SHARED_CORE" | "EXTERNAL_PROVIDER" | "HUMAN_GATE";
 export type SystemMapConnectionType = "DATA" | "RESEARCH" | "KNOWLEDGE" | "MISSION" | "NOTIFICATION" | "EXTERNAL" | "HUMAN_APPROVAL";
-export type SystemMapStatus = "CONNECTED" | "ACTIVE" | "PARTIAL" | "NOT_CONFIGURED" | "ERROR" | "UNKNOWN" | "PLANNED";
+export type SystemMapStatus = "CONNECTED" | "ACTIVE" | "PARTIAL" | "NOT_CONFIGURED" | "ERROR" | "UNKNOWN" | "PLANNED" | "DEFINED";
 
 export type SystemMapNode = {
   id: string;
@@ -12,6 +12,7 @@ export type SystemMapNode = {
   href?: string;
   description: string;
   humanOnly?: boolean;
+  status?: SystemMapStatus;
 };
 
 export type SystemMapEdge = {
@@ -22,6 +23,7 @@ export type SystemMapEdge = {
   purpose: string;
   source: string;
   planned?: boolean;
+  status?: SystemMapStatus;
 };
 
 export const DEPARTMENT_NODES: SystemMapNode[] = BUSINESS_DEPARTMENT_NAV.map((department) => ({

@@ -5,13 +5,13 @@ import path from "node:path";
 
 const read = (file) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
 
-test("Knowledge is a shared top-level foundation, not one of five business Departments", () => {
+test("Knowledge is a shared Work foundation, not a sidebar item or business Department", () => {
   const nav = read("app/lib/config/navigation.ts");
   const sidebar = read("components/app-shell/AppSidebar.tsx");
   assert.match(nav, /BUSINESS_DEPARTMENT_IDS = \["creator", "fund", "operations", "planning", "engineering"\]/);
   assert.match(nav, /KNOWLEDGE_NAV[\s\S]*label: "Knowledge"[\s\S]*href: "\/knowledge"/);
-  assert.match(sidebar, /BUSINESS_DEPARTMENT_NAV\.map/);
-  assert.match(sidebar, /SidebarLink item=\{KNOWLEDGE_NAV\}/);
+  assert.doesNotMatch(sidebar, /BUSINESS_DEPARTMENT_NAV|KNOWLEDGE_NAV/);
+  assert.match(read("app/ceo/work/page.tsx"), /KNOWLEDGE_NAV/);
   assert.match(nav, /id: "knowledge"[\s\S]{0,160}href: "\/ceo\/departments\/knowledge"/, "compatibility route remains registered");
 });
 

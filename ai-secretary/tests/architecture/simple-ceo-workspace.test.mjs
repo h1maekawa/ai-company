@@ -10,7 +10,7 @@ const exists = (file) => fs.existsSync(path.join(root, file));
 test("root is the single Simple CEO Dashboard and /ceo redirects", () => {
   const home = read("app/page.tsx");
   const legacy = read("app/ceo/page.tsx");
-  assert.match(home, /AssistantPrompt/);
+  assert.doesNotMatch(home, /AssistantPrompt/);
   assert.match(home, /DepartmentOverview/);
   assert.doesNotMatch(home, /QUICK_ACTIONS|CompanyOfficeOverview|最近の動き|システム状態/);
   assert.match(legacy, /redirect\("\/"\)/);
@@ -20,7 +20,7 @@ test("root is the single Simple CEO Dashboard and /ceo redirects", () => {
 test("Department registry is the SSOT for five business cards and separate Knowledge", () => {
   const navigation = read("app/lib/config/navigation.ts");
   const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
-  for (const [id, label] of [["creator","note・X"],["fund","株式"],["operations","AI会社改善"],["knowledge","知識"],["planning","今日・予定"],["engineering","開発"]]) {
+  for (const [id, label] of [["creator","コンテンツ"],["fund","投資"],["operations","AI Company"],["knowledge","知識"],["planning","計画"],["engineering","開発"]]) {
     assert.match(navigation, new RegExp(`id: "${id}", label: "${label}"`));
     assert.match(navigation, new RegExp(`href: "/ceo/departments/${id}"`));
   }

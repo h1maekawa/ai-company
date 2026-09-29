@@ -19,6 +19,10 @@ test("System Map reuses live company read models and keeps shared platforms dist
   assert.match(route, /getDepartment/);
   assert.match(route, /getEmployees/);
   assert.match(route, /checkAllConnections/);
+  assert.match(route, /getResearch/);
+  assert.match(route, /getExecutionObservability/);
+  assert.match(route, /status: edge\.planned \? "PLANNED"/);
+  assert.match(page, /return node\.status \?\? "UNKNOWN"/);
   assert.match(route, /vercelConfig\.crons/);
   assert.match(page, /AI社員を表示/);
   assert.match(page, /Overview/);

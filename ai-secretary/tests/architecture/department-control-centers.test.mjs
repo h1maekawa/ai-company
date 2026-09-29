@@ -148,10 +148,10 @@ test("Company detail never fabricates Skill output and has no trade buttons", ()
   assert.doesNotMatch(detail, />[^<]*(買う|売る|注文する|BUY|SELL)[^<]*<\/(button|Link)>/);
 });
 
-test("Home stock card uses yen formatting, 未取得 and real Thesis alerts only", () => {
+test("Home cards stay compact and surface real Thesis alerts only", () => {
   const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
-  assert.match(overview, /formatMetricValue/);
-  assert.doesNotMatch(overview, /"UNKNOWN"/);
+  assert.match(overview, /item\.description/);
+  assert.match(overview, /alertCount/);
   assert.match(overview, /thesis_alerts/);
   assert.match(read("app/lib/config/navigation.ts"), /homeMetrics: \["portfolio_value", "unrealized_pl", "thesis_alerts"\]/);
   assert.doesNotMatch(overview, /MU 決算|changePct/);
