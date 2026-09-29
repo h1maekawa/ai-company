@@ -122,6 +122,13 @@ export const ADMIN_SECTIONS: { label: string; items: AppNavItem[] }[] = [
     label: "接続・システム",
     items: [
       {
+        id: "system-map",
+        label: "System Map",
+        icon: "🗺",
+        href: "/admin/system-map",
+        description: "AI Company内の事業部・AI社員・データ・外部接続を見る",
+      },
+      {
         id: "connections",
         label: "接続状態",
         icon: "🔌",
