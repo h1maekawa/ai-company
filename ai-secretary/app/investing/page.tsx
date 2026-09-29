@@ -11,6 +11,7 @@ import { NewsPanel } from "@/components/investing/NewsPanel";
 import { AiSuggestCard } from "@/components/investing/AiSuggestCard";
 import { CapacityCard } from "@/components/investing/CapacityCard";
 import { LearningBriefCard } from "@/components/investing/LearningBriefCard";
+import { IntelligenceTodayPanel } from "@/components/investing/IntelligenceToday";
 import { Skeleton } from "@/components/investing/ui";
 import { FreshnessBadge } from "@/components/ui/Freshness";
 import { formatAsOf, relativeAge } from "@/app/lib/freshness";
@@ -35,7 +36,7 @@ export default function InvestingDashboard() {
   const fx = data?.fx ?? null;
 
   return (
-    <InvestingShell title="ダッシュボード">
+    <InvestingShell title="今日">
       {error && (
         <div className="mb-5 flex items-start gap-2 rounded-xl border border-loss/25 bg-loss/10 px-4 py-3 text-sm text-loss">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -62,6 +63,8 @@ export default function InvestingDashboard() {
           </Link>
         </div>
       )}
+
+      <IntelligenceTodayPanel />
 
       {/* ─── 上部KPI 4枚 ───────────────────────────── */}
       <section className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

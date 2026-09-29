@@ -5,16 +5,17 @@ const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 export function lineNotificationText(event: NotificationEvent): string {
   const base = process.env.APP_BASE_URL;
   const link = base ? new URL(event.deepLink, base).toString() : event.deepLink;
+  const investment = event.sourceType === "investment";
   return [
-    "📈 今日のX候補",
+    investment ? "📊 Investment Intelligence" : "📈 今日のX候補",
     "",
     event.title,
     event.summary,
     "",
-    "👇 AI Companyでこの候補を開く",
+    investment ? "👇 AI CompanyでOpportunityを確認" : "👇 AI Companyでこの候補を開く",
     link,
     "",
-    "リンク先で元記事を確認し、音声またはテキストで自分の意見を入れるとX投稿案を作れます。",
+    investment ? "Evidenceと不足データを確認してから、本人がGO / WAIT / PASSを判断してください。" : "リンク先で元記事を確認し、音声またはテキストで自分の意見を入れるとX投稿案を作れます。",
   ].join("\n");
 }
 
