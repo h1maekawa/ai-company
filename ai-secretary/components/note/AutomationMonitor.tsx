@@ -1,21 +1,10 @@
 "use client";
 
-/**
- * 運用モニター（TASK-N4）
- *
- * ノート事業部のトップに置く「監視＋承認」ダッシュボード。
- * 初見で次の3つが1画面で分かることだけを目的にする:
- *   1. 今どのモードで回っているか
- *   2. 今日は何が予約されているか
- *   3. 承認が必要なものはあるか
- * 作文の導線はここに混ぜない（作文は review モードの承認画面側へ寄せる）。
- */
-
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { AlertTriangle, CalendarClock, CheckCircle2, Inbox, Settings } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, Inbox, Settings, Sparkles } from "lucide-react";
 import type { ApprovalQueueEntry, AutomationStatus } from "@/app/lib/note/automation/status";
-import { OPERATION_MODE_HINTS, OPERATION_MODE_LABELS } from "@/app/lib/note/research/types";
+import { OPERATION_MODE_HINTS } from "@/app/lib/note/research/types";
 import { X_AUTOMATION_PERSONA_NAME } from "@/app/lib/note/types";
 import { FreshnessBadge } from "@/components/ui/Freshness";
 import { Skeleton } from "@/components/ui/primitives";
@@ -34,39 +23,22 @@ function timeJst(iso: string): string {
   }).format(new Date(iso));
 }
 
-/**
- * 自動テスト（要件9）の結果表示。
- * 承認前の必須条件なので、通過していないものは理由まで出す。
- */
+function formatDateTime(value: string | null): string {
+  return value ? new Date(value).toLocaleString("ja-JP") : "未実行";
+}
+
 function QaBadge({ entry }: { entry: ApprovalQueueEntry }) {
-  if (!entry.qa) {
-    return (
-      <span className="mt-1 block text-[10px] text-sub">自動テスト: 未実行</span>
-    );
-  }
-
-  const { qa } = entry;
-  const failed = qa.checks.filter(
-    (c) => c.severity === "blocking" && c.status === "fail"
-  );
-
+  if (!entry.qa) return <span className="mt-1 block text-[10px] text-sub">自動テスト: 未実行</span>;
+  const failed = entry.qa.checks.filter((check) => check.severity === "blocking" && check.status === "fail");
   return (
     <span className="mt-1 block">
-      <span
-        className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
-          qa.passed
-            ? "border-gain/25 bg-gain/10 text-gain"
-            : "border-loss/25 bg-loss/10 text-loss"
-        }`}
-      >
-        {qa.passed ? "自動テスト通過" : "自動テスト未通過"}
+      <span className={`inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${entry.qa.passed ? "border-gain/25 bg-gain/10 text-gain" : "border-loss/25 bg-loss/10 text-loss"}`}>
+        {entry.qa.passed ? "自動テスト通過" : "自動テスト未通過"}
       </span>
-      {entry.qaSummary && qa.passed && (
-        <span className="ml-1.5 text-[10px] text-sub">{entry.qaSummary}</span>
-      )}
+      {entry.qaSummary && entry.qa.passed && <span className="ml-1.5 text-[10px] text-sub">{entry.qaSummary}</span>}
       {failed.length > 0 && (
         <span className="mt-0.5 block text-[10px] leading-relaxed text-loss/80">
-          {failed.map((c) => `${c.label}: ${c.detail}`).join(" / ")}
+          {failed.map((check) => `${check.label}: ${check.detail}`).join(" / ")}
         </span>
       )}
     </span>
@@ -80,7 +52,7 @@ export function AutomationMonitor() {
 
   useEffect(() => {
     fetch("/api/note/automation/status")
-      .then((r) => r.json())
+      .then((response) => response.json())
       .then((json: AutomationStatus & { error?: string }) => {
         if (json.error) setError(json.error);
         else setStatus(json);
@@ -91,141 +63,92 @@ export function AutomationMonitor() {
 
   if (loading) return <Skeleton className="h-56 rounded-2xl" />;
   if (error || !status) {
-    return (
-      <section className="rounded-2xl border border-loss/25 bg-loss/10 px-4 py-3 text-sm text-loss">
-        {error || "運用状況を取得できませんでした"}
-      </section>
-    );
+    return <section className="rounded-2xl border border-loss/25 bg-loss/10 px-4 py-3 text-sm text-loss">{error || "運用状況を取得できませんでした"}</section>;
   }
 
   const { mode, effective, blockers, today, approvalQueue } = status;
+  const sortedSlots = [...today.slots].sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
 
   return (
     <section className="space-y-3">
-      {/* ─── 1. 今どのモードか ───────────────────── */}
       <div className="rounded-2xl border border-hairline bg-ink-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs text-sub">Creator: {X_AUTOMATION_PERSONA_NAME}</p>
-            <div className="mt-1.5 flex items-center gap-2">
-              <span
-                className={`rounded-full border px-3 py-1 text-sm font-semibold ${MODE_STYLE[mode]}`}
-              >
-                {OPERATION_MODE_LABELS[mode]}
-              </span>
-              {effective ? (
-                <span className="inline-flex items-center gap-1 text-[11px] text-gain">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  自動投稿の稼働条件OK
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[11px] text-loss">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  自動予約は止まっています
-                </span>
-              )}
-            </div>
-            <p className="mt-1.5 text-[11px] text-sub">{OPERATION_MODE_HINTS[mode]}</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-white">X 自動運転</p>
+            <p className="mt-0.5 text-[10px] text-sub">Creator: {X_AUTOMATION_PERSONA_NAME}</p>
           </div>
-          <Link
-            href="/note/settings"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-hairline px-3 py-2 text-xs text-sub hover:border-white/20 hover:text-white"
-          >
-            <Settings className="h-3.5 w-3.5" />
-            モードを変える
+          <Link href="/note/settings" className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-hairline px-3 py-2 text-xs text-sub hover:border-white/20 hover:text-white">
+            <Settings className="h-3.5 w-3.5" />モードを変える
           </Link>
         </div>
 
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <SummaryItem label="自動運転" value={effective ? "稼働可能" : "要設定"} tone={effective ? "gain" : "loss"} icon={effective ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />} />
+          <div className={`rounded-xl border px-3 py-2.5 ${MODE_STYLE[mode]}`}>
+            <p className="text-[10px] opacity-75">運用モード</p>
+            <p className="mt-1 text-sm font-bold uppercase">{mode}</p>
+          </div>
+          <SummaryItem label="今日の予約" value={`${today.scheduled} / ${today.limit}件`} />
+          <SummaryItem label="投稿済み" value={`${today.published}件`} />
+          <SummaryItem label="確認待ち" value={`${approvalQueue.length}件`} tone={approvalQueue.length ? "brand" : "default"} />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+          <span className={`inline-flex items-center gap-1 ${effective ? "text-gain" : "text-loss"}`}>
+            {effective ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+            {effective ? "自動投稿の稼働条件OK" : "自動予約は止まっています"}
+          </span>
+          <span className="text-sub">{OPERATION_MODE_HINTS[mode]}</span>
+        </div>
+
         {blockers.length > 0 && (
-          <ul className="mt-3 space-y-1.5">
-            {blockers.map((blocker) => (
-              <li
-                key={blocker.label}
-                className="rounded-lg bg-white/[0.03] px-3 py-2 text-[11px] leading-relaxed"
-              >
-                <span className="font-medium text-white">{blocker.label}</span>
-                <span className="ml-2 text-sub">{blocker.howToFix}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-4 rounded-xl border border-loss/30 bg-loss/10 p-4">
+            <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-loss"><AlertTriangle className="h-4 w-4" />自動投稿を動かすために直すこと</p>
+            <ol className="mt-3 space-y-2">
+              {blockers.map((blocker, index) => (
+                <li key={blocker.label} className="flex gap-2 text-xs leading-relaxed">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-loss/20 font-semibold text-loss">{index + 1}</span>
+                  <span><span className="font-semibold text-white">{blocker.label}</span><span className="mt-0.5 block text-sub">{blocker.howToFix}</span></span>
+                </li>
+              ))}
+            </ol>
+          </div>
         )}
       </div>
 
-      <div className="rounded-2xl border border-hairline bg-ink-card p-5">
-        <p className="text-sm font-semibold text-white">自動改善ループ</p>
-        <ol className="mt-3 grid gap-2 text-xs text-sub sm:grid-cols-5">
-          {["Research", "X自動投稿", "Performance Sync", "Strategy / Style改善", "翌日の生成へ反映"].map((step, index) => (
-            <li key={step} className="rounded-lg border border-hairline px-3 py-2">
-              <span className="mr-1 text-brand">{index + 1}.</span>{step}
-            </li>
-          ))}
-        </ol>
-        <div className="mt-3 grid gap-2 text-[11px] text-sub sm:grid-cols-2 lg:grid-cols-4">
-          <p>最終Performance Sync<br /><strong className="text-white">{status.improvementLoop.lastPerformanceSyncAt ? new Date(status.improvementLoop.lastPerformanceSyncAt).toLocaleString("ja-JP") : "未実行"}</strong></p>
-          <p>最終Nightly Growth Review<br /><strong className="text-white">{status.improvementLoop.lastNightlyGrowthReviewAt ? new Date(status.improvementLoop.lastNightlyGrowthReviewAt).toLocaleString("ja-JP") : "未実行"}</strong></p>
-          <p>Growth confidence<br /><strong className="text-white">{status.improvementLoop.growthConfidence ?? "未計測"}</strong></p>
-          <p>Applied changes<br /><strong className="text-white">{status.improvementLoop.appliedChanges}件</strong></p>
-        </div>
-        <div className="mt-3 text-[11px] text-sub">
-          <p className="font-medium text-white">Experiments</p>
-          {status.improvementLoop.experiments.length ? (
-            <ul className="mt-1 list-disc space-y-1 pl-4">{status.improvementLoop.experiments.map((experiment) => <li key={experiment}>{experiment}</li>)}</ul>
-          ) : <p className="mt-1">実験はまだありません。</p>}
-        </div>
-      </div>
-
       <div className="grid gap-3 lg:grid-cols-2">
-        {/* ─── 2. 今日の予約状況 ─────────────────── */}
         <div className="rounded-2xl border border-hairline bg-ink-card p-5">
           <div className="flex items-baseline justify-between gap-3">
-            <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-white">
-              <CalendarClock className="h-4 w-4 text-sub" />
-              今日の予約
-            </p>
-            <p className="text-xs tabular-nums text-sub">
-              予約 {today.scheduled} / 投稿済み {today.published}・上限 {today.limit}件
-            </p>
+            <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-white"><CalendarClock className="h-4 w-4 text-sub" />今日のX</p>
+            <p className="text-xs tabular-nums text-sub">予約 {today.scheduled} / {today.limit}件</p>
           </div>
-
-          {today.slots.length === 0 ? (
-            <p className="mt-3 text-xs text-sub">
-              本日の予約はまだありません。投稿案の生成は毎朝7:10（JST）に走ります。
-            </p>
+          {sortedSlots.length === 0 ? (
+            <p className="mt-3 text-xs text-sub">本日の予約はまだありません。投稿案の生成は毎朝7:10（JST）に走ります。</p>
           ) : (
-            <ul className="mt-3 space-y-2">
-              {today.slots.map((slot) => (
-                <li key={slot.draftId} className="flex items-start gap-3 text-xs">
-                  <span className="shrink-0 tabular-nums font-medium text-white">
-                    {timeJst(slot.scheduledAt)}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sub">{slot.text}</span>
-                  <span className="shrink-0 text-[10px] text-sub">{slot.status}</span>
+            <ol className="mt-3 divide-y divide-hairline">
+              {sortedSlots.map((slot) => (
+                <li key={slot.draftId} className="flex items-start gap-3 py-2.5 text-xs first:pt-0 last:pb-0">
+                  <span className="shrink-0 rounded-md bg-white/[0.05] px-2 py-1 tabular-nums font-semibold text-white">{timeJst(slot.scheduledAt)}</span>
+                  <span className="min-w-0 flex-1 truncate py-1 text-sub">{slot.text}</span>
+                  <span className="shrink-0 py-1 text-[10px] text-sub">{slot.status}</span>
                 </li>
               ))}
-            </ul>
+            </ol>
           )}
         </div>
 
-        {/* ─── 3. 承認が必要なもの ───────────────── */}
         <div className="rounded-2xl border border-hairline bg-ink-card p-5">
           <div className="flex items-baseline justify-between gap-3">
-            <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-white">
-              <Inbox className="h-4 w-4 text-sub" />
-              要承認・要確認
-            </p>
+            <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-white"><Inbox className="h-4 w-4 text-sub" />確認待ち</p>
             <p className="text-xs tabular-nums text-sub">{approvalQueue.length}件</p>
           </div>
-
           {approvalQueue.length === 0 ? (
-            <p className="mt-3 text-xs text-sub">確認待ちはありません。</p>
+            <div className="mt-3 flex items-center gap-2 rounded-xl bg-gain/5 px-3 py-3 text-xs text-gain"><CheckCircle2 className="h-4 w-4 shrink-0" />現在、あなたの確認が必要な投稿はありません</div>
           ) : (
             <ul className="mt-3 space-y-2">
               {approvalQueue.slice(0, 5).map((entry) => (
                 <li key={entry.draftId} className="text-xs">
-                  <Link
-                    href="/note?view=review"
-                    className="block rounded-lg px-2 py-1.5 hover:bg-white/[0.04]"
-                  >
+                  <Link href="/note?view=review" className="block rounded-lg px-2 py-1.5 hover:bg-white/[0.04]">
                     <span className="block truncate text-white">{entry.text}</span>
                     <span className="mt-0.5 block text-[10px] text-loss/80">{entry.reason}</span>
                     <QaBadge entry={entry} />
@@ -234,22 +157,37 @@ export function AutomationMonitor() {
               ))}
             </ul>
           )}
-          {approvalQueue.length > 5 && (
-            <Link
-              href="/note?view=review"
-              className="mt-2 inline-block text-[11px] font-medium text-brand hover:underline"
-            >
-              残り{approvalQueue.length - 5}件を見る
-            </Link>
-          )}
+          {approvalQueue.length > 5 && <Link href="/note?view=review" className="mt-2 inline-block text-[11px] font-medium text-brand hover:underline">残り{approvalQueue.length - 5}件を見る</Link>}
         </div>
       </div>
 
-      {/* ─── 直近実績の鮮度（TASK-C2の共通表示） ───── */}
+      <div className="rounded-2xl border border-hairline bg-ink-card p-5">
+        <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-brand" /><p className="text-sm font-semibold text-white">自動改善ループ</p></div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <CompactStat label="Performance Sync" value={formatDateTime(status.improvementLoop.lastPerformanceSyncAt)} />
+          <CompactStat label="Nightly Growth Review" value={formatDateTime(status.improvementLoop.lastNightlyGrowthReviewAt)} />
+          <CompactStat label="Growth confidence" value={status.improvementLoop.growthConfidence ?? "未計測"} />
+          <CompactStat label="Applied changes" value={`${status.improvementLoop.appliedChanges}件`} />
+        </div>
+        <ol className="mt-3 flex flex-wrap items-center gap-1.5 text-[10px] text-sub">
+          {["Research", "X投稿", "実績取得", "改善", "次回へ"].map((step, index, steps) => (
+            <li key={step} className="contents"><span className="rounded-lg border border-hairline px-2.5 py-1.5">{step}</span>{index < steps.length - 1 && <ArrowRight className="h-3 w-3 shrink-0 text-brand" />}</li>
+          ))}
+        </ol>
+      </div>
+
       <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-sub">
-        <FreshnessBadge freshness={status.freshness} />
-        <span>実績レコード {status.recent.records}件</span>
+        <FreshnessBadge freshness={status.freshness} /><span>実績レコード {status.recent.records}件</span>
       </div>
     </section>
   );
+}
+
+function SummaryItem({ label, value, tone = "default", icon }: { label: string; value: string; tone?: "default" | "gain" | "loss" | "brand"; icon?: ReactNode }) {
+  const toneClass = { default: "border-hairline bg-white/[0.02] text-white", gain: "border-gain/25 bg-gain/10 text-gain", loss: "border-loss/25 bg-loss/10 text-loss", brand: "border-brand/25 bg-brand/10 text-brand" }[tone];
+  return <div className={`rounded-xl border px-3 py-2.5 ${toneClass}`}><p className="text-[10px] text-sub">{label}</p><p className="mt-1 flex items-center gap-1 text-sm font-bold tabular-nums">{icon}{value}</p></div>;
+}
+
+function CompactStat({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl bg-white/[0.03] px-3 py-2.5"><p className="text-[10px] text-sub">{label}</p><p className="mt-1 truncate text-xs font-semibold text-white" title={value}>{value}</p></div>;
 }
