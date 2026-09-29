@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, Plus } from "lucide-react";
 import { Card, CardHeader, Skeleton } from "@/components/ui/primitives";
 
 type HomeData = {
@@ -69,14 +69,17 @@ export function ContentToday({
   if (pendingDrafts > 0) todos.push({ label: `X投稿 ${pendingDrafts}件 要確認`, onClick: onOpenReview });
   if (pendingArticles > 0) todos.push({ label: `note下書き ${pendingArticles}件 要確認`, onClick: onOpenReview });
   for (const action of home?.nextActions ?? []) todos.push({ label: action.label, href: action.href });
-  if (todos.length === 0 && !loading) todos.push({ label: "新しい投稿を作る", onClick: onOpenCreate });
-
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader title="今日やること" hint="上から順に片付ければ大丈夫です" />
         {loading ? (
           <Skeleton className="h-28 rounded-xl" />
+        ) : todos.length === 0 ? (
+          <div className="flex items-center gap-2 rounded-xl border border-gain/20 bg-gain/5 px-4 py-4 text-sm text-gain">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            今は対応不要です。自動運転に任せて大丈夫です
+          </div>
         ) : (
           <ol className="space-y-2">
             {todos.map((todo, index) => {
@@ -114,6 +117,16 @@ export function ContentToday({
           >
             <CheckCircle2 className="h-4 w-4" />
             確認する（{needsReview}件）
+          </button>
+        )}
+        {!loading && (
+          <button
+            type="button"
+            onClick={onOpenCreate}
+            className="mt-3 inline-flex items-center gap-1.5 text-xs text-sub hover:text-white"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            追加で投稿を作る
           </button>
         )}
       </Card>

@@ -23,6 +23,7 @@ import { ExperienceLibrary } from "@/components/note/ExperienceLibrary";
 import { PublishQueue } from "@/components/note/PublishQueue";
 import { ReferenceAccounts } from "@/components/note/ReferenceAccounts";
 import { ContentToday } from "@/components/note/ContentToday";
+import { AutomationMonitor } from "@/components/note/AutomationMonitor";
 import { ContentResults } from "@/components/note/ContentResults";
 import { XWorkspace } from "@/components/note/x/XWorkspace";
 import { XQuickOpinion } from "@/components/note/growth/XQuickOpinion";
@@ -118,7 +119,10 @@ function NoteDepartment() {
         </div>
 
         {view === "today" && (
-          <ContentToday onOpenReview={() => setView("review")} onOpenCreate={() => setView("create")} />
+          <div className="space-y-4">
+            <AutomationMonitor />
+            <ContentToday onOpenReview={() => setView("review")} onOpenCreate={() => setView("create")} />
+          </div>
         )}
 
         {view === "create" && (
