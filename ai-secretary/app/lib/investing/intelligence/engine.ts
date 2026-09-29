@@ -1,6 +1,7 @@
 import type { DailyBar } from "../../fund/marketData/calc";
-import { changePct, marketEnv, rvol20 } from "../../fund/marketData/calc";
+import { adtv20, changePct, marketEnv, rvol20 } from "../../fund/marketData/calc";
 import { tokyoDateKey } from "../../note/tokyoDate";
+import { INVESTMENT_INTELLIGENCE_CONFIG } from "./config";
 import type { FundamentalSnapshot, InvestmentEvidence, InvestmentOpportunity, MacroSnapshot, MarketRegime, MarketRegimeArtifact, ScoreFactor, SectorSnapshot } from "./types";
 
 const WEIGHTS: Array<[ScoreFactor["key"], string, number]> = [
@@ -38,26 +39,26 @@ export function buildOpportunity(input: {
   const freshEvidence = input.evidence.filter((item) => !["stale", "unknown"].includes(item.freshness));
   const volumeScore = relativeVolume === null ? null : Math.min(15, Math.max(0, relativeVolume >= 2 ? 15 : relativeVolume * 7.5));
   const macroScore = input.marketRegime === "DATA_INCOMPLETE" ? null : input.marketRegime === "RISK_ON" ? 5 : input.marketRegime === "NEUTRAL" ? 3 : 1;
-  const portfolioScore = input.held ? 5 : 3;
   const usableFundamental = input.fundamental?.sourceUrl && !["stale", "unknown"].includes(input.fundamental.freshness) ? input.fundamental : undefined;
   const revenueGrowth = usableFundamental?.revenueGrowth ?? null;
   const epsGrowth = usableFundamental?.epsGrowth ?? null;
   const growth = revenueGrowth ?? epsGrowth;
   const earningsScore = growth === null ? null : Math.max(0, Math.min(15, 7.5 + growth / 4));
   const qualityScore = usableFundamental?.fcf === null || usableFundamental?.fcf === undefined ? null : usableFundamental.fcf > 0 ? 10 : 2;
-  const sectorScore = input.sector?.score === null || input.sector?.score === undefined ? null : input.sector.score / 10;
+  const sectorScore = !input.sector || ["stale", "unknown"].includes(input.sector.freshness) || input.sector.score === null ? null : input.sector.score / 10;
   const newsEvidence = freshEvidence.filter((item) => item.sourceType === "news" && item.sourceUrl && item.value !== "unknown");
-  const demandScore = newsEvidence.length === 0 ? null : Math.min(20, 10 + newsEvidence.length * 2);
-  const catalystScore = newsEvidence.length === 0 ? null : Math.min(10, 5 + newsEvidence.length);
+  const demandEvidence = newsEvidence.filter((item) => item.metric === "news:future_demand");
+  const catalystEvidence = newsEvidence.filter((item) => item.metric === "news:catalyst");
+  const demandScore = demandEvidence.length === 0 ? null : Math.min(20, 10 + demandEvidence.length * 2);
+  const catalystScore = catalystEvidence.length === 0 ? null : Math.min(10, 5 + catalystEvidence.length);
   const known: Partial<Record<ScoreFactor["key"], { score: number; reason: string }>> = {
     volume: volumeScore === null ? undefined : { score: volumeScore, reason: `RVOL20 ${relativeVolume?.toFixed(2)}x` },
     macroFit: macroScore === null ? undefined : { score: macroScore, reason: `Market Regime ${input.marketRegime}` },
-    portfolioFit: { score: portfolioScore, reason: input.held ? "保有株への直接影響" : "新規候補（重複確認が必要）" },
     earningsGrowth: earningsScore === null ? undefined : { score: earningsScore, reason: `Revenue/EPS growth ${growth?.toFixed(1)}%` },
     quality: qualityScore === null ? undefined : { score: qualityScore, reason: `FCF ${usableFundamental?.fcf?.toLocaleString()}` },
     sectorStrength: sectorScore === null ? undefined : { score: sectorScore, reason: `${input.sector?.name} score ${input.sector?.score}` },
-    futureDemand: demandScore === null ? undefined : { score: demandScore, reason: `${newsEvidence.length}件のfresh sourceで需要テーマを確認` },
-    catalyst: catalystScore === null ? undefined : { score: catalystScore, reason: `${newsEvidence.length}件のfresh source。解釈は本人確認が必要` },
+    futureDemand: demandScore === null ? undefined : { score: demandScore, reason: `${demandEvidence.length}件の需要Evidenceを確認` },
+    catalyst: catalystScore === null ? undefined : { score: catalystScore, reason: `${catalystEvidence.length}件のCatalyst Evidenceを確認` },
   };
   const breakdown = WEIGHTS.map(([key, label, weight]): ScoreFactor => ({
     key, label, weight, score: known[key]?.score ?? null,
@@ -73,8 +74,17 @@ export function buildOpportunity(input: {
   const fundamentalEvidence = Boolean(input.fundamental?.sourceUrl && !["stale", "unknown"].includes(input.fundamental.freshness) && [input.fundamental.revenue, input.fundamental.eps, input.fundamental.fcf].some((value) => value !== null));
   const mandatoryEvidence = ["fresh_market", "relative_volume", "market_regime", "fundamental", "source_evidence"];
   const missingEvidence = [!input.bars || freshnessOfBars(input.bars, now) === "stale" ? "fresh_market" : null, relativeVolume === null ? "relative_volume" : null, input.marketRegime === "DATA_INCOMPLETE" ? "market_regime" : null, !fundamentalEvidence ? "fundamental" : null, freshEvidence.length < 2 ? "source_evidence" : null].filter((value): value is string => Boolean(value));
-  const complete = coverage >= 0.8 && missingEvidence.length === 0 && score !== null;
-  const gate = !complete ? "DATA_INCOMPLETE" : score >= 75 ? "GO_CANDIDATE" : score >= 55 ? "WAIT" : "PASS";
+  const liquidity = input.bars ? adtv20(input.bars) : null;
+  const distinctNewsSources = new Set(newsEvidence.map((item) => item.sourceName)).size;
+  const riskFlags = [
+    liquidity !== null && liquidity < INVESTMENT_INTELLIGENCE_CONFIG.minimumAdtvUsd ? { code: "LOW_LIQUIDITY" as const, severity: "critical" as const, detail: `ADTV20 $${liquidity.toLocaleString()} は最低基準未満です` } : null,
+    input.fundamental && ["stale", "unknown"].includes(input.fundamental.freshness) ? { code: "FUNDAMENTAL_STALE" as const, severity: "critical" as const, detail: "Fundamental Evidenceがstale/unknownです" } : null,
+    newsEvidence.length > 0 && distinctNewsSources < 2 ? { code: "SINGLE_SOURCE" as const, severity: "warning" as const, detail: "News Evidenceが単一ソースです" } : null,
+    input.marketRegime === "RISK_OFF" ? { code: "MACRO_CONFLICT" as const, severity: "warning" as const, detail: "Market RegimeがRISK_OFFです" } : null,
+  ].filter((flag): flag is NonNullable<typeof flag> => flag !== null);
+  const complete = coverage >= INVESTMENT_INTELLIGENCE_CONFIG.minimumOpportunityCoverage && missingEvidence.length === 0 && score !== null;
+  const hasCriticalRisk = riskFlags.some((flag) => flag.severity === "critical");
+  const gate = !complete ? "DATA_INCOMPLETE" : score >= 75 && !hasCriticalRisk ? "GO_CANDIDATE" : score >= 55 ? "WAIT" : "PASS";
   const marketEvidenceIds = freshEvidence.filter((item) => item.sourceType === "market").map((item) => item.id);
   const fundamentalEvidenceIds = freshEvidence.filter((item) => item.sourceType === "research" && item.sourceUrl).map((item) => item.id);
   const newsEvidenceIds = newsEvidence.map((item) => item.id);
@@ -86,7 +96,7 @@ export function buildOpportunity(input: {
   return {
     id: `opp_${input.ticker.toLowerCase()}_${tokyoDateKey(now).replaceAll("-", "")}`,
     ticker: input.ticker, name: input.name, theme: input.theme, gate, score,
-    scoreCoverage: scoredWeight, coverage, mandatoryEvidence, missingEvidence, breakdown, relativeVolume, priceChangePct, catalyst: null,
+    scoreCoverage: scoredWeight, coverage, mandatoryEvidence, missingEvidence, riskFlags, breakdown, relativeVolume, priceChangePct, catalyst: null,
     whyNow: relativeVolume === null ? "出来高データが揃うまで判断を保留します" : `出来高は20日平均の${relativeVolume.toFixed(2)}倍です`,
     portfolioImpact: input.held ? "保有中のため、投資仮説とリスクを再確認します" : "未保有候補。既存ポートフォリオとの重複を確認します",
     portfolioAction: input.held ? "RECHECK_THESIS" : "WATCH",

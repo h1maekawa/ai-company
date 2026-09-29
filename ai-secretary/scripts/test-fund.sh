@@ -12,7 +12,7 @@ npx tsc app/lib/fund/policy.ts app/lib/fund/engine.ts app/lib/fund/rakutenCsv.ts
   --outDir "$DIST" --module commonjs --target es2020 --esModuleInterop --skipLibCheck
 
 # Investment Intelligence pure parsers / gate engine
-npx tsc app/lib/fund/marketData/calc.ts app/lib/note/tokyoDate.ts app/lib/investing/intelligence/types.ts app/lib/investing/intelligence/flags.ts app/lib/investing/intelligence/engine.ts app/lib/investing/intelligence/providers/fred.ts app/lib/investing/intelligence/providers/sec.ts \
+npx tsc app/lib/fund/marketData/calc.ts app/lib/note/tokyoDate.ts app/lib/investing/intelligence/types.ts app/lib/investing/intelligence/flags.ts app/lib/investing/intelligence/config.ts app/lib/investing/intelligence/themes.ts app/lib/investing/intelligence/newsImpact.ts app/lib/investing/intelligence/engine.ts app/lib/investing/intelligence/providers/fred.ts app/lib/investing/intelligence/providers/sec.ts \
   --outDir "$DIST/intel" --rootDir app/lib --module commonjs --target es2021 --esModuleInterop --skipLibCheck
 
 # 2) middleware（実物）＋session を認証テスト用にコンパイル
