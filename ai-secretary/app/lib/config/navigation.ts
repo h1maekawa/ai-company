@@ -1,8 +1,8 @@
 /**
- * AI Company のフロント情報設計（Navigation v2）の唯一の定義。
+ * AI Company のフロント情報設計（Navigation v3）の唯一の定義。
  *
  * 方針:
- * - ユーザーに「どの部署か」を考えさせない。日常はトップ5領域だけで完結させる。
+ * - ユーザーに「どの部署か」を考えさせない。日常は4入口だけで完結させる。
  * - Backend の Department 構造（app/lib/config/hub.ts）は維持し、
  *   ここでは「表に出す入口」だけを決める。
  * - 既存 route は壊さない。UI から隠す場合も Deep Link は生かす。
@@ -34,11 +34,11 @@ export type DepartmentNavItem = AppNavItem & {
 
 /** Departmentの人間向け表示と入口の唯一の定義。内部IDは変更しない。 */
 export const DEPARTMENT_NAV: DepartmentNavItem[] = [
-  { id: "creator", label: "note・X", icon: "✍️", href: "/ceo/departments/creator", detailHref: "/content", secretaryId: "personal-note", employeeIds: ["personal-note", "creator-content", "creator-research", "creator-kpi"], homeMetrics: ["x_impressions", "revenue"], description: "投稿・反応・収益を見る" },
-  { id: "fund", label: "株式", icon: "📈", href: "/ceo/departments/fund", detailHref: "/investing", secretaryId: "personal-fund", employeeIds: ["personal-fund", "fund-research"], homeMetrics: ["portfolio_value", "unrealized_pl", "thesis_alerts"], description: "保有資産と判断候補を見る" },
-  { id: "operations", label: "AI会社改善", icon: "⚙️", href: "/ceo/departments/operations", detailHref: "/company", secretaryId: "executive-kaizen", employeeIds: ["executive-kaizen"], homeMetrics: ["automation", "intervention"], description: "自動化と問題を見る" },
+  { id: "creator", label: "コンテンツ", icon: "✍️", href: "/ceo/departments/creator", detailHref: "/content", secretaryId: "personal-note", employeeIds: ["personal-note", "creator-content", "creator-research", "creator-kpi"], homeMetrics: ["x_impressions", "revenue"], description: "投稿とコンテンツ運用を見る" },
+  { id: "fund", label: "投資", icon: "📈", href: "/ceo/departments/fund", detailHref: "/investing", secretaryId: "personal-fund", employeeIds: ["personal-fund", "fund-research"], homeMetrics: ["portfolio_value", "unrealized_pl", "thesis_alerts"], description: "資産と投資判断を見る" },
+  { id: "operations", label: "AI Company", icon: "⚙️", href: "/ceo/departments/operations", detailHref: "/company", secretaryId: "executive-kaizen", employeeIds: ["executive-kaizen"], homeMetrics: ["automation", "intervention"], description: "自動化と会社の状態を見る" },
   { id: "knowledge", label: "知識", icon: "🧠", href: "/ceo/departments/knowledge", detailHref: "/knowledge", secretaryId: "executive-inbox", employeeIds: ["executive-inbox"], homeMetrics: ["total", "pending"], description: "Knowledgeと確認待ちを見る" },
-  { id: "planning", label: "今日・予定", icon: "🌅", href: "/ceo/departments/planning", detailHref: "/planning", secretaryId: "personal-morning", employeeIds: ["personal-morning"], homeMetrics: ["today_tasks", "blocked"], description: "今日のTaskと予定を見る" },
+  { id: "planning", label: "計画", icon: "🌅", href: "/ceo/departments/planning", detailHref: "/planning", secretaryId: "personal-morning", employeeIds: ["personal-morning"], homeMetrics: ["today_tasks", "blocked"], description: "今日のTaskと予定を見る" },
   { id: "engineering", label: "開発", icon: "💻", href: "/ceo/departments/engineering", detailHref: "/admin", secretaryId: "executive-assistant", employeeIds: ["executive-assistant"], homeMetrics: ["pr_ready", "blocked"], description: "Issue・PR・CIを見る" },
 ];
 
@@ -58,11 +58,6 @@ export const KNOWLEDGE_NAV: AppNavItem = {
   href: "/knowledge",
   description: "全事業部が参照する会社の共有知識",
 };
-export const WORK_NAV: AppNavItem[] = [
-  { id: "tasks", label: "Tasks", icon: "✓", href: "/planning", description: "Taskを見る" },
-  { id: "calendar", label: "Calendar", icon: "🗓", href: "/planning?view=calendar", description: "予定を見る" },
-];
-
 /** Pixel Officeの社員カードからDepartmentへ移動するための表示専用mapping。 */
 export const AGENT_DEPARTMENT_HREF: Record<string, string> = {
   "personal-note": DEPARTMENT_NAV_BY_ID.creator.href,
@@ -77,21 +72,28 @@ export const AGENT_DEPARTMENT_HREF: Record<string, string> = {
   "executive-assistant": "/chat?node=assistant",
 };
 
-/** Desktop Sidebarの固定入口。DepartmentはDEPARTMENT_NAVから描画する。 */
+/** Desktop Sidebar / Mobile Bottom Navigationで共有する日常の3入口。 */
 export const PRIMARY_NAV: AppNavItem[] = [
   {
     id: "home",
     label: "ホーム",
     icon: "⌂",
     href: "/",
-    description: "今の状況と、次にやることの入口",
+    description: "今見る必要があること",
   },
   {
-    id: "assistant",
-    label: "秘書",
-    icon: "🤖",
-    href: "/chat?node=assistant",
-    description: "何でもここから依頼できる窓口",
+    id: "today",
+    label: "今日",
+    icon: "🌅",
+    href: "/planning",
+    description: "今何をするかを決める",
+  },
+  {
+    id: "work",
+    label: "仕事",
+    icon: "▦",
+    href: "/ceo/work",
+    description: "領域ごとの詳細を見る",
   },
 ];
 
@@ -227,16 +229,21 @@ export const QUICK_ACTIONS: QuickAction[] = [
  * ここに載っているものは消さない（tests/architecture/navigation.test.mjs が固定する）。
  */
 export const PRESERVED_ROUTES: { href: string; reason: string }[] = [
+  { href: "/note", reason: "コンテンツの既存入口" },
   { href: "/content", reason: "Content Business OS。コンテンツ詳細分析として管理配下から到達する" },
-  { href: "/knowledge", reason: "管理 → Knowledge" },
-  { href: "/connections", reason: "管理 → 接続状態" },
-  { href: "/grill", reason: "ホームQuick Action・秘書・管理から到達する" },
-  { href: "/planning", reason: "トップレベル「今日」" },
-  { href: "/note", reason: "トップレベル「コンテンツ」" },
-  { href: "/investing", reason: "トップレベル「投資」" },
-  { href: "/chat", reason: "秘書・各部署チャット（?node=assistant / kaizen / kakei ...）" },
+  { href: "/investing", reason: "投資専用Shell" },
   { href: "/company", reason: "Simple Pixel Office・AI社員・Mission" },
-  { href: "/admin", reason: "System・Connections・Settings" },
+  { href: "/knowledge", reason: "管理 → Knowledge" },
+  { href: "/planning", reason: "トップレベル「今日」" },
+  { href: "/chat", reason: "Global AI・各部署チャット" },
+  { href: "/ceo/actions", reason: "Work / Global AIから到達するQuick Action" },
+  { href: "/ceo/approvals", reason: "承認がある時だけHomeから到達する" },
+  { href: "/ceo/departments/*", reason: "各Departmentの詳細Deep Link" },
+  { href: "/connections", reason: "管理 → 接続状態" },
+  { href: "/admin", reason: "日常外の設定を集約" },
+  { href: "/admin/system-map", reason: "管理 → 接続・システム → System Map" },
+  { href: "/weekly-review", reason: "管理から到達する週次レビュー" },
+  { href: "/grill", reason: "ホームQuick Action・秘書・管理から到達する" },
 ];
 
 /** pathname がそのナビ項目に属するか（?query は無視する） */

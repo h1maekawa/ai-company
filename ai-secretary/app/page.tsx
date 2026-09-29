@@ -1,4 +1,3 @@
-import { AssistantPrompt } from "@/components/mobile-ceo/AssistantPrompt";
 import { DepartmentOverview } from "@/components/mobile-ceo/DepartmentOverview";
 
 /** `/` is the canonical CEO Dashboard. Company/office detail remains at `/company`. */
@@ -10,7 +9,6 @@ export default function HomePage() {
         <h1 className="mt-1 text-2xl font-bold text-white">会社の今</h1>
       </header>
       <div className="mt-6 space-y-7">
-        <AssistantPrompt />
         <DepartmentOverview />
       </div>
     </main>

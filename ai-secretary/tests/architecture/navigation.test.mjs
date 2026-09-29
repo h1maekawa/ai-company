@@ -4,10 +4,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * Navigation v2 の情報設計を固定するテスト。
+ * Navigation v3 の情報設計を固定するテスト。
  *
  * 目的は「機能が増えてもフロントの入口が増えない」こと。
- * トップレベルは日常5領域 + 管理1つに保ち、UIから隠したrouteもDeep Linkとして残す。
+ * トップレベルはHome / Today / Work / Settingsに保ち、UIから隠したrouteもDeep Linkとして残す。
  */
 
 const ROOT = process.cwd();
@@ -16,14 +16,14 @@ const exists = (relative) => fs.existsSync(path.join(ROOT, relative));
 
 const NAVIGATION = "app/lib/config/navigation.ts";
 
-test("desktop navigation uses Home/Assistant, five business Departments and top-level Knowledge", () => {
+test("desktop navigation uses only Home/Today/Work plus Settings", () => {
   const source = read(NAVIGATION);
   const primary = source.slice(
     source.indexOf("export const PRIMARY_NAV"),
     source.indexOf("export const ADMIN_NAV")
   );
   const ids = [...primary.matchAll(/^\s{4}id: "([a-z-]+)",$/gm)].map((match) => match[1]);
-  assert.deepEqual(ids, ["home", "assistant"]);
+  assert.deepEqual(ids, ["home", "today", "work"]);
   for (const id of ["creator", "fund", "operations", "knowledge", "planning", "engineering"]) {
     assert.match(source, new RegExp(`id: "${id}"[\\s\\S]{0,180}href: "/ceo/departments/${id}"`));
   }
@@ -32,9 +32,9 @@ test("desktop navigation uses Home/Assistant, five business Departments and top-
   assert.match(source, /KNOWLEDGE_NAV[\s\S]*href: "\/knowledge"/);
 });
 
-test("primary navigation points at the existing routes", () => {
+test("primary navigation points at the four daily routes", () => {
   const source = read(NAVIGATION);
-  for (const href of ["/", "/chat?node=assistant"]) {
+  for (const href of ["/", "/planning", "/ceo/work", "/admin"]) {
     assert.ok(source.includes(`href: "${href}"`), `PRIMARY_NAV should link to ${href}`);
   }
   for (const page of [
@@ -56,11 +56,10 @@ test("admin holds the non-daily areas instead of the sidebar", () => {
   }
 });
 
-test("sidebar renders only the shared navigation config", () => {
+test("sidebar renders only the four shared navigation entries", () => {
   const sidebar = read("components/app-shell/AppSidebar.tsx");
   assert.match(sidebar, /from "@\/app\/lib\/config\/navigation"/);
-  assert.match(sidebar, /BUSINESS_DEPARTMENT_NAV\.map/);
-  assert.match(sidebar, /KNOWLEDGE_NAV/);
+  assert.doesNotMatch(sidebar, /BUSINESS_DEPARTMENT_NAV|KNOWLEDGE_NAV|WORK_NAV|OPEN_MEMO_EVENT/);
   // ナビ項目をコンポーネント側に直書きしない（増殖の原因になる）
   assert.doesNotMatch(sidebar, /href="\/(knowledge|connections|content|grill)/);
 });
@@ -77,7 +76,7 @@ test("routes hidden from the sidebar are still reachable", () => {
     assert.ok(exists(page), `${page} must stay reachable by deep link`);
   }
   const source = read(NAVIGATION);
-  for (const href of ["/content", "/knowledge", "/connections", "/grill", "/chat", "/company", "/admin"]) {
+  for (const href of ["/note", "/content", "/investing", "/company", "/knowledge", "/planning", "/chat", "/ceo/actions", "/ceo/approvals", "/ceo/departments/*", "/connections", "/admin", "/admin/system-map", "/weekly-review", "/grill"]) {
     assert.ok(
       source.includes(`{ href: "${href}",`),
       `PRESERVED_ROUTES should document ${href}`

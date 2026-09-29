@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ADMIN_NAV, BUSINESS_DEPARTMENT_NAV, KNOWLEDGE_NAV, PRIMARY_NAV, WORK_NAV, isNavActive, type AppNavItem } from "@/app/lib/config/navigation";
-import { OPEN_MEMO_EVENT } from "./WorkspaceOverlays";
+import { ADMIN_NAV, PRIMARY_NAV, isNavActive, type AppNavItem } from "@/app/lib/config/navigation";
 
 /**
- * DesktopはHome/秘書と全Department、管理を表示する。
+ * Desktopは日常の3入口と設定だけを表示する。
  * ナビ定義は app/lib/config/navigation.ts が唯一の正。
  */
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -16,7 +15,6 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
     <div className="flex h-full flex-col bg-[#0b1020] px-3 py-5">
       <Link href="/" onClick={onNavigate} className="mb-6 px-3">
         <p className="text-base font-bold text-white">AI Company</p>
-        <p className="mt-0.5 text-[11px] text-slate-500">あなたのAI事業部</p>
       </Link>
 
       <nav className="flex flex-1 flex-col overflow-y-auto">
@@ -26,23 +24,8 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
           ))}
         </div>
 
-        <div className="mt-6">
-          <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">事業部</p>
-          <div className="space-y-1">
-            {BUSINESS_DEPARTMENT_NAV.map((item) => (
-              <SidebarLink key={item.id} item={item} pathname={pathname} onNavigate={onNavigate} />
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-5 space-y-1">
-          <SidebarLink item={KNOWLEDGE_NAV} pathname={pathname} onNavigate={onNavigate} />
-          {WORK_NAV.map((item) => <SidebarLink key={item.id} item={item} pathname={pathname} onNavigate={onNavigate} />)}
-        </div>
-
         <div className="mt-auto pt-6">
           <div className="mb-3 border-t border-slate-800/80" />
-          <button type="button" onClick={() => { window.dispatchEvent(new Event(OPEN_MEMO_EVENT)); onNavigate?.(); }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-400 hover:bg-white/5 hover:text-white"><span aria-hidden>📝</span><span>メモ</span></button>
           <SidebarLink item={ADMIN_NAV} pathname={pathname} onNavigate={onNavigate} />
         </div>
       </nav>

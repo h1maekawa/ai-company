@@ -192,11 +192,11 @@ export function InvestingShell({
 
         <div className="mt-auto px-2 pt-4">
           <Link
-            href="/"
+            href="/ceo/work"
             className="flex items-center gap-2 rounded-xl px-2 py-2 text-xs text-sub transition-colors hover:text-white"
           >
             <ChevronLeft className="h-4 w-4" />
-            AI Companyに戻る
+            仕事へ戻る
           </Link>
         </div>
       </aside>
@@ -217,12 +217,12 @@ export function InvestingShell({
             </div>
             <SidebarNav onNavigate={() => setMenuOpen(false)} />
             <Link
-              href="/"
+              href="/ceo/work"
               className="mt-4 flex items-center gap-2 px-3 py-2 text-xs text-sub"
               onClick={() => setMenuOpen(false)}
             >
               <ChevronLeft className="h-4 w-4" />
-              AI Companyに戻る
+              仕事へ戻る
             </Link>
           </div>
         </div>

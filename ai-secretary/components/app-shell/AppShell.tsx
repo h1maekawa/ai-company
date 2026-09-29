@@ -2,9 +2,9 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Building2, CheckSquare, Home, Menu, MessageCircle, Plus, X } from "lucide-react";
+import { BriefcaseBusiness, CalendarDays, Home, Menu, Settings, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { isNavActive } from "@/app/lib/config/navigation";
+import { ADMIN_NAV, PRIMARY_NAV, isNavActive } from "@/app/lib/config/navigation";
 import { AppSidebar } from "./AppSidebar";
 import { WorkspaceOverlays } from "./WorkspaceOverlays";
 
@@ -60,15 +60,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-/** Mobileは5項目。6 Departmentは「事業部」へ集約する。 */
+/** MobileもDesktopと同じ4入口。 */
 function MobileTabBar({ pathname }: { pathname: string }) {
-  const items = [
-    { label: "ホーム", href: "/", icon: Home },
-    { label: "事業部", href: "/ceo/work", icon: Building2 },
-    { label: "＋", href: "/ceo/actions", icon: Plus, primary: true },
-    { label: "承認", href: "/ceo/approvals", icon: CheckSquare },
-    { label: "秘書", href: "/chat?node=assistant", icon: MessageCircle },
-  ];
+  const icons = { home: Home, today: CalendarDays, work: BriefcaseBusiness, admin: Settings };
+  const items = [...PRIMARY_NAV, ADMIN_NAV].map((item) => ({ ...item, icon: icons[item.id as keyof typeof icons] }));
   return (
     <nav
       aria-label="主要ナビゲーション"
@@ -84,10 +79,10 @@ function MobileTabBar({ pathname }: { pathname: string }) {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] transition-colors ${
-                item.primary ? "text-white" : active ? "text-violet-300" : "text-slate-500"
+                active ? "text-violet-300" : "text-slate-500"
               }`}
             >
-              <span className={item.primary ? "-mt-4 rounded-full bg-violet-600 p-3 shadow-lg" : ""}><Icon className="h-5 w-5" aria-hidden /></span>
+              <Icon className="h-5 w-5" aria-hidden />
               <span>{item.label}</span>
             </Link>
           );
