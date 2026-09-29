@@ -10,7 +10,7 @@ test("Investment Intelligence is evidence-first and fail-closed", () => {
   const engine = read("app/lib/investing/intelligence/engine.ts");
   assert.match(engine, /freshEvidence/);
   assert.match(engine, /DATA_INCOMPLETE/);
-  assert.match(engine, /scoredWeight >= 70/);
+  assert.match(engine, /coverage >= 0\.8/);
   assert.doesNotMatch(engine, /BUY|broker|order/i);
 });
 
@@ -27,7 +27,10 @@ test("Investment Intelligence exposes responsive decision routes", () => {
     "app/investing/opportunities/page.tsx",
     "app/investing/opportunities/[id]/page.tsx",
     "app/api/investing/intelligence/today/route.ts",
-    "app/api/cron/investing-intelligence/route.ts",
+    "app/api/cron/investing-macro-news/route.ts",
+    "app/api/cron/investing-market-sector/route.ts",
+    "app/api/cron/investing-opportunity-scan/route.ts",
+    "app/api/cron/investing-notify/route.ts",
   ]) assert.ok(fs.existsSync(path.join(ROOT, file)), `${file} must exist`);
   const detail = read("app/investing/opportunities/[id]/page.tsx");
   assert.match(detail, /Bull \/ Base \/ Bear/);

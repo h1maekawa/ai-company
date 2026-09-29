@@ -16,10 +16,10 @@
       "path": "/api/cron/investing-snapshot",
       "schedule": "0 6 * * 1-5"
     },
-    {
-      "path": "/api/cron/investing-intelligence",
-      "schedule": "0 22 * * 1-5"
-    },
+    { "path": "/api/cron/investing-macro-news", "schedule": "30 21 * * 0-4" },
+    { "path": "/api/cron/investing-market-sector", "schedule": "40 21 * * 0-4" },
+    { "path": "/api/cron/investing-opportunity-scan", "schedule": "50 21 * * 0-4" },
+    { "path": "/api/cron/investing-notify", "schedule": "20 22 * * 0-4" },
     {
       "path": "/api/cron/department-research",
       "schedule": "30 21 * * *"
