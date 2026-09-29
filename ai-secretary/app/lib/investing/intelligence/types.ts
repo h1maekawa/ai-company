@@ -4,10 +4,14 @@ export type MarketRegime = "RISK_ON" | "NEUTRAL" | "RISK_OFF" | "DATA_INCOMPLETE
 export type MarketRegimeArtifact = { regime: MarketRegime; requiredInputs: string[]; availableInputs: string[]; coverage: number; evidenceRefs: string[] };
 export type ProviderState = "OK" | "NOT_CONFIGURED" | "ERROR" | "SKIPPED";
 export type ProviderStatus = { provider: "Yahoo" | "FRED" | "SerpAPI" | "SEC" | "LINE" | "Slack"; status: ProviderState; checkedAt: string; detail?: string };
+export type NewsImpact = { targetType: "market" | "sector" | "theme" | "ticker"; targetId: string; direction: "positive" | "negative" | "neutral" | "unknown"; confidence: number; rationale: string; evidenceIds: string[]; role: "future_demand" | "catalyst" };
+export type NewsTrustTier = "TIER_1" | "TIER_2" | "TIER_3";
 
 export type MacroMetric = { id: string; label: string; value: number | null; unit: string | null; previousValue: number | null; direction: "up" | "down" | "flat" | "unknown"; observedAt: string | null; fetchedAt: string; source: string; sourceUrl?: string; freshness: IntelligenceFreshness };
 export type MacroSnapshot = { available: boolean; metrics: MacroMetric[]; regime: "POSITIVE" | "NEUTRAL" | "NEGATIVE" | "DATA_INCOMPLETE"; coverage: number; evidenceRefs: string[] };
-export type EconomicNewsItem = { id: string; title: string; source: string; url: string; publishedAt: string | null; fetchedAt: string; factSummary: string; interpretation: string | null; impact: "positive" | "negative" | "neutral" | "unknown"; relatedSectors: string[]; relatedThemes: string[]; relatedTickers: string[]; freshness: IntelligenceFreshness };
+export type EconomicNewsItem = { id: string; title: string; source: string; url: string; publishedAt: string | null; fetchedAt: string; factSummary: string; interpretation: string | null; impact: "positive" | "negative" | "neutral" | "unknown"; impacts: NewsImpact[]; trustTier: NewsTrustTier; relatedSectors: string[]; relatedThemes: string[]; relatedTickers: string[]; freshness: IntelligenceFreshness };
+export type InvestmentCandidate = { ticker: string; name: string; held: boolean; watchlisted: boolean; themes: string[]; sectors: string[]; aliases: string[]; candidateSources: Array<"portfolio" | "watchlist" | "theme-universe" | "research"> };
+export type OpportunityRiskFlag = { code: "LOW_LIQUIDITY" | "FUNDAMENTAL_STALE" | "SINGLE_SOURCE" | "MACRO_CONFLICT" | "NEGATIVE_DEMAND" | "NEGATIVE_CATALYST"; severity: "warning" | "critical"; detail: string };
 export type SectorSnapshot = { id: string; name: string; proxy: string; momentum1d: number | null; momentum5d: number | null; momentum20d: number | null; relativeStrength20d: number | null; relativeVolume: number | null; high20Proximity: number | null; score: number | null; freshness: IntelligenceFreshness; evidenceRefs: string[] };
 export type FundamentalSnapshot = { ticker: string; revenue: number | null; revenueGrowth: number | null; eps: number | null; epsGrowth: number | null; operatingIncome: number | null; operatingMargin: number | null; operatingCashFlow: number | null; capex: number | null; fcf: number | null; equity: number | null; roic: number | null; per: number | null; pbr: number | null; sourceUrl: string | null; observedAt: string | null; filedAt: string | null; freshness: IntelligenceFreshness };
 
@@ -52,6 +56,7 @@ export type InvestmentOpportunity = {
   coverage: number;
   mandatoryEvidence: string[];
   missingEvidence: string[];
+  riskFlags: OpportunityRiskFlag[];
   breakdown: ScoreFactor[];
   relativeVolume: number | null;
   priceChangePct: number | null;

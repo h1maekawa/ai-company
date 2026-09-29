@@ -8,13 +8,15 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), "utf8");
 
 test("Investment Intelligence is evidence-first and fail-closed", () => {
   const engine = read("app/lib/investing/intelligence/engine.ts");
+  const config = read("app/lib/investing/intelligence/config.ts");
   const flags = read("app/lib/investing/intelligence/flags.ts");
   const cron = read("app/lib/investing/intelligence/cron.ts");
   const fred = read("app/lib/investing/intelligence/providers/fred.ts");
   const sector = read("app/lib/investing/intelligence/providers/sector.ts");
   assert.match(engine, /freshEvidence/);
   assert.match(engine, /DATA_INCOMPLETE/);
-  assert.match(engine, /coverage >= 0\.8/);
+  assert.match(engine, /coverage >= INVESTMENT_INTELLIGENCE_CONFIG\.minimumOpportunityCoverage/);
+  assert.match(config, /minimumOpportunityCoverage:\s*0\.8/);
   assert.match(flags, /INVESTING_INTELLIGENCE_ENABLED === "true"/);
   assert.match(fred, /sort_order", "desc"/);
   assert.match(cron, /tokyoDateKey/);
