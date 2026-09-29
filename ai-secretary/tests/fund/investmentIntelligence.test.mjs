@@ -7,7 +7,7 @@ const { parseFredResponse } = await import(path.join(dist, "intel/investing/inte
 const { parseSecCompanyFacts } = await import(path.join(dist, "intel/investing/intelligence/providers/sec.js"));
 const { buildOpportunity, deriveMarketRegime } = await import(path.join(dist, "intel/investing/intelligence/engine.js"));
 const { investmentIntelligenceEnabled } = await import(path.join(dist, "intel/investing/intelligence/flags.js"));
-const { classifyNewsImpacts, newsTrustTier } = await import(path.join(dist, "intel/investing/intelligence/newsImpact.js"));
+const { classifyNewsDirection, classifyNewsImpacts, newsTrustTier } = await import(path.join(dist, "intel/investing/intelligence/newsImpact.js"));
 const { buildInvestmentCandidates, normalizeTheme, sectorsForThemes } = await import(path.join(dist, "intel/investing/intelligence/themes.js"));
 
 test("feature flag is enabled only by the exact true value", () => {
@@ -62,6 +62,9 @@ test("news impact requires explicit direction, matching theme and a trusted sour
   const positive = classifyNewsImpacts({ id: "n1", title: "AI investment growth", summary: "Data center capex demand increased and earnings beat", themes: ["AI"], trustTier: "TIER_2" });
   assert.deepEqual(new Set(positive.map((impact) => impact.role)), new Set(["future_demand", "catalyst"]));
   assert.ok(positive.every((impact) => impact.targetId === "AI" && impact.direction === "positive" && impact.confidence >= 0.7));
+  const mixed = classifyNewsImpacts({ id: "n-mixed", title: "AI investment growth", summary: "Demand increased but later declined", themes: ["AI"], trustTier: "TIER_1" });
+  assert.equal(classifyNewsDirection("AI investment growth but demand declined"), "unknown");
+  assert.equal(mixed.length, 0, "mixed positive and negative language must fail closed as unknown");
   assert.equal(classifyNewsImpacts({ id: "n2", title: "AI conference", summary: "A conference was held", themes: ["AI"], trustTier: "TIER_1" }).length, 0);
   assert.equal(classifyNewsImpacts({ id: "n3", title: "AI demand growth", summary: "Demand increased", themes: ["AI"], trustTier: "TIER_3" }).length, 0);
 });
@@ -80,6 +83,18 @@ test("role-specific news scores only its matching factor and stale sector is exc
   const sector = { id: "s1", name: "Semiconductors", proxy: "SOXX", momentum1d: 1, momentum5d: 2, momentum20d: 3, relativeStrength20d: 1, relativeVolume: 1, high20Proximity: 0.9, score: 80, freshness: "stale", evidenceRefs: ["m1"] };
   const item = buildOpportunity({ ticker: "TEST", name: "Test", theme: "AI", bars: null, marketRegime: "NEUTRAL", held: false, evidence, sector, now: new Date("2026-09-27T00:00:00Z") });
   assert.notEqual(item.breakdown.find((factor) => factor.key === "futureDemand").score, null); assert.equal(item.breakdown.find((factor) => factor.key === "catalyst").score, null); assert.equal(item.breakdown.find((factor) => factor.key === "sectorStrength").score, null);
+});
+
+test("negative news does not add positive score and remains as warning risk", () => {
+  const evidence = [
+    { id: "negative-demand", sourceType: "news", sourceName: "Reuters", sourceUrl: "https://reuters.com/demand", publishedAt: "2026-09-26", fetchedAt: "2026-09-27T00:00:00Z", fact: "Demand declined", metric: "news:future_demand", value: "negative", freshness: "daily" },
+    { id: "negative-catalyst", sourceType: "news", sourceName: "Official IR", sourceUrl: "https://investor.example.com/catalyst", publishedAt: "2026-09-26", fetchedAt: "2026-09-27T00:00:00Z", fact: "Launch delayed", metric: "news:catalyst", value: "negative", freshness: "daily" },
+  ];
+  const item = buildOpportunity({ ticker: "TEST", name: "Test", theme: "AI", bars: null, marketRegime: "NEUTRAL", held: false, evidence, now: new Date("2026-09-27T00:00:00Z") });
+  assert.equal(item.breakdown.find((factor) => factor.key === "futureDemand").score, null);
+  assert.equal(item.breakdown.find((factor) => factor.key === "catalyst").score, null);
+  assert.ok(item.riskFlags.some((flag) => flag.code === "NEGATIVE_DEMAND" && flag.severity === "warning"));
+  assert.ok(item.riskFlags.some((flag) => flag.code === "NEGATIVE_CATALYST" && flag.severity === "warning"));
 });
 
 test("coverage can reach 80 percent without valuation or portfolio-fit guesses", () => {

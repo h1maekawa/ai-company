@@ -12,9 +12,16 @@ export function newsTrustTier(sourceUrl: string): NewsTrustTier {
   return "TIER_3";
 }
 
+export function classifyNewsDirection(text: string): NewsImpact["direction"] {
+  const normalized = text.toLowerCase();
+  const hasPositive = POSITIVE_WORDS.some((word) => normalized.includes(word));
+  const hasNegative = NEGATIVE_WORDS.some((word) => normalized.includes(word));
+  return hasPositive === hasNegative ? "unknown" : hasPositive ? "positive" : "negative";
+}
+
 export function classifyNewsImpacts(input: { id: string; title: string; summary: string; themes: string[]; trustTier: NewsTrustTier }): NewsImpact[] {
   const text = `${input.title} ${input.summary}`.toLowerCase();
-  const direction = POSITIVE_WORDS.some((word) => text.includes(word)) ? "positive" : NEGATIVE_WORDS.some((word) => text.includes(word)) ? "negative" : "unknown";
+  const direction = classifyNewsDirection(text);
   if (direction === "unknown" || input.trustTier === "TIER_3") return [];
   const roles: NewsImpact["role"][] = [];
   if (DEMAND_WORDS.some((word) => text.includes(word))) roles.push("future_demand");

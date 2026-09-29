@@ -47,8 +47,10 @@ export function buildOpportunity(input: {
   const qualityScore = usableFundamental?.fcf === null || usableFundamental?.fcf === undefined ? null : usableFundamental.fcf > 0 ? 10 : 2;
   const sectorScore = !input.sector || ["stale", "unknown"].includes(input.sector.freshness) || input.sector.score === null ? null : input.sector.score / 10;
   const newsEvidence = freshEvidence.filter((item) => item.sourceType === "news" && item.sourceUrl && item.value !== "unknown");
-  const demandEvidence = newsEvidence.filter((item) => item.metric === "news:future_demand");
-  const catalystEvidence = newsEvidence.filter((item) => item.metric === "news:catalyst");
+  const demandEvidence = newsEvidence.filter((item) => item.metric === "news:future_demand" && item.value === "positive");
+  const catalystEvidence = newsEvidence.filter((item) => item.metric === "news:catalyst" && item.value === "positive");
+  const negativeDemandEvidence = newsEvidence.filter((item) => item.metric === "news:future_demand" && item.value === "negative");
+  const negativeCatalystEvidence = newsEvidence.filter((item) => item.metric === "news:catalyst" && item.value === "negative");
   const demandScore = demandEvidence.length === 0 ? null : Math.min(20, 10 + demandEvidence.length * 2);
   const catalystScore = catalystEvidence.length === 0 ? null : Math.min(10, 5 + catalystEvidence.length);
   const known: Partial<Record<ScoreFactor["key"], { score: number; reason: string }>> = {
@@ -81,13 +83,15 @@ export function buildOpportunity(input: {
     input.fundamental && ["stale", "unknown"].includes(input.fundamental.freshness) ? { code: "FUNDAMENTAL_STALE" as const, severity: "critical" as const, detail: "Fundamental Evidenceがstale/unknownです" } : null,
     newsEvidence.length > 0 && distinctNewsSources < 2 ? { code: "SINGLE_SOURCE" as const, severity: "warning" as const, detail: "News Evidenceが単一ソースです" } : null,
     input.marketRegime === "RISK_OFF" ? { code: "MACRO_CONFLICT" as const, severity: "warning" as const, detail: "Market RegimeがRISK_OFFです" } : null,
+    negativeDemandEvidence.length > 0 ? { code: "NEGATIVE_DEMAND" as const, severity: "warning" as const, detail: "需要に対するnegative Evidenceがあります" } : null,
+    negativeCatalystEvidence.length > 0 ? { code: "NEGATIVE_CATALYST" as const, severity: "warning" as const, detail: "Catalystに対するnegative Evidenceがあります" } : null,
   ].filter((flag): flag is NonNullable<typeof flag> => flag !== null);
   const complete = coverage >= INVESTMENT_INTELLIGENCE_CONFIG.minimumOpportunityCoverage && missingEvidence.length === 0 && score !== null;
   const hasCriticalRisk = riskFlags.some((flag) => flag.severity === "critical");
   const gate = !complete ? "DATA_INCOMPLETE" : score >= 75 && !hasCriticalRisk ? "GO_CANDIDATE" : score >= 55 ? "WAIT" : "PASS";
   const marketEvidenceIds = freshEvidence.filter((item) => item.sourceType === "market").map((item) => item.id);
   const fundamentalEvidenceIds = freshEvidence.filter((item) => item.sourceType === "research" && item.sourceUrl).map((item) => item.id);
-  const newsEvidenceIds = newsEvidence.map((item) => item.id);
+  const newsEvidenceIds = [...demandEvidence, ...catalystEvidence].map((item) => item.id);
   const scenarios = [
     newsEvidenceIds.length && marketEvidenceIds.length && fundamentalEvidenceIds.length ? { kind: "BULL" as const, trigger: "需要・出来高・業績Evidenceが同時に改善", evidenceIds: [...newsEvidenceIds, ...marketEvidenceIds, ...fundamentalEvidenceIds], whatToWatch: "RVOLと決算", invalidation: "需要Evidenceの反転", portfolioImpact: "上昇余地を再評価" } : null,
     marketEvidenceIds.length && fundamentalEvidenceIds.length ? { kind: "BASE" as const, trigger: "現在の市場環境と業績Evidenceが継続", evidenceIds: [...marketEvidenceIds, ...fundamentalEvidenceIds], whatToWatch: "次回決算と市場Regime", invalidation: "Market Regime悪化", portfolioImpact: "監視を継続" } : null,
