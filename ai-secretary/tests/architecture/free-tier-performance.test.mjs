@@ -84,6 +84,7 @@ test("stored news status never calls AI or GitHub PUT on a cache miss", async ()
 test("Home summary reads execution state once and leaves unevidenced cards unknown", async () => {
   let reads = 0;
   const mod = load("app/api/company/home-summary/route.ts", {
+    "@/app/lib/company/homeAttention": { loadHomeAttention: async () => ({ attention: [], unavailable: [] }) },
     "next/server": { NextResponse: { json: (body, options) => ({ body, options }) } },
     "@/app/lib/company/execution/store": { loadExecutionState: async () => {
       reads++;

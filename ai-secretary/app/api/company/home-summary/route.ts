@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { loadHomeAttention } from "@/app/lib/company/homeAttention";
 import { loadExecutionState } from "@/app/lib/company/execution/store";
 import { applyExpiry } from "@/app/lib/company/execution/approval";
 import { BUSINESS_DEPARTMENT_IDS, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 
 export const dynamic = "force-dynamic";
 type Card = { id: NavigationDepartmentId; status: "active" | "attention" | "unknown"; currentWork: string[]; problems: string[] };
-type Attention = { id: string; title: string; href: string; source: string; priority: "critical" | "high" | "normal" };
+type Attention = { id: string; title: string; href: string; source: string; priority: "critical" | "high" | "normal"; order?: number };
 const jstDay = (date: Date) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 const agentDepartment = (agent?: string): NavigationDepartmentId | null => {
   if (!agent) return null;
@@ -20,7 +21,7 @@ const agentDepartment = (agent?: string): NavigationDepartmentId | null => {
 /** One bounded state read for Home. Missing department evidence stays unknown. */
 export async function GET(): Promise<NextResponse> {
   try {
-    const state = await loadExecutionState();
+    const [state, extra] = await Promise.all([loadExecutionState(), loadHomeAttention().catch(() => ({ attention: [], unavailable: ["コンテンツ", "投資", "資産"] }))]);
     const pending = applyExpiry(state.approvals).filter((approval) => approval.status === "PENDING");
     const cards: Card[] = BUSINESS_DEPARTMENT_IDS.map((id) => {
       const missions = state.missions.filter((mission) => agentDepartment(mission.routingContext?.requiredAgentId ?? mission.assignedAgentId) === id);
@@ -39,7 +40,9 @@ export async function GET(): Promise<NextResponse> {
       attention.push({ id: `mission:${mission.id}`, title: mission.title, href: "/ceo/work", source: "AI Company", priority: mission.status === "FAILED" ? "high" : "normal" });
     }
     const rank = { critical: 0, high: 1, normal: 2 };
-    attention.sort((a, b) => rank[a.priority] - rank[b.priority]);
+    attention.forEach((item) => { item.order = item.priority === "critical" ? 0 : item.id === "approvals" ? 1 : 5; });
+    attention.push(...extra.attention);
+    attention.sort((a, b) => (a.order ?? rank[a.priority]) - (b.order ?? rank[b.priority]));
 
     const yesterday = jstDay(new Date(Date.now() - 86_400_000));
     const happenedYesterday = (at?: string) => Boolean(at && !Number.isNaN(Date.parse(at)) && jstDay(new Date(at)) === yesterday);
@@ -51,7 +54,7 @@ export async function GET(): Promise<NextResponse> {
       researchRuns ? `Researchを${researchRuns}件実行しました` : null,
       decisions ? `承認判断を${decisions}件記録しました` : null,
     ].filter((item): item is string => Boolean(item));
-    return NextResponse.json({ generatedAt: new Date().toISOString(), approvals: { pendingCount: pending.length }, departments: cards, attention: attention.slice(0, 20), yesterday: { date: yesterday, facts: yesterdayFacts } });
+    return NextResponse.json({ generatedAt: new Date().toISOString(), unavailable: extra.unavailable, approvals: { pendingCount: pending.length }, departments: cards, attention: attention.slice(0, 20), yesterday: { date: yesterday, facts: yesterdayFacts } }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return NextResponse.json({ error: "HOME_SUMMARY_UNAVAILABLE" }, { status: 503 });
   }

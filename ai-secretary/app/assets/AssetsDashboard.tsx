@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { readSnapshot } from "@/app/lib/finance/browserSnapshot";
 import type { CardActivity, FinanceSummary, FlowDebtSummary } from "@/app/lib/finance/flowClient";
 
 type Snapshot<T> = { data: T | null; fetchedAt: string | null; stale: boolean; error: string | null; configured: boolean };
@@ -18,21 +19,32 @@ export function AssetsDashboard({ initialTab }: { initialTab: Tab }) {
   const [cards, setCards] = useState<Snapshot<CardActivity> | null>(null);
   const [debts, setDebts] = useState<Snapshot<FlowDebtSummary> | null>(null);
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let last = Date.now();
+    const refresh = () => {
+      if (document.visibilityState === "visible" && Date.now() - last > 60_000) {
+        last = Date.now(); setCards(null); setDebts(null); setRevision((value) => value + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, []);
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/assets/summary", { cache: "no-store" }).then((r) => r.json()).then((value) => { if (!cancelled) setSummary(value); }).catch(() => { if (!cancelled) setSummary({ data: null, fetchedAt: null, stale: true, error: "Flow+から最新値を取得できません", configured: true }); });
+    fetch("/api/assets/summary", { cache: "no-store" }).then(readSnapshot).then((value) => { if (!cancelled) setSummary(value); }).catch((error) => { if (!cancelled) setSummary({ data: null, fetchedAt: null, stale: true, error: error instanceof Error ? error.message : "Flow+から最新値を取得できません", configured: true }); });
     return () => { cancelled = true; };
-  }, []);
+  }, [revision]);
   useEffect(() => {
     if (tab !== "cards" || cards) return;
     let cancelled = false;
-    fetch("/api/assets/card-activity?limit=20", { cache: "no-store" }).then((r) => r.json()).then((value) => { if (!cancelled) setCards(value); }).catch(() => { if (!cancelled) setCards({ data: null, fetchedAt: null, stale: true, error: "カード明細を取得できません", configured: true }); });
+    fetch("/api/assets/card-activity?limit=20", { cache: "no-store" }).then(readSnapshot).then((value) => { if (!cancelled) setCards(value); }).catch((error) => { if (!cancelled) setCards({ data: null, fetchedAt: null, stale: true, error: error instanceof Error ? error.message : "カード明細を取得できません", configured: true }); });
     return () => { cancelled = true; };
   }, [tab, cards]);
   useEffect(() => {
     if (tab !== "debt" || debts) return;
     let cancelled = false;
-    fetch("/api/assets/debts", { cache: "no-store" }).then((r) => r.json()).then((value) => { if (!cancelled) setDebts(value); }).catch(() => { if (!cancelled) setDebts({ data: null, fetchedAt: null, stale: true, error: "Flow+から最新値を取得できません", configured: true }); });
+    fetch("/api/assets/debts", { cache: "no-store" }).then(readSnapshot).then((value) => { if (!cancelled) setDebts(value); }).catch((error) => { if (!cancelled) setDebts({ data: null, fetchedAt: null, stale: true, error: error instanceof Error ? error.message : "Flow+から最新値を取得できません", configured: true }); });
     return () => { cancelled = true; };
   }, [tab, debts]);
   const data = summary?.data;
@@ -42,6 +54,7 @@ export function AssetsDashboard({ initialTab }: { initialTab: Tab }) {
       <div><p className="text-sm text-emerald-300">Flow+ · 読み取り専用</p><h1 className="mt-1 text-3xl font-semibold">資産</h1><p className="mt-2 text-sm text-slate-400">自分のお金全体を、Flow+の集計値で確認します。</p></div>
       <Link href="/investing" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-emerald-500">投資詳細を見る →</Link>
     </header>
+    <button type="button" className="mb-4 min-h-11 rounded-xl border border-slate-700 px-4" onClick={() => { setCards(null); setDebts(null); setRevision((value) => value + 1); }}>再取得</button>
     {summary?.stale && <p role="status" className="mb-5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">{summary.error ?? "Flow+から最新値を取得できません"}。{summary.fetchedAt ? `最後の取得: ${new Date(summary.fetchedAt).toLocaleString("ja-JP")}` : "保存済みの値はありません。"}</p>}
     <section aria-label="資産の概要" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {[["総資産", data?.assets.total], ["現金・貯金", data?.assets.cash], ["投資資産", data?.assets.investment], ["その他", data?.assets.other], ["今月支出", data?.expenses.total]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5"><p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-2xl font-semibold tabular-nums">{yen(value as number | null | undefined)}</p></div>)}
@@ -59,7 +72,8 @@ export function AssetsDashboard({ initialTab }: { initialTab: Tab }) {
         <div className="rounded-xl border border-slate-800 p-4"><dt className="text-sm text-slate-400">貸している</dt><dd className="mt-2 text-2xl font-semibold tabular-nums">{yen(debts?.data?.totals.lent)}</dd></div>
       </dl>
       {!debts && <p className="mt-5 text-sm text-slate-400">読み込み中…</p>}
-      {debts?.data?.items.length === 0 && <p className="mt-5 text-sm text-slate-400">未精算の貸し借りはありません</p>}
+      {debts?.stale && debts.data && <p className="mt-3 text-sm text-amber-200">最新情報を取得できないため、前回取得時点の情報を表示しています</p>}
+      {debts?.data?.items.length === 0 && <p className="mt-5 text-sm text-slate-400">{debts.stale ? "前回取得時点では、未精算の貸し借りはありませんでした" : "未精算の貸し借りはありません"}</p>}
       {debts?.data?.items.length ? <>
         <div className="mt-5 space-y-3 md:hidden">{debts.data.items.map((item) => <article key={item.id} className="rounded-xl border border-slate-800 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-medium">{item.counterparty}</h3><p className="mt-1 text-xs text-slate-400">{item.direction === "borrowed" ? "借りている" : "貸している"} · {item.date}</p></div><strong className="tabular-nums">{yen(item.amount)}</strong></div><dl className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400"><div><dt>返済期限</dt><dd className="mt-1 text-slate-200">{item.due_date ?? "未設定"}</dd></div><div><dt>状態</dt><dd className="mt-1 text-slate-200">{item.is_settled ? "精算済み" : "未精算"}</dd></div></dl></article>)}</div>
         <div className="mt-5 hidden overflow-x-auto md:block"><table className="w-full text-left text-sm"><thead className="text-slate-400"><tr>{["相手", "方向", "残額", "日付", "返済期限", "状態"].map((label) => <th key={label} className="border-b border-slate-800 px-3 py-3 font-medium">{label}</th>)}</tr></thead><tbody>{debts.data.items.map((item) => <tr key={item.id}><td className="border-b border-slate-800 px-3 py-3">{item.counterparty}</td><td className="border-b border-slate-800 px-3 py-3">{item.direction === "borrowed" ? "借りている" : "貸している"}</td><td className="border-b border-slate-800 px-3 py-3 tabular-nums">{yen(item.amount)}</td><td className="border-b border-slate-800 px-3 py-3">{item.date}</td><td className="border-b border-slate-800 px-3 py-3">{item.due_date ?? "未設定"}</td><td className="border-b border-slate-800 px-3 py-3">{item.is_settled ? "精算済み" : "未精算"}</td></tr>)}</tbody></table></div>
