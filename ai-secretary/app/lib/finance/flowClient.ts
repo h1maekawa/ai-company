@@ -19,6 +19,21 @@ export type CardActivityItem = {
 };
 export type CardActivity = { items: CardActivityItem[]; next_cursor?: string | null };
 
+export type FlowDebtItem = {
+  id: string;
+  direction: "borrowed" | "lent";
+  counterparty: string;
+  amount: number;
+  date: string;
+  due_date: string | null;
+  memo: string | null;
+  is_settled: boolean;
+};
+export type FlowDebtSummary = {
+  items: FlowDebtItem[];
+  totals: { borrowed: number; lent: number };
+};
+
 type Snapshot<T> = { data: T | null; fetchedAt: string | null; stale: boolean; error: string | null; configured: boolean };
 const cache = new Map<string, { data: unknown; fetchedAt: string }>();
 const MAX_CACHE_ENTRIES = 24;
@@ -68,4 +83,7 @@ export function flowCardActivity(month: string, limit: number, cursor?: string):
   const params = new URLSearchParams({ month, limit: String(limit) });
   if (cursor) params.set("cursor", cursor);
   return fetchFlow(`cards:${params}`, "/api/integrations/card-activity", params, 10_000);
+}
+export function flowDebts(): Promise<Snapshot<FlowDebtSummary>> {
+  return fetchFlow("debts:unsettled", "/api/integrations/debts", new URLSearchParams(), 10_000);
 }

@@ -37,6 +37,7 @@ test("Flow client forwards server token and marks cached values stale on outage"
   const code = load("app/lib/finance/flowClient.ts", { "server-only": {} }, { fetch: async (url, options) => {
     calls.push({ url: String(url), options });
     if (fail) throw new Error("offline");
+    if (String(url).includes("/api/integrations/debts")) return { ok: true, json: async () => ({ items: [], totals: { borrowed: 0, lent: 0 } }) };
     return { ok: true, json: async () => ({ month: "2026-09", assets: { total: 100 } }) };
   } });
   try {
@@ -49,6 +50,10 @@ test("Flow client forwards server token and marks cached values stale on outage"
     const stale = await code.flowCardActivity("2026-09", 20);
     assert.equal(stale.stale, true);
     assert.equal(stale.data, null);
+    fail = false;
+    const debts = await code.flowDebts();
+    assert.deepEqual(debts.data.totals, { borrowed: 0, lent: 0 });
+    assert.match(calls.at(-1).url, /\/api\/integrations\/debts$/);
   } finally {
     for (const [name, value] of Object.entries(original)) value === undefined ? delete process.env[name] : process.env[name] = value;
   }
@@ -89,10 +94,22 @@ test("signed duplicate card event sends one notification through durable claim",
 });
 
 test("Assets proxies require session and Flow event uses exact machine-route exemption", () => {
-  for (const route of ["app/api/assets/summary/route.ts", "app/api/assets/card-activity/route.ts"]) {
+  for (const route of ["app/api/assets/summary/route.ts", "app/api/assets/card-activity/route.ts", "app/api/assets/debts/route.ts"]) {
     assert.match(fs.readFileSync(route, "utf8"), /requireFinanceSession\(request\)/);
   }
   const proxy = fs.readFileSync("proxy.ts", "utf8");
   assert.match(proxy, /pathname === "\/api\/integrations\/flow\/events"/);
   assert.doesNotMatch(fs.readFileSync("app/assets/AssetsDashboard.tsx", "utf8"), /FLOW_FINANCE_INTEGRATION_TOKEN|x-import-secret/);
+});
+
+test("Assets debt UI uses Flow data with responsive list/table states", () => {
+  const dashboard = fs.readFileSync("app/assets/AssetsDashboard.tsx", "utf8");
+  assert.doesNotMatch(dashboard, /この情報はまだ提供されていません/);
+  assert.match(dashboard, /\/api\/assets\/debts/);
+  assert.match(dashboard, /借りている/);
+  assert.match(dashboard, /貸している/);
+  assert.match(dashboard, /未精算の貸し借りはありません/);
+  assert.match(dashboard, /Flow\+から最新値を取得できません/);
+  assert.match(dashboard, /md:hidden/);
+  assert.match(dashboard, /hidden overflow-x-auto md:block/);
 });
