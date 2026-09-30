@@ -7,7 +7,7 @@ import path from "node:path";
  * Navigation v3 の情報設計を固定するテスト。
  *
  * 目的は「機能が増えてもフロントの入口が増えない」こと。
- * トップレベルはHome / Today / Work / Settingsに保ち、UIから隠したrouteもDeep Linkとして残す。
+ * トップレベルはHome / Investing / Assets / Settingsに保ち、UIから隠したrouteもDeep Linkとして残す。
  */
 
 const ROOT = process.cwd();
@@ -16,14 +16,14 @@ const exists = (relative) => fs.existsSync(path.join(ROOT, relative));
 
 const NAVIGATION = "app/lib/config/navigation.ts";
 
-test("desktop navigation uses only Home/Today/Work plus Settings", () => {
+test("desktop navigation uses only Home/Investing/Assets plus Settings", () => {
   const source = read(NAVIGATION);
   const primary = source.slice(
     source.indexOf("export const PRIMARY_NAV"),
     source.indexOf("export const ADMIN_NAV")
   );
   const ids = [...primary.matchAll(/^\s{4}id: "([a-z-]+)",$/gm)].map((match) => match[1]);
-  assert.deepEqual(ids, ["home", "today", "work"]);
+  assert.deepEqual(ids, ["home", "investing", "assets"]);
   for (const id of ["creator", "fund", "operations", "knowledge", "planning", "engineering"]) {
     assert.match(source, new RegExp(`id: "${id}"[\\s\\S]{0,180}href: "/ceo/departments/${id}"`));
   }
@@ -34,7 +34,7 @@ test("desktop navigation uses only Home/Today/Work plus Settings", () => {
 
 test("primary navigation points at the four daily routes", () => {
   const source = read(NAVIGATION);
-  for (const href of ["/", "/planning", "/ceo/work", "/admin"]) {
+  for (const href of ["/", "/investing", "/assets", "/admin"]) {
     assert.ok(source.includes(`href: "${href}"`), `PRIMARY_NAV should link to ${href}`);
   }
   for (const page of [
@@ -44,9 +44,33 @@ test("primary navigation points at the four daily routes", () => {
     "app/planning/page.tsx",
     "app/note/page.tsx",
     "app/investing/page.tsx",
+    "app/assets/page.tsx",
   ]) {
     assert.ok(exists(page), `${page} must exist for navigation to resolve`);
   }
+});
+
+test("mobile shell uses the same four destinations and keeps the floating AI", () => {
+  const shell = read("components/app-shell/AppShell.tsx");
+  const overlay = read("components/app-shell/WorkspaceOverlays.tsx");
+  assert.match(shell, /\.\.\.PRIMARY_NAV, ADMIN_NAV/);
+  for (const id of ["home", "investing", "assets", "admin"]) assert.ok(shell.includes(`${id}:`));
+  assert.doesNotMatch(shell, /id: "(?:today|work)"/);
+  assert.match(overlay, /aria-label="AIを開く"/);
+  for (const label of ["AIに聞く", "調べる", "メモする", "実行依頼", "昨日の活動"]) assert.ok(overlay.includes(label));
+});
+
+test("Home shows action cards and factual yesterday activity without generating content", () => {
+  const home = read("components/mobile-ceo/DepartmentOverview.tsx");
+  const summary = read("app/api/company/home-summary/route.ts");
+  assert.match(home, /overflow-x-auto/);
+  assert.match(home, /aria-pressed=\{selected === id\}/);
+  assert.match(home, /yesterday-summary/);
+  assert.match(home, /AIエージェント稼働状況/);
+  assert.match(summary, /loadExecutionState\(\)/);
+  assert.match(summary, /completedAt/);
+  assert.match(summary, /decidedAt/);
+  assert.doesNotMatch(summary, /callAI|generateText|method:\s*"POST"/);
 });
 
 test("admin holds the non-daily areas instead of the sidebar", () => {
@@ -76,7 +100,7 @@ test("routes hidden from the sidebar are still reachable", () => {
     assert.ok(exists(page), `${page} must stay reachable by deep link`);
   }
   const source = read(NAVIGATION);
-  for (const href of ["/note", "/content", "/investing", "/company", "/knowledge", "/planning", "/chat", "/ceo/actions", "/ceo/approvals", "/ceo/departments/*", "/connections", "/admin", "/admin/system-map", "/weekly-review", "/grill"]) {
+  for (const href of ["/note", "/note/settings", "/content", "/investing", "/assets", "/company", "/knowledge", "/planning", "/chat", "/ceo/work", "/ceo/actions", "/ceo/approvals", "/ceo/departments/*", "/connections", "/admin", "/admin/system-map", "/weekly-review", "/grill"]) {
     assert.ok(
       source.includes(`{ href: "${href}",`),
       `PRESERVED_ROUTES should document ${href}`
@@ -132,27 +156,21 @@ test("investing shows the five Investment areas and keeps every legacy route in 
     shell.indexOf("export const MORE_NAV_ITEMS")
   );
   const dailyLabels = [...daily.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(dailyLabels, ["今日", "市場", "機会", "保有", "調査"]);
+  assert.deepEqual(dailyLabels, ["注目", "ウォッチ", "保有銘柄", "Research", "News"]);
   const dailyHrefs = [...daily.matchAll(/href: "([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(dailyHrefs, ["/investing", "/investing/market", "/investing/opportunities", "/investing/portfolio", "/investing/research"]);
-  // モバイル下部ナビは判断に必要な4項目 + メニュー。調査はメニューから
-  const mobile = [...daily.matchAll(/label: "([^"]+)"[^\n]*mobile: true/g)].map((match) => match[1]);
-  assert.deepEqual(mobile, ["今日", "市場", "機会", "保有"]);
+  assert.deepEqual(dailyHrefs, ["/investing", "/investing/watchlist", "/investing/holdings", "/investing/research", "/investing/news"]);
 
   const more = shell.slice(
     shell.indexOf("export const MORE_NAV_ITEMS"),
-    shell.indexOf("/** 互換用")
+    shell.indexOf("export const NAV_ITEMS")
   );
   for (const href of [
     "/investing/companies",
     "/investing/learning",
-    "/investing/holdings",
-    "/investing/news",
     "/investing/analysis",
     "/investing/allocation",
     "/investing/policy",
     "/investing/screening",
-    "/investing/watchlist",
     "/investing/dividends",
     "/investing/transactions",
     "/investing/import",

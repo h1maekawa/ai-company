@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState, type FormEvent } from "react";
 import { AlertCircle } from "lucide-react";
 import { InvestingShell } from "@/components/investing/Shell";
 import { StatCard } from "@/components/investing/StatCard";
@@ -9,13 +10,12 @@ import { PortfolioDonut } from "@/components/investing/PortfolioDonut";
 import { HoldingsTable } from "@/components/investing/HoldingsTable";
 import { NewsPanel } from "@/components/investing/NewsPanel";
 import { AiSuggestCard } from "@/components/investing/AiSuggestCard";
-import { CapacityCard } from "@/components/investing/CapacityCard";
 import { LearningBriefCard } from "@/components/investing/LearningBriefCard";
 import { IntelligenceTodayPanel } from "@/components/investing/IntelligenceToday";
 import { Skeleton } from "@/components/investing/ui";
 import { FreshnessBadge } from "@/components/ui/Freshness";
 import { formatAsOf, relativeAge } from "@/app/lib/freshness";
-import { useAnalysis, useCapacity, useLearningBrief, useNews, usePortfolio } from "./usePortfolio";
+import { useAnalysis, useLearningBrief, useNews, usePortfolio } from "./usePortfolio";
 
 const SOURCE_LABEL: Record<string, string> = {
   holdings_csv: "楽天証券CSV",
@@ -27,8 +27,24 @@ export default function InvestingDashboard() {
   const { data, loading, error } = usePortfolio();
   const analysis = useAnalysis();
   const news = useNews();
-  const capacity = useCapacity();
   const learning = useLearningBrief();
+  const [question, setQuestion] = useState("");
+  const [researchState, setResearchState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [researchSummary, setResearchSummary] = useState("");
+
+  async function submitResearch(event: FormEvent) {
+    event.preventDefault();
+    const text = question.trim();
+    if (!text || researchState === "running") return;
+    setResearchState("running");
+    try {
+      const response = await fetch("/api/company/research", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ question: `調べて: ${text}` }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Researchに失敗しました");
+      setResearchSummary(result.artifact?.summary ?? "Research結果を保存しました。Research画面で確認できます。");
+      setResearchState("done");
+    } catch (error) { setResearchSummary(error instanceof Error ? error.message : "Researchに失敗しました"); setResearchState("error"); }
+  }
 
   const summary = data?.summary;
   const history = data?.history ?? [];
@@ -37,6 +53,11 @@ export default function InvestingDashboard() {
 
   return (
     <InvestingShell title="今日">
+      <section className="mb-6 rounded-2xl border border-violet-500/30 bg-violet-500/10 p-5 sm:p-7">
+        <h1 className="text-2xl font-semibold">何を調べますか？</h1>
+        <form onSubmit={submitResearch} className="mt-4 flex gap-2"><input value={question} onChange={(event) => setQuestion(event.target.value)} aria-label="投資テーマを調べる" placeholder="データセンターの電力関連企業を調べて" className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 text-sm text-white" /><button disabled={researchState === "running"} className="min-h-11 rounded-xl bg-violet-500 px-5 text-sm font-semibold disabled:opacity-50">{researchState === "running" ? "調査中…" : "調べる"}</button></form>
+        {researchState !== "idle" && researchState !== "running" && <p role="status" className="mt-3 text-sm text-slate-200">{researchSummary}</p>}
+      </section>
       {error && (
         <div className="mb-5 flex items-start gap-2 rounded-xl border border-loss/25 bg-loss/10 px-4 py-3 text-sm text-loss">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -66,14 +87,14 @@ export default function InvestingDashboard() {
 
       <IntelligenceTodayPanel />
 
-      {/* ─── 上部KPI 4枚 ───────────────────────────── */}
-      <section className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Investment portfolio facts only. Household totals live in /assets. */}
+      <section className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {loading ? (
-          [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[104px] rounded-2xl" />)
+          [0, 1, 2].map((i) => <Skeleton key={i} className="h-[104px] rounded-2xl" />)
         ) : (
           <>
             <StatCard
-              label="資産総額"
+              label="投資評価額"
               value={summary?.totalValueJpy ?? null}
               delta={summary?.todayPnlJpy ?? null}
               deltaPct={summary?.todayPnlPct ?? null}
@@ -88,11 +109,6 @@ export default function InvestingDashboard() {
               emphasis
               delay={0.05}
               freshness={freshness}
-            />
-            <StatCard
-              label="現金残高"
-              value={summary?.cashJpy ?? null}
-              delay={0.1}
             />
             <StatCard
               label="評価損益率"
@@ -126,17 +142,8 @@ export default function InvestingDashboard() {
         </div>
       </section>
 
-      {/* ─── 家計簿から取り込んだ「今月使えるお金」 ───── */}
-      <section className="mb-4 grid grid-cols-1 items-stretch gap-3 xl:grid-cols-12">
-        <div className="min-w-0 xl:col-span-4 [&>*]:h-full">
-          <CapacityCard
-            capacity={capacity.capacity}
-            configured={capacity.configured}
-            failure={capacity.failure}
-            loading={capacity.loading}
-          />
-        </div>
-        <div className="min-w-0 xl:col-span-8 [&>*]:h-full">
+      <section className="mb-4">
+        <div className="min-w-0">
           {loading ? (
             <Skeleton className="h-[320px] rounded-2xl" />
           ) : (

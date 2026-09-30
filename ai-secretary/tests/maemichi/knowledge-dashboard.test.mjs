@@ -55,7 +55,7 @@ test("HomeはGlobal AIと重複せずAttention・仕事・Departmentだけを表
   const home = read("app/page.tsx");
   const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
   assert.doesNotMatch(home, /AssistantPrompt/); assert.match(home, /DepartmentOverview/);
-  assert.match(overview, /CEO Attention/); assert.match(overview, /DEPARTMENT_NAV\.map/);
+  assert.match(overview, /確認が必要/); assert.match(overview, /STATUS_IDS\.map/);
   assert.match(overview, /\["disconnected", "error"\]/);
   assert.doesNotMatch(home, /QUICK_ACTIONS|今日の状況|最近の動き|システム状態/);
   assert.doesNotMatch(home, /DailyPlan|Growth Analytics|Knowledge本文/);

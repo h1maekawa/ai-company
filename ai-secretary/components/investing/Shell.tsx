@@ -1,312 +1,44 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { FormEvent, ReactNode, useState } from "react";
-import {
-  Bell,
-  Brain,
-  Briefcase,
-  Building2,
-  ChevronDown,
-  ChevronLeft,
-  CircleDollarSign,
-  Filter,
-  Gauge,
-  LayoutDashboard,
-  LineChart,
-  Menu,
-  Microscope,
-  Newspaper,
-  PieChart,
-  Scale,
-  Search,
-  Settings,
-  Sparkles,
-  Star,
-  Upload,
-  User,
-  X,
-} from "lucide-react";
+import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 
-export type NavItem = {
-  href: string;
-  label: string;
-  icon: ReactNode;
-  /** モバイル下部ナビに出す項目 */
-  mobile?: boolean;
-};
-
-const ICON = "h-[18px] w-[18px]";
-
-/**
- * Investment Departmentの5領域。Desktop Sidebarは5つすべて、
- * モバイル下部ナビは Overview / Research / Portfolio / Learning + メニュー（Companiesはメニューから）。
- */
+export type NavItem = { href: string; label: string; icon: ReactNode; mobile?: boolean };
 export const DAILY_NAV_ITEMS: NavItem[] = [
-  { href: "/investing", label: "今日", icon: <LayoutDashboard className={ICON} />, mobile: true },
-  { href: "/investing/market", label: "市場", icon: <LineChart className={ICON} />, mobile: true },
-  { href: "/investing/opportunities", label: "機会", icon: <Sparkles className={ICON} />, mobile: true },
-  { href: "/investing/portfolio", label: "保有", icon: <PieChart className={ICON} />, mobile: true },
-  { href: "/investing/research", label: "調査", icon: <Microscope className={ICON} /> },
+  { href: "/investing", label: "注目", icon: "✦" },
+  { href: "/investing/watchlist", label: "ウォッチ", icon: "☆" },
+  { href: "/investing/holdings", label: "保有銘柄", icon: "▤" },
+  { href: "/investing/research", label: "Research", icon: "⌕" },
+  { href: "/investing/news", label: "News", icon: "◉" },
 ];
-
-/** 必要なときだけ開く。既存routeはすべて残す（Deep Linkは生きている） */
 export const MORE_NAV_ITEMS: NavItem[] = [
-  { href: "/investing/companies", label: "Companies", icon: <Building2 className={ICON} /> },
-  { href: "/investing/learning", label: "Learning", icon: <Brain className={ICON} /> },
-  { href: "/investing/holdings", label: "保有株", icon: <Briefcase className={ICON} /> },
-  { href: "/investing/news", label: "ニュース", icon: <Newspaper className={ICON} /> },
-  { href: "/investing/analysis", label: "AI分析", icon: <Sparkles className={ICON} /> },
-  { href: "/investing/allocation", label: "配分・集中度", icon: <Scale className={ICON} /> },
-  { href: "/investing/policy", label: "投資判断エンジン", icon: <Gauge className={ICON} /> },
-  { href: "/investing/screening", label: "スクリーニング", icon: <Filter className={ICON} /> },
-  { href: "/investing/watchlist", label: "ウォッチリスト", icon: <Star className={ICON} /> },
-  { href: "/investing/dividends", label: "配当管理", icon: <CircleDollarSign className={ICON} /> },
-  { href: "/investing/transactions", label: "取引履歴", icon: <LineChart className={ICON} /> },
-  { href: "/investing/import", label: "CSV取込", icon: <Upload className={ICON} /> },
-  { href: "/investing/settings", label: "設定", icon: <Settings className={ICON} /> },
+  { href: "/investing/market", label: "市場", icon: "▥" },
+  { href: "/investing/opportunities", label: "機会", icon: "✦" },
+  { href: "/investing/portfolio", label: "Portfolio", icon: "◴" },
+  { href: "/investing/companies", label: "企業", icon: "▣" },
+  { href: "/investing/learning", label: "学び", icon: "◇" },
+  { href: "/investing/analysis", label: "AI分析", icon: "✧" },
+  { href: "/investing/allocation", label: "配分・集中度", icon: "◫" },
+  { href: "/investing/policy", label: "投資判断", icon: "◇" },
+  { href: "/investing/screening", label: "スクリーニング", icon: "⌕" },
+  { href: "/investing/transactions", label: "取引履歴", icon: "▦" },
+  { href: "/investing/dividends", label: "配当", icon: "◈" },
+  { href: "/investing/import", label: "CSV取込", icon: "↑" },
+  { href: "/investing/settings", label: "設定", icon: "⚙" },
 ];
-
-/** 互換用: 全項目のフラット配列 */
 export const NAV_ITEMS: NavItem[] = [...DAILY_NAV_ITEMS, ...MORE_NAV_ITEMS];
 
-function isActive(pathname: string, href: string): boolean {
-  if (href === "/investing") return pathname === "/investing";
-  return pathname.startsWith(href);
-}
-
-/* ─── 銘柄検索 ───────────────────────────────────────── */
-
-function TickerSearch({ onDone }: { onDone?: () => void }) {
-  const router = useRouter();
-  const [query, setQuery] = useState("");
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    const code = query.trim().toUpperCase();
-    if (!code) return;
-    setQuery("");
-    onDone?.();
-    router.push(`/investing/companies/${encodeURIComponent(code)}`);
-  }
-
-  return (
-    <form onSubmit={submit} className="relative">
-      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sub" />
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="銘柄を検索（NVDA / AAPL / 8035）"
-        aria-label="銘柄を検索"
-        className="w-full rounded-xl border border-hairline bg-white/[0.03] py-2 pl-9 pr-3 text-sm text-white outline-none transition-colors placeholder:text-sub/70 focus:border-brand/50 focus:bg-white/[0.06] sm:w-72"
-      />
-    </form>
-  );
-}
-
-/* ─── Sidebar ────────────────────────────────────────── */
-
-function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+export function InvestingShell({ title, children }: { title: string; children: ReactNode }) {
   const pathname = usePathname();
-  // 詳細メニューの中にいるときは最初から開いておく（今どこにいるか分からなくならないように）
-  const [moreOpen, setMoreOpen] = useState(() =>
-    MORE_NAV_ITEMS.some((item) => isActive(pathname, item.href))
-  );
-
-  return (
-    <nav className="flex flex-col gap-0.5">
-      {DAILY_NAV_ITEMS.map((item) => (
-        <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
-      ))}
-
-      <button
-        type="button"
-        onClick={() => setMoreOpen((open) => !open)}
-        aria-expanded={moreOpen}
-        className="mt-2 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-sub transition-colors hover:bg-white/[0.04] hover:text-white"
-      >
-        <ChevronDown className={`h-[18px] w-[18px] transition-transform ${moreOpen ? "" : "-rotate-90"}`} />
-        <span>その他</span>
-      </button>
-
-      {moreOpen && (
-        <div className="flex flex-col gap-0.5 border-l border-hairline pl-2">
-          {MORE_NAV_ITEMS.map((item) => (
-            <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
-          ))}
-        </div>
-      )}
-    </nav>
-  );
-}
-
-function NavLink({
-  item,
-  pathname,
-  onNavigate,
-}: {
-  item: NavItem;
-  pathname: string;
-  onNavigate?: () => void;
-}) {
-  const active = isActive(pathname, item.href);
-  return (
-    <Link
-      href={item.href}
-      onClick={onNavigate}
-      aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
-        active ? "bg-brand-soft font-semibold text-brand" : "text-sub hover:bg-white/[0.04] hover:text-white"
-      }`}
-    >
-      {item.icon}
-      <span className="truncate">{item.label}</span>
-    </Link>
-  );
-}
-
-/* ─── Shell ──────────────────────────────────────────── */
-
-export function InvestingShell({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  return (
-    <div className="min-h-screen bg-ink-base text-white">
-      {/* 左固定サイドバー（lg以上） */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r border-hairline bg-ink-card/60 px-2.5 py-4 backdrop-blur lg:flex">
-        <Link href="/investing" className="mb-4 flex items-center gap-2 px-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-sm font-bold">
-            AI
-          </span>
-          <span className="text-sm font-semibold tracking-tight">投資パートナー</span>
-        </Link>
-
-        <SidebarNav />
-
-        <div className="mt-auto px-2 pt-4">
-          <Link
-            href="/ceo/work"
-            className="flex items-center gap-2 rounded-xl px-2 py-2 text-xs text-sub transition-colors hover:text-white"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            仕事へ戻る
-          </Link>
-        </div>
-      </aside>
-
-      {/* モバイル用ドロワー */}
-      {menuOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setMenuOpen(false)}
-          />
-          <div className="absolute inset-y-0 left-0 w-64 border-r border-hairline bg-ink-card px-3 py-5">
-            <div className="mb-5 flex items-center justify-between px-2">
-              <span className="text-sm font-semibold">投資パートナー</span>
-              <button onClick={() => setMenuOpen(false)} aria-label="メニューを閉じる">
-                <X className="h-5 w-5 text-sub" />
-              </button>
-            </div>
-            <SidebarNav onNavigate={() => setMenuOpen(false)} />
-            <Link
-              href="/ceo/work"
-              className="mt-4 flex items-center gap-2 px-3 py-2 text-xs text-sub"
-              onClick={() => setMenuOpen(false)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              仕事へ戻る
-            </Link>
-          </div>
-        </div>
-      )}
-
-      <div className="lg:pl-56">
-        {/* 上部ヘッダー */}
-        <header className="sticky top-0 z-20 border-b border-hairline bg-ink-base/85 backdrop-blur">
-          <div className="flex items-center gap-3 px-4 py-3 sm:px-5 xl:px-6">
-            <button
-              onClick={() => setMenuOpen(true)}
-              aria-label="メニューを開く"
-              className="rounded-lg p-1.5 text-sub hover:bg-white/5 hover:text-white lg:hidden"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-
-            <h1 className="truncate text-lg font-semibold tracking-tight">{title}</h1>
-
-            <div className="ml-auto flex items-center gap-2">
-              <div className="hidden sm:block">
-                <TickerSearch />
-              </div>
-              <button
-                aria-label="通知"
-                className="rounded-lg p-2 text-sub transition-colors hover:bg-white/5 hover:text-white"
-              >
-                <Bell className="h-[18px] w-[18px]" />
-              </button>
-              <Link
-                href="/investing/settings"
-                aria-label="プロフィール・設定"
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] text-sub transition-colors hover:text-white"
-              >
-                <User className="h-[18px] w-[18px]" />
-              </Link>
-            </div>
-          </div>
-
-          {/* モバイルは検索を2段目に */}
-          <div className="px-4 pb-3 sm:hidden">
-            <TickerSearch />
-          </div>
-        </header>
-
-        <main className="w-full px-4 pb-24 pt-4 sm:px-5 lg:pb-8 xl:px-6">{children}</main>
-      </div>
-
-      {/* モバイル下部ナビ */}
-      <MobileNav onMenu={() => setMenuOpen(true)} />
-    </div>
-  );
-}
-
-function MobileNav({ onMenu }: { onMenu: () => void }) {
-  const pathname = usePathname();
-  const items = DAILY_NAV_ITEMS.filter((item) => item.mobile);
-
-  return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-ink-card/95 backdrop-blur lg:hidden">
-      <div className="flex">
-        {items.map((item) => {
-          const active = isActive(pathname, item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] transition-colors ${
-                active ? "text-brand" : "text-sub"
-              }`}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
-        <button
-          onClick={onMenu}
-          className="flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] text-sub"
-        >
-          <Menu className={ICON} />
-          <span>メニュー</span>
-        </button>
-      </div>
-    </nav>
-  );
+  return <div className="min-h-screen text-white">
+    <header className="border-b border-slate-800 px-4 pb-3 pt-5 sm:px-7">
+      <p className="text-xs text-violet-300">投資 · {title}</p>
+      <nav aria-label="投資内のナビゲーション" className="mt-3 flex gap-2 overflow-x-auto pb-1">
+        {DAILY_NAV_ITEMS.map((item) => <Link key={item.href} href={item.href} aria-current={pathname === item.href ? "page" : undefined} className={`min-h-11 shrink-0 rounded-full px-4 py-2 text-sm ${pathname === item.href ? "bg-violet-500 text-white" : "border border-slate-700 text-slate-300 hover:border-violet-500"}`}>{item.label}</Link>)}
+        <details className="relative shrink-0"><summary className="flex min-h-11 cursor-pointer items-center rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300">その他</summary><div className="absolute right-0 z-20 mt-1 max-h-64 min-w-44 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-2 shadow-xl">{MORE_NAV_ITEMS.map((item) => <Link key={item.href} href={item.href} className="block rounded-lg px-3 py-2 text-sm hover:bg-slate-800">{item.label}</Link>)}</div></details>
+      </nav>
+    </header>
+    <main className="mx-auto w-full max-w-7xl px-4 pb-24 pt-6 sm:px-7 lg:pb-10">{children}</main>
+  </div>;
 }

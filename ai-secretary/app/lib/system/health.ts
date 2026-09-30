@@ -4,6 +4,7 @@ import { syncStatusRepository, type SystemSyncStatus } from "../persistence/supa
 import { getRedisClient, isRedisAvailable } from "../utils/redis";
 import { countScheduled, isBufferConfigured } from "../note/publishing/buffer";
 import type { ConnectionHealth, ConnectionStatus } from "./connections";
+import { flowConfigured, flowFinanceSummary } from "../finance/flowClient";
 
 const CACHE_MS = 45_000;
 const DEADLINE_MS = 5_000;
@@ -56,6 +57,15 @@ async function checkRedis(): Promise<ConnectionHealth> {
   try { await deadline(getRedisClient()!.ping()); return health("redis", "Redis", "◆", "connected", "Runtime Stateへ接続できます", { reachable: true, lastSuccessAt: now(), checkedBy: "ping" }); }
   catch { return unknown("redis", "Redis", "◆", "Runtime Stateの状態を確認できません"); }
 }
+async function checkFlow(): Promise<ConnectionHealth> {
+  if (!flowConfigured()) return health("flow", "Flow+", "💰", "not_configured", "Flow+連携は未設定です。Vercel Environment Variablesを確認してください");
+  try {
+    const month = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit" }).format(new Date());
+    const result = await deadline(flowFinanceSummary(month));
+    if (result.stale || !result.data) return health("flow", "Flow+", "💰", "warning", result.error ?? "Flow+の最新値を確認できません", { stale: true, lastSuccessAt: result.fetchedAt ?? undefined, checkedBy: "finance-summary" });
+    return health("flow", "Flow+", "💰", "connected", "集計値を取得できます", { reachable: true, authOk: true, lastSuccessAt: result.fetchedAt ?? undefined, checkedBy: "finance-summary" });
+  } catch { return unknown("flow", "Flow+", "💰", "Flow+の状態を確認できません"); }
+}
 async function checkBuffer(): Promise<ConnectionHealth> {
   if (!isBufferConfigured()) return health("buffer", "Buffer / X", "𝕏", "not_configured", "Buffer / Xは未設定です");
   try {
@@ -89,7 +99,7 @@ export async function checkAllConnections(options: { refresh?: boolean } = {}): 
   pending = (async () => {
     let stored: SystemSyncStatus[] = [];
     if (syncStatusRepository.configured()) { try { stored = await deadline(syncStatusRepository.list()); } catch { /* individual services remain unknown */ } }
-    const services = await Promise.all([checkVault(), checkGithub(), checkSupabase(stored.find((item) => item.service === "knowledge_index")), checkRedis(), checkBuffer(), Promise.resolve(checkRunner(stored.find((item) => item.service === "note_runner"))), checkSlack()]);
+    const services = await Promise.all([checkVault(), checkGithub(), checkSupabase(stored.find((item) => item.service === "knowledge_index")), checkRedis(), checkBuffer(), Promise.resolve(checkRunner(stored.find((item) => item.service === "note_runner"))), checkSlack(), checkFlow()]);
     cached = { at: Date.now(), services };
     return services;
   })();
