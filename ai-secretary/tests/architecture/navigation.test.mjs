@@ -122,6 +122,9 @@ test("content settings groups into four sections", () => {
   const settings = read("app/note/settings/page.tsx");
   const labels = [...settings.matchAll(/label: "([^"]+)", description:/g)].map((match) => match[1]);
   assert.deepEqual(labels, ["基本設定", "ブランド", "接続", "詳細設定"]);
+  assert.doesNotMatch(settings, /投稿の最終確認は必ず前川さんが行います/);
+  assert.match(settings, /AUTOPILOTはSafety \/ Fact Gateを通過した通常投稿を自動予約・投稿/);
+  assert.match(settings, /Human Gate対象だけ人間が確認します/);
 });
 
 test("creator department exposes the canonical content workflow", () => {

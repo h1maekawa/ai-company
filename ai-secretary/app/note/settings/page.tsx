@@ -95,7 +95,9 @@ export default function ContentSettingsPage() {
         {section === "advanced" && (
           <div className="space-y-3">
             <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 text-[11px] leading-relaxed text-amber-100">
-              高度な設定です。設定を変えても、投稿の最終確認は必ず前川さんが行います。
+              高度な設定です。DRAFTは下書きのみ、REVIEWは人間確認後に投稿します。
+              AUTOPILOTはSafety / Fact Gateを通過した通常投稿を自動予約・投稿し、Opinionが必要な場合、
+              Safety failure、Buffer結果が曖昧な場合などHuman Gate対象だけ人間が確認します。
             </p>
 
             <Advanced title="Xアカウント" hint="ジャンルごとの投稿先と役割">
