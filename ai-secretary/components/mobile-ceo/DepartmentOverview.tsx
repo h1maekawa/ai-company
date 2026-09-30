@@ -1,100 +1,108 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { BUSINESS_DEPARTMENT_NAV, KNOWLEDGE_NAV, type NavigationDepartmentId } from "@/app/lib/config/navigation";
+import { useEffect, useState } from "react";
+import { DEPARTMENT_NAV_BY_ID, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 
 type Card = { id: NavigationDepartmentId; status: "active" | "attention" | "unknown"; currentWork: string[]; problems: string[] };
-type DepartmentMap = Partial<Record<NavigationDepartmentId, Card>>;
-type HomeSummary = { approvals: { pendingCount: number }; departments: Card[] };
-type Attention = { id: string; title: string; href: string };
+type Attention = { id: string; title: string; href: string; source: string; priority: "critical" | "high" | "normal" };
+type HomeSummary = { generatedAt: string; departments: Card[]; attention: Attention[]; yesterday: { date: string; facts: string[] } };
 type ConnectionHealth = { services?: Array<{ service: string; label: string; status: string; message?: string }> };
+type Employee = { id: string; name: string; role: string; status: string; currentMissionTitle?: string; currentStep?: { title: string }; skills?: { name: string }[] };
 
-function statusOf(model: Card | undefined) {
+const STATUS_IDS: NavigationDepartmentId[] = ["creator", "fund", "operations", "engineering", "knowledge"];
+const priorityText = { critical: "緊急", high: "優先", normal: "確認" };
+const priorityRank = { critical: 0, high: 1, normal: 2 };
+
+function statusOf(model?: Card) {
   if (model?.status === "attention") return { label: "要確認", tone: "bg-amber-400" };
   if (model?.status === "active") return { label: "稼働中", tone: "bg-emerald-400" };
-  return { label: "未確認", tone: "bg-slate-500" };
+  return { label: "未取得", tone: "bg-slate-500" };
 }
 
 export function DepartmentOverview() {
-  const [departments, setDepartments] = useState<DepartmentMap>({});
-  const [approvals, setApprovals] = useState<Attention[]>([]);
-  const [systemAttention, setSystemAttention] = useState<Attention[]>([]);
-  const [summaryUnavailable, setSummaryUnavailable] = useState(false);
-  const [connectionsUnavailable, setConnectionsUnavailable] = useState(false);
+  const [summary, setSummary] = useState<HomeSummary | null>(null);
+  const [summaryError, setSummaryError] = useState(false);
+  const [connectionAttention, setConnectionAttention] = useState<Attention[]>([]);
+  const [connectionError, setConnectionError] = useState(false);
+  const [connectionsLoaded, setConnectionsLoaded] = useState(false);
+  const [selected, setSelected] = useState<NavigationDepartmentId>("creator");
+  const [employees, setEmployees] = useState<Employee[] | null>(null);
+  const [employeesError, setEmployeesError] = useState(false);
 
   useEffect(() => {
-    let active = true;
-    void fetch("/api/company/home-summary").then(async (response) => {
-      if (!response.ok) throw new Error("HOME_SUMMARY_UNAVAILABLE");
-      return response.json() as Promise<HomeSummary>;
-    }).then((payload) => {
-      if (!active) return;
-      setDepartments(Object.fromEntries(payload.departments.map((card) => [card.id, card])));
-      const count = payload.approvals.pendingCount;
-      setApprovals(count ? [{ id: "approvals", title: `承認待ち ${count}件`, href: "/ceo/approvals" }] : []);
-      setSummaryUnavailable(false);
-    }).catch(() => { if (active) setSummaryUnavailable(true); });
-
-    void fetch("/api/system/connections").then((response) => response.ok ? response.json() as Promise<ConnectionHealth> : null).then((payload) => {
-      if (!active) return;
-      if (!payload) { setConnectionsUnavailable(true); return; }
-      setConnectionsUnavailable(false);
-      const critical = (payload.services ?? []).filter((service) => ["disconnected", "error"].includes(service.status));
-      setSystemAttention(critical.slice(0, 1).map((service) => ({ id: `system-${service.service}`, title: service.message ?? `${service.label}の接続に問題があります`, href: "/connections" })));
-    }).catch(() => { if (active) setConnectionsUnavailable(true); });
-    return () => { active = false; };
+    const controller = new AbortController();
+    void fetch("/api/company/home-summary", { signal: controller.signal, cache: "no-store" })
+      .then((response) => { if (!response.ok) throw new Error("HOME_SUMMARY_UNAVAILABLE"); return response.json() as Promise<HomeSummary>; })
+      .then(setSummary)
+      .catch(() => { if (!controller.signal.aborted) setSummaryError(true); });
+    void fetch("/api/system/connections", { signal: controller.signal })
+      .then((response) => { if (!response.ok) throw new Error("CONNECTIONS_UNAVAILABLE"); return response.json() as Promise<ConnectionHealth>; })
+      .then((value) => { setConnectionsLoaded(true); setConnectionAttention((value.services ?? [])
+        .filter((service) => ["disconnected", "error"].includes(service.status))
+        .map((service) => ({ id: `connection:${service.service}`, title: service.message || `${service.label}の接続に問題があります`, href: "/connections", source: service.label, priority: "high" }))); })
+      .catch(() => { if (!controller.signal.aborted) setConnectionError(true); });
+    return () => controller.abort();
   }, []);
 
-  const attention = useMemo(() => {
-    const departmentAttention = BUSINESS_DEPARTMENT_NAV.flatMap((item) => {
-      const model = departments[item.id];
-      if (!model) return [];
-      return model.problems.slice(0, 1).map((problem, index) => ({ id: `${item.id}-problem-${index}`, title: `${item.label}: ${problem}`, href: item.href }));
-    });
-    return [...approvals, ...departmentAttention, ...systemAttention].slice(0, 5);
-  }, [approvals, departments, systemAttention]);
-  const currentWork = useMemo(() => BUSINESS_DEPARTMENT_NAV.flatMap((item) => (departments[item.id]?.currentWork ?? []).slice(0, 1).map((title) => ({ id: `${item.id}:${title}`, title, label: item.label, href: item.href }))).slice(0, 3), [departments]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setEmployees(null);
+    setEmployeesError(false);
+    void fetch(`/api/company/departments/${selected}/employees`, { signal: controller.signal })
+      .then((response) => { if (!response.ok) throw new Error("EMPLOYEES_UNAVAILABLE"); return response.json() as Promise<{ employees?: Employee[] }>; })
+      .then((value) => setEmployees(value.employees ?? []))
+      .catch(() => { if (!controller.signal.aborted) setEmployeesError(true); });
+    return () => controller.abort();
+  }, [selected]);
 
-  return (
-    <div className="space-y-7">
-      <section aria-labelledby="ceo-attention-title">
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="ceo-attention-title" className="text-base font-semibold text-white">CEO Attention</h2>
-          <span className="text-sm font-semibold text-amber-300">{attention.length}</span>
-        </div>
-        {summaryUnavailable ? <p className="mt-3 text-sm text-slate-400">ホームの集計を取得できません。各部署を開いて確認してください。</p> : null}
-        {connectionsUnavailable ? <p className="mt-3 text-sm text-slate-400">接続状態は未確認です。</p> : null}
-        {attention.length > 0 ? (
-          <ul className="mt-3 space-y-2">
-            {attention.map((item) => <li key={item.id}><Link href={item.href} className="flex min-h-11 items-center rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2 text-sm text-amber-100">{item.title}</Link></li>)}
-          </ul>
-        ) : null}
+  const cards = new Map(summary?.departments.map((card) => [card.id, card]) ?? []);
+  const attention = [...(summary?.attention ?? []), ...connectionAttention].sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority]);
+  const selectedDepartment = DEPARTMENT_NAV_BY_ID[selected];
+
+  return <div className="space-y-8">
+    <p role="status" className="text-sm text-slate-300">{summaryError ? "● 状態を確認できません" : !summary || !connectionsLoaded && !connectionError ? "● 状態を確認中です" : attention.length ? `● ${attention.length}件確認が必要です` : connectionError ? "● 接続状態は未取得です" : "● 確認が必要な項目はありません"}</p>
+    <section aria-labelledby="attention-title">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div><h2 id="attention-title" className="text-xl font-semibold text-white">確認が必要</h2><p className="mt-1 text-sm text-slate-400">判断や対応が必要な項目だけ表示します。</p></div>
+        <span className="text-sm text-slate-400">{summary ? `${attention.length}件` : "集計中"}</span>
+      </div>
+      {summaryError && <p role="status" className="mt-3 text-sm text-amber-200">確認事項を取得できません。しばらくしてから再読み込みしてください。</p>}
+      {connectionError && <p role="status" className="mt-2 text-sm text-slate-400">接続状態は未取得です。</p>}
+      {attention.length ? <ul className="mt-4 flex snap-x gap-3 overflow-x-auto pb-3" aria-label="確認が必要な項目">
+        {attention.map((item) => <li key={item.id} className="w-[min(78vw,17rem)] shrink-0 snap-start"><article className="flex h-full min-h-44 flex-col rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4">
+          <div className="flex items-center justify-between gap-2 text-xs"><span className="text-amber-200">{item.source}</span><span className="rounded-full border border-amber-400/30 px-2 py-0.5 text-amber-200">{priorityText[item.priority]}</span></div>
+          <h3 className="mt-3 line-clamp-3 flex-1 font-semibold text-white">{item.title}</h3>
+          <Link href={item.href} className="mt-4 flex min-h-11 items-center justify-center rounded-xl bg-amber-300 px-3 text-sm font-semibold text-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200">確認する</Link>
+        </article></li>)}
+      </ul> : summary && connectionsLoaded && !connectionError ? <p className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4 text-sm text-emerald-200">現在、確認が必要な項目はありません。</p> : null}
+    </section>
+
+    <section aria-labelledby="status-title"><h2 id="status-title" className="text-xl font-semibold text-white">現在の状況</h2><p className="mt-1 text-sm text-slate-400">カードを選ぶとチームの状態を表示します。</p>
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {STATUS_IDS.map((id) => { const item = DEPARTMENT_NAV_BY_ID[id]; const model = cards.get(id); const status = statusOf(model); return <div key={id} className={`min-w-0 rounded-2xl border bg-slate-900/65 p-3 ${selected === id ? "border-violet-400" : "border-slate-800"}`}>
+          <button type="button" onClick={() => setSelected(id)} aria-pressed={selected === id} className="min-h-14 w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300"><span className="block font-semibold text-white"><span aria-hidden>{item.icon}</span> {item.label}</span><span className="mt-2 flex items-center gap-2 text-xs text-slate-300"><span className={`h-2 w-2 rounded-full ${status.tone}`} aria-hidden />{status.label}</span></button>
+          <p className="mt-2 truncate text-xs text-slate-400">{model?.currentWork[0] ?? (model?.problems[0] || "活動情報は未取得")}</p>
+          <Link href={item.href} className="mt-3 inline-flex min-h-11 items-center text-xs font-semibold text-violet-200 underline-offset-4 hover:underline">詳細を見る</Link>
+        </div>; })}
+      </div>
+    </section>
+
+    <section aria-labelledby="team-title"><div className="flex items-center justify-between gap-3"><h2 id="team-title" className="text-lg font-semibold text-white">{selectedDepartment.label}チーム</h2><Link href={selectedDepartment.href} className="text-sm text-violet-200 underline-offset-4 hover:underline">部署の詳細</Link></div>
+      {employeesError && <p role="status" className="mt-3 text-sm text-slate-400">メンバーの状態は未取得です。</p>}
+      {employees === null && !employeesError && <p className="mt-3 text-sm text-slate-400">読み込み中…</p>}
+      {employees?.length === 0 && <p className="mt-3 text-sm text-slate-400">登録済みメンバーは見つかりませんでした。</p>}
+      {employees && employees.length > 0 && <ul className="mt-3 grid gap-3 sm:grid-cols-2">{employees.map((employee) => <li key={employee.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-medium text-white">{employee.name}</h3><p className="text-xs text-slate-400">{employee.role}</p></div><span className="text-xs text-slate-300">{employee.status || "UNKNOWN"}</span></div><p className="mt-3 text-sm text-slate-300">{employee.currentMissionTitle ?? "現在のMissionは未取得"}</p>{employee.currentStep?.title && <p className="mt-1 text-xs text-slate-400">現在のStep: {employee.currentStep.title}</p>}{employee.skills?.length ? <p className="mt-2 text-xs text-slate-500">Skills: {employee.skills.slice(0, 3).map((skill) => skill.name).join("、")}</p> : null}</li>)}</ul>}
+    </section>
+
+    <div className="grid gap-4 lg:grid-cols-2">
+      <section id="yesterday-summary" aria-labelledby="assistant-title" className="rounded-2xl border border-slate-800 bg-slate-900/55 p-5"><h2 id="assistant-title" className="text-lg font-semibold text-white">AI Assistant</h2><p className="mt-1 text-sm text-slate-400">昨日の記録</p>
+        {summary?.yesterday.facts.length ? <ul className="mt-4 space-y-2 text-sm text-slate-200">{summary.yesterday.facts.map((fact) => <li key={fact}>・{fact}</li>)}</ul> : <p className="mt-4 text-sm text-slate-400">昨日の活動記録は確認できませんでした。</p>}
+        <div className="mt-5 flex flex-wrap gap-2"><a href="#yesterday-summary" className="inline-flex min-h-11 items-center rounded-xl border border-slate-700 px-3 text-sm text-slate-200">昨日の活動を見る</a><Link href="/chat?node=assistant" className="inline-flex min-h-11 items-center rounded-xl border border-violet-500/40 px-3 text-sm text-violet-200">今の状況を聞く</Link><Link href="/chat?node=assistant" className="inline-flex min-h-11 items-center rounded-xl border border-violet-500/40 px-3 text-sm text-violet-200">質問する</Link></div>
       </section>
-
-      {currentWork.length ? <section aria-labelledby="current-work-title"><h2 id="current-work-title" className="text-base font-semibold text-white">現在の仕事</h2><ul className="mt-3 space-y-2">{currentWork.map((item) => <li key={item.id}><Link href={item.href} className="flex min-h-11 items-center justify-between rounded-xl border border-slate-800 bg-slate-900/65 px-3 py-2 text-sm"><span className="truncate">{item.title}</span><span className="ml-3 shrink-0 text-xs text-slate-500">{item.label}</span></Link></li>)}</ul></section> : null}
-
-      <section aria-labelledby="departments-title">
-        <h2 id="departments-title" className="text-base font-semibold text-white">事業部</h2>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {BUSINESS_DEPARTMENT_NAV.map((item) => {
-            const model = departments[item.id];
-            const status = statusOf(model);
-            const alertCount = model?.problems.length ?? 0;
-            return (
-              <Link key={item.id} href={item.href} className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/65 p-4 transition hover:border-violet-500/50 hover:bg-slate-900">
-                <h3 className="text-base font-semibold text-white"><span aria-hidden>{item.icon}</span> {item.label}</h3>
-                <p className="mt-1 text-sm text-slate-400">{item.description}</p>
-                <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-400"><p className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${status.tone}`} aria-hidden />{status.label}</p>{alertCount > 0 ? <p className="text-amber-300">判断待ち {alertCount}</p> : null}</div>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-      <section aria-labelledby="knowledge-title">
-        <h2 id="knowledge-title" className="text-base font-semibold text-white">全社共有基盤</h2>
-        <Link href={KNOWLEDGE_NAV.href} className="mt-3 flex min-h-16 items-center justify-between rounded-2xl border border-violet-500/25 bg-violet-500/[0.07] p-4"><span><strong>{KNOWLEDGE_NAV.icon} {KNOWLEDGE_NAV.label}</strong><span className="mt-1 block text-sm text-slate-400">{KNOWLEDGE_NAV.description}</span></span><span aria-hidden>→</span></Link>
+      <section aria-labelledby="runtime-title" className="rounded-2xl border border-slate-800 bg-slate-900/55 p-5"><h2 id="runtime-title" className="text-lg font-semibold text-white">AIエージェント稼働状況</h2><p className="mt-1 text-sm text-slate-400">{selectedDepartment.label}チームの保存済み状態</p>
+        {employees?.length ? <ul className="mt-4 space-y-3">{employees.map((employee) => <li key={employee.id} className="flex items-center justify-between gap-2 text-sm"><span className="truncate text-slate-200">{employee.name}</span><span className="shrink-0 text-slate-400">{employee.status || "UNKNOWN"}</span></li>)}</ul> : <p className="mt-4 text-sm text-slate-400">稼働状態は未取得です。</p>}
       </section>
     </div>
-  );
+  </div>;
 }

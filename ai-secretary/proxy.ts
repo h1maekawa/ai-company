@@ -28,6 +28,7 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
   if (pathname === "/api/company/runtime/health") return NextResponse.next();
+  if (pathname === "/api/integrations/flow/events") return NextResponse.next();
 
   if (MACHINE_ROUTES.some((prefix) => pathname.startsWith(prefix))) {
     return NextResponse.next();

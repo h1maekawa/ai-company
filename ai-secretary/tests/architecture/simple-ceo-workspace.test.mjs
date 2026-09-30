@@ -24,15 +24,15 @@ test("Department registry is the SSOT for five business cards and separate Knowl
     assert.match(navigation, new RegExp(`id: "${id}", label: "${label}"`));
     assert.match(navigation, new RegExp(`href: "/ceo/departments/${id}"`));
   }
-  assert.match(overview, /BUSINESS_DEPARTMENT_NAV\.map/);
-  assert.match(overview, /KNOWLEDGE_NAV/);
+  assert.match(overview, /STATUS_IDS\.map/);
+  assert.match(overview, /DEPARTMENT_NAV_BY_ID/);
   assert.doesNotMatch(overview, /Creator|Fund Intelligence|Operations|Engineering/);
 });
 
-test("Home only surfaces critical system failures through CEO Attention", () => {
+test("Home only surfaces actionable system failures through attention", () => {
   const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
   assert.match(overview, /\["disconnected", "error"\]/);
-  assert.match(overview, /CEO Attention/);
+  assert.match(overview, /確認が必要/);
   assert.doesNotMatch(overview, /healthy.*total.*正常/);
 });
 

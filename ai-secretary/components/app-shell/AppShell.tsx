@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { BriefcaseBusiness, CalendarDays, Home, Menu, Settings, X } from "lucide-react";
+import { ChartNoAxesCombined, Home, Menu, Settings, Wallet, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { ADMIN_NAV, PRIMARY_NAV, isNavActive } from "@/app/lib/config/navigation";
 import { AppSidebar } from "./AppSidebar";
@@ -14,9 +14,6 @@ const FULLSCREEN_PREFIXES = ["/chat", "/grill", "/login"];
 export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-
-  // 投資画面は銘柄検索・投資ナビを備えた専用Shellを持つため、二重Sidebarを避ける。
-  if (pathname.startsWith("/investing")) return children;
 
   const fullscreen = FULLSCREEN_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
@@ -62,7 +59,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 /** MobileもDesktopと同じ4入口。 */
 function MobileTabBar({ pathname }: { pathname: string }) {
-  const icons = { home: Home, today: CalendarDays, work: BriefcaseBusiness, admin: Settings };
+  const icons = { home: Home, investing: ChartNoAxesCombined, assets: Wallet, admin: Settings };
   const items = [...PRIMARY_NAV, ADMIN_NAV].map((item) => ({ ...item, icon: icons[item.id as keyof typeof icons] }));
   return (
     <nav

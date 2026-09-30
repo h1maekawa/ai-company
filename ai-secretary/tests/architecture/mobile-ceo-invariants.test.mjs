@@ -11,7 +11,7 @@ test("Mobile CEOは4ナビ・44pxタップ・HUMAN_ONLYを維持する", () => {
   const shell = read("components/app-shell/AppShell.tsx");
   const navigation = read("app/lib/config/navigation.ts");
   const model = read("app/lib/mobile-ceo/readModel.ts");
-  for (const label of ["ホーム", "今日", "仕事", "設定"]) assert.match(navigation, new RegExp(`label: "${label}"`));
+  for (const label of ["ホーム", "投資", "資産", "設定"]) assert.match(navigation, new RegExp(`label: "${label}"`));
   assert.match(shell, /\.\.\.PRIMARY_NAV, ADMIN_NAV/);
   assert.match(shell, /min-h-14/);
   assert.match(model, /executionAuthority: "HUMAN_ONLY"/);

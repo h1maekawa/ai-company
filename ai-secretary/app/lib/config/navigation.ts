@@ -82,18 +82,18 @@ export const PRIMARY_NAV: AppNavItem[] = [
     description: "今見る必要があること",
   },
   {
-    id: "today",
-    label: "今日",
-    icon: "🌅",
-    href: "/planning",
-    description: "今何をするかを決める",
+    id: "investing",
+    label: "投資",
+    icon: "📈",
+    href: "/investing",
+    description: "市場・企業・投資判断を見る",
   },
   {
-    id: "work",
-    label: "仕事",
-    icon: "▦",
-    href: "/ceo/work",
-    description: "領域ごとの詳細を見る",
+    id: "assets",
+    label: "資産",
+    icon: "💰",
+    href: "/assets",
+    description: "お金全体を見る",
   },
 ];
 
@@ -109,7 +109,7 @@ export const ADMIN_NAV: AppNavItem = {
 /** /admin の中身。毎日使う場所ではないので、ここへ寄せる。 */
 export const ADMIN_SECTIONS: { label: string; items: AppNavItem[] }[] = [
   {
-    label: "会社の記憶",
+    label: "Knowledge",
     items: [
       {
         id: "knowledge",
@@ -121,7 +121,7 @@ export const ADMIN_SECTIONS: { label: string; items: AppNavItem[] }[] = [
     ],
   },
   {
-    label: "接続・システム",
+    label: "連携・システム",
     items: [
       {
         id: "system-map",
@@ -137,25 +137,12 @@ export const ADMIN_SECTIONS: { label: string; items: AppNavItem[] }[] = [
         href: "/connections",
         description: "Buffer・SerpAPI・GitHub・Supabaseなどの接続確認",
       },
-      {
-        id: "content-settings",
-        label: "コンテンツ設定",
-        icon: "🎛",
-        href: "/note/settings",
-        description: "運用モード・ブランド・接続・詳細設定",
-      },
-      {
-        id: "investing-settings",
-        label: "投資設定",
-        icon: "🧮",
-        href: "/investing/settings",
-        description: "投資判断エンジンの設定・データ取込",
-      },
     ],
   },
   {
-    label: "AI Company自体",
+    label: "AI Company",
     items: [
+      { id: "company", label: "AI Company", icon: "⚙️", href: "/company", description: "AI社員・自動運用・実行状況" },
       {
         id: "kaizen",
         label: "AI Company改善",
@@ -173,8 +160,23 @@ export const ADMIN_SECTIONS: { label: string; items: AppNavItem[] }[] = [
     ],
   },
   {
-    label: "パーソナル",
+    label: "コンテンツ",
     items: [
+      { id: "content-settings", label: "運用・ブランド設定", icon: "🎛", href: "/note/settings", description: "自動運用・ブランド・X連携" },
+      { id: "content-detail", label: "コンテンツ詳細", icon: "✍️", href: "/content", description: "投稿・成果・素材を確認" },
+    ],
+  },
+  {
+    label: "投資",
+    items: [
+      { id: "investing-settings", label: "投資設定", icon: "🧮", href: "/investing/settings", description: "投資判断エンジンの設定" },
+      { id: "investing-import", label: "データ取込", icon: "📥", href: "/investing/import", description: "投資データを取込む" },
+    ],
+  },
+  {
+    label: "資産",
+    items: [
+      { id: "assets", label: "Flow+ 資産", icon: "💰", href: "/assets", description: "資産・家計とFlow+の接続状態" },
       {
         id: "kakei",
         label: "家計",
@@ -185,15 +187,15 @@ export const ADMIN_SECTIONS: { label: string; items: AppNavItem[] }[] = [
     ],
   },
   {
-    label: "詳細・分析",
+    label: "開発",
     items: [
-      {
-        id: "content-detail",
-        label: "コンテンツ詳細分析",
-        icon: "📊",
-        href: "/content",
-        description: "Performance・Revenue・Learnings・素材の細かい管理",
-      },
+      { id: "engineering", label: "開発状況", icon: "💻", href: "/ceo/departments/engineering", description: "Issue・PR・CI・Worker" },
+    ],
+  },
+  {
+    label: "高度な設定",
+    items: [
+      { id: "planning", label: "計画・予定", icon: "🌅", href: "/planning", description: "Taskと予定の詳細" },
       {
         id: "weekly-review",
         label: "週次レビュー",
@@ -234,9 +236,12 @@ export const PRESERVED_ROUTES: { href: string; reason: string }[] = [
   { href: "/investing", reason: "投資専用Shell" },
   { href: "/company", reason: "Simple Pixel Office・AI社員・Mission" },
   { href: "/knowledge", reason: "管理 → Knowledge" },
-  { href: "/planning", reason: "トップレベル「今日」" },
+  { href: "/planning", reason: "必要な時に開く計画の詳細" },
   { href: "/chat", reason: "Global AI・各部署チャット" },
   { href: "/ceo/actions", reason: "Work / Global AIから到達するQuick Action" },
+  { href: "/ceo/work", reason: "仕事の詳細Deep Link" },
+  { href: "/note/settings", reason: "コンテンツ設定のDeep Link" },
+  { href: "/assets", reason: "Flow+の資産サマリー" },
   { href: "/ceo/approvals", reason: "承認がある時だけHomeから到達する" },
   { href: "/ceo/departments/*", reason: "各Departmentの詳細Deep Link" },
   { href: "/connections", reason: "管理 → 接続状態" },

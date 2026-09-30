@@ -5,6 +5,8 @@ import { BUSINESS_DEPARTMENT_IDS, type NavigationDepartmentId } from "@/app/lib/
 
 export const dynamic = "force-dynamic";
 type Card = { id: NavigationDepartmentId; status: "active" | "attention" | "unknown"; currentWork: string[]; problems: string[] };
+type Attention = { id: string; title: string; href: string; source: string; priority: "critical" | "high" | "normal" };
+const jstDay = (date: Date) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 const agentDepartment = (agent?: string): NavigationDepartmentId | null => {
   if (!agent) return null;
   if (agent.startsWith("creator-") || agent === "personal-note") return "creator";
@@ -26,7 +28,30 @@ export async function GET(): Promise<NextResponse> {
       const currentWork = missions.filter((mission) => ["ACTIVE", "EXECUTING", "REVIEWING", "WAITING_APPROVAL"].includes(mission.status)).slice(0, 2).map((mission) => mission.title);
       return { id, status: problems.length ? "attention" : currentWork.length ? "active" : "unknown", currentWork, problems };
     });
-    return NextResponse.json({ generatedAt: new Date().toISOString(), approvals: { pendingCount: pending.length }, departments: cards });
+    const attention: Attention[] = [];
+    if (pending.length) attention.push({ id: "approvals", title: `承認待ち ${pending.length}件`, href: "/ceo/approvals", source: "AI Company", priority: "high" });
+    const activeRuntimeAttention = (state.runtime?.attention ?? []).filter((item) => !item.resolvedAt && item.type !== "FIRST_REVENUE" && item.type !== "APPROVAL_REQUIRED");
+    for (const item of activeRuntimeAttention) {
+      attention.push({ id: item.id, title: item.title, href: item.missionId ? "/ceo/work" : "/admin/system-map", source: "AI Company", priority: item.priority === "critical" ? "critical" : item.priority === "high" ? "high" : "normal" });
+    }
+    const alreadyReportedMissions = new Set(activeRuntimeAttention.map((item) => item.missionId));
+    for (const mission of state.missions.filter((item) => ["BLOCKED", "FAILED", "REPLAN_REQUIRED"].includes(item.status) && !alreadyReportedMissions.has(item.id)).slice(0, 8)) {
+      attention.push({ id: `mission:${mission.id}`, title: mission.title, href: "/ceo/work", source: "AI Company", priority: mission.status === "FAILED" ? "high" : "normal" });
+    }
+    const rank = { critical: 0, high: 1, normal: 2 };
+    attention.sort((a, b) => rank[a.priority] - rank[b.priority]);
+
+    const yesterday = jstDay(new Date(Date.now() - 86_400_000));
+    const happenedYesterday = (at?: string) => Boolean(at && !Number.isNaN(Date.parse(at)) && jstDay(new Date(at)) === yesterday);
+    const completedMissions = state.missions.filter((item) => item.status === "COMPLETED" && happenedYesterday(item.completedAt)).length;
+    const researchRuns = (state.runtime?.researchRuns ?? []).filter((item) => item.completedAt && happenedYesterday(item.completedAt)).length;
+    const decisions = state.approvals.filter((item) => item.status !== "PENDING" && happenedYesterday(item.decidedAt)).length;
+    const yesterdayFacts = [
+      completedMissions ? `Missionを${completedMissions}件完了しました` : null,
+      researchRuns ? `Researchを${researchRuns}件実行しました` : null,
+      decisions ? `承認判断を${decisions}件記録しました` : null,
+    ].filter((item): item is string => Boolean(item));
+    return NextResponse.json({ generatedAt: new Date().toISOString(), approvals: { pendingCount: pending.length }, departments: cards, attention: attention.slice(0, 20), yesterday: { date: yesterday, facts: yesterdayFacts } });
   } catch {
     return NextResponse.json({ error: "HOME_SUMMARY_UNAVAILABLE" }, { status: 503 });
   }
