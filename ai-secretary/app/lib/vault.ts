@@ -4,10 +4,33 @@ import { resolveRawPath } from './runtime/paths';
 
 const GITHUB_OWNER = process.env.GITHUB_OWNER || '';
 const GITHUB_REPO = process.env.GITHUB_REPO || '';
-const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 
 const API_BASE = 'https://api.github.com/repos';
+export class VaultConflictError extends Error {
+  readonly status = 409;
+  constructor(public readonly filePath: string) { super('VAULT_CONFLICT'); }
+}
+export class VaultApiError extends Error {
+  constructor(public readonly status: number, public readonly filePath: string) { super(`VAULT_API_ERROR_${status}`); }
+}
+/** Reapply a pure document edit to the latest version after a competing write. */
+export async function updateVaultFile(filePath: string, transform: (content: string) => string, maxAttempts = 3): Promise<{ sha: string }> {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const current = await getVaultFile(filePath);
+    try { return await saveVaultFile(filePath, transform(current.content), current.sha); }
+    catch (error) { if (!(error instanceof VaultConflictError) || attempt === maxAttempts - 1) throw error; }
+  }
+  throw new VaultConflictError(filePath);
+}
+function githubBranch(): string {
+  const branch = process.env.GITHUB_BRANCH?.trim();
+  const productionBranch = process.env.GITHUB_PRODUCTION_BRANCH?.trim() || 'main';
+  const stage = process.env.VERCEL_ENV === 'production' ? 'production' : process.env.VERCEL_ENV === 'preview' ? 'preview' : 'development';
+  if (stage === 'production') return branch || productionBranch;
+  if (!branch || branch === productionBranch || branch === 'main' || branch === 'master') throw new Error('NON_PRODUCTION_VAULT_BRANCH_REQUIRED');
+  return branch;
+}
 
 function getGitHubPath(filePath: string): string {
   const segments = filePath.split('/').filter(s => s);
@@ -25,7 +48,7 @@ export interface VaultFile {
 export async function getVaultFile(filePath: string): Promise<VaultFile> {
   if (GITHUB_OWNER && GITHUB_REPO && GITHUB_TOKEN) {
     const githubPath = getGitHubPath(filePath);
-    const url = `${API_BASE}/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}?ref=${GITHUB_BRANCH}`;
+    const url = `${API_BASE}/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}?ref=${encodeURIComponent(githubBranch())}`;
 
     console.log(`[DEBUG] Vault-Utility GET request to: ${url}`);
 
@@ -45,11 +68,11 @@ export async function getVaultFile(filePath: string): Promise<VaultFile> {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
+      throw new VaultApiError(response.status, filePath);
     }
 
-    const data = (await response.json()) as { content?: string; sha?: string };
-    if (!data.content || !data.sha) {
+    const data = (await response.json()) as { content?: string; sha?: string; encoding?: string };
+    if (data.content === undefined || !data.sha || (data.encoding && data.encoding !== 'base64')) {
       throw new Error('Invalid GitHub API response');
     }
 
@@ -63,9 +86,7 @@ export async function getVaultFile(filePath: string): Promise<VaultFile> {
         const content = fs.readFileSync(localPath, 'utf-8');
         return { content, sha: undefined };
       }
-    } catch (e) {
-      console.error(`[DEBUG] Local file read failed for ${filePath}:`, e);
-    }
+    } catch (e) { throw e; }
     return { content: '', sha: undefined };
   }
 }
@@ -79,6 +100,9 @@ export async function saveVaultFile(
   sha?: string
 ): Promise<{ sha: string }> {
   if (GITHUB_OWNER && GITHUB_REPO && GITHUB_TOKEN) {
+    // A missing SHA must mean a verified create, even if a caller swallowed its
+    // own read error. Never let that ambiguity turn into an unsafe overwrite.
+    if (!sha && (await getVaultFile(filePath)).sha) throw new VaultConflictError(filePath);
     const githubPath = getGitHubPath(filePath);
     const url = `${API_BASE}/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}`;
 
@@ -86,7 +110,7 @@ export async function saveVaultFile(
     const body: Record<string, unknown> = {
       message: sha ? `Update ${filePath}` : `Create ${filePath}`,
       content: encodedContent,
-      branch: GITHUB_BRANCH,
+      branch: githubBranch(),
     };
 
     if (sha) {
@@ -105,27 +129,11 @@ export async function saveVaultFile(
         body: JSON.stringify(body),
       });
 
-    let response = await put();
-
-    // 409 = 別の書き込みが先に入ってSHAが古くなった状態。
-    // 同じ画面から複数のAPIが同時に同じファイルへ書くと起きるため、
-    // 最新のSHAを取り直して一度だけやり直す。
-    if (response.status === 409) {
-      console.warn(`[vault] 書き込み競合を検出。SHAを取り直して再試行します: ${filePath}`);
-      try {
-        const latest = await getVaultFile(filePath);
-        if (latest.sha) {
-          body.sha = latest.sha;
-          response = await put();
-        }
-      } catch (e) {
-        console.error('[vault] 再試行用のSHA取得に失敗:', e);
-      }
-    }
+    const response = await put();
+    if (response.status === 409) throw new VaultConflictError(filePath);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
+      throw new VaultApiError(response.status, filePath);
     }
 
     const data = (await response.json()) as { commit?: { sha?: string }; content?: { sha?: string } };
@@ -165,7 +173,7 @@ export interface VaultEntry {
 export async function listVaultEntries(dirPath: string): Promise<VaultEntry[]> {
   if (GITHUB_OWNER && GITHUB_REPO && GITHUB_TOKEN) {
     const githubPath = getGitHubPath(dirPath);
-    const url = `${API_BASE}/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}?ref=${GITHUB_BRANCH}`;
+    const url = `${API_BASE}/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}?ref=${encodeURIComponent(githubBranch())}`;
 
     const response = await fetch(url, {
       method: 'GET',
@@ -215,7 +223,7 @@ export async function listVaultEntries(dirPath: string): Promise<VaultEntry[]> {
 export async function listVaultDirectory(dirPath: string): Promise<string[]> {
   if (GITHUB_OWNER && GITHUB_REPO && GITHUB_TOKEN) {
     const githubPath = getGitHubPath(dirPath);
-    const url = `${API_BASE}/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}?ref=${GITHUB_BRANCH}`;
+    const url = `${API_BASE}/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}?ref=${encodeURIComponent(githubBranch())}`;
 
     console.log(`[DEBUG] Vault-Utility LIST request to: ${url}`);
 
@@ -260,4 +268,3 @@ export async function listVaultDirectory(dirPath: string): Promise<string[]> {
     return [];
   }
 }
-

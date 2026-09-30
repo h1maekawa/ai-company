@@ -196,17 +196,25 @@ async function summarize(items: NewsItem[]): Promise<NewsItem[]> {
 
 type Cache = { fetchedAt: string; items: NewsItem[] };
 
-async function loadCache(): Promise<Cache | null> {
+async function loadCache(allowStale = false): Promise<Cache | null> {
   try {
     const file = await getVaultFile(CACHE_PATH);
     const match = (file.content || "").match(/```json\s*\n([\s\S]*?)\n```/);
     if (!match) return null;
     const cache = JSON.parse(match[1]) as Cache;
     const age = (Date.now() - new Date(cache.fetchedAt).getTime()) / 60000;
-    return age < CACHE_TTL_MINUTES ? cache : null;
+    return allowStale || age < CACHE_TTL_MINUTES ? cache : null;
   } catch {
     return null;
   }
+}
+
+/** Status screens read only the stored cache. A miss never fetches, generates, or saves. */
+export async function loadStoredNewsStatus(): Promise<{ available: boolean; fetchedAt: string | null; stale: boolean }> {
+  const cache = await loadCache(true);
+  if (!cache) return { available: false, fetchedAt: null, stale: false };
+  const age = Date.now() - new Date(cache.fetchedAt).getTime();
+  return { available: cache.items.length > 0, fetchedAt: cache.fetchedAt, stale: !Number.isFinite(age) || age >= CACHE_TTL_MINUTES * 60_000 };
 }
 
 async function saveCache(items: NewsItem[]): Promise<void> {
@@ -234,19 +242,8 @@ ${JSON.stringify(cache, null, 2)}
   try {
     await saveVaultFile(CACHE_PATH, markdown, sha);
   } catch (error) {
-    // 409 = 書き込み競合でSHAが古くなった状態。最新SHAを取り直して1回だけ再試行する。
-    // それでも失敗したら既存のfallback（ログのみ・Learningは継続）を維持する。無限retryはしない。
-    const isConflict = error instanceof Error && /GitHub API error: 409/.test(error.message);
-    if (isConflict) {
-      try {
-        const latestSha = (await getVaultFile(CACHE_PATH)).sha;
-        await saveVaultFile(CACHE_PATH, markdown, latestSha);
-        return;
-      } catch (retryError) {
-        console.error("[investing/news] キャッシュ保存の再試行に失敗:", retryError);
-        return;
-      }
-    }
+    // This cache is replaceable; a concurrent writer's fresher entry wins.
+    // Never attach its new SHA to content built from our old read.
     console.error("[investing/news] キャッシュ保存に失敗:", error);
   }
 }

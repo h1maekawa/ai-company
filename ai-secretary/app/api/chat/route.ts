@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
     if (departmentId) {
       const departmentResponse = await getDepartment(
         new NextRequest(new URL(`/api/company/departments/${departmentId}`, req.nextUrl.origin)),
-        { params: { id: departmentId } },
+        { params: Promise.resolve({ id: departmentId }) },
       );
       if (!departmentResponse.ok) return NextResponse.json({ error: "DEPARTMENT_CONTEXT_UNAVAILABLE" }, { status: 503 });
       const payload = await departmentResponse.json() as { department: DepartmentReadModel; generatedAt: string };
@@ -270,7 +270,8 @@ export async function POST(req: NextRequest) {
       bus = switchSecretary(bus, targetSecretaryId, `User request: ${message.substring(0, 30)}...`);
       await saveBus(bus);
     } catch (busErr) {
-      console.error("Failed to update ContextBus (non-fatal):", busErr);
+      console.error("Failed to update ContextBus:", busErr);
+      return NextResponse.json({ error: "CONTEXT_BUS_UNAVAILABLE" }, { status: 503 });
     }
 
     // 9. Save chat summary log (failsafe)

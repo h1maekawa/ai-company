@@ -22,7 +22,8 @@ const isDepartment = (id: string): id is NavigationDepartmentId => DEPARTMENT_ID
  * Department Control Center の CEO確認データ。
  * Skill Proposal は Skill.allowedSecretaries と所属AI社員の intersection で部門へ割り当てる。
  */
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!isDepartment(params.id)) return NextResponse.json({ error: "UNKNOWN_DEPARTMENT" }, { status: 404 });
   const department = DEPARTMENT_NAV_BY_ID[params.id];
   const skills = listSkills();
@@ -54,7 +55,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
  * - constitution-decision: Investment LearningのproposedPrincipleを「人間が認めた採用候補」にする。
  *   Policy / Constitution本文・Recommendation Scoreは変更しない。
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!isSameOriginMutation(req)) return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
   if (!isDepartment(params.id)) return NextResponse.json({ error: "UNKNOWN_DEPARTMENT" }, { status: 404 });
   const key = req.headers.get("idempotency-key");

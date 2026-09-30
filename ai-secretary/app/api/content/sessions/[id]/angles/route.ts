@@ -6,10 +6,8 @@ import { loadContentCore } from "@/app/lib/content/core/store";
 export const dynamic = "force-dynamic";
 
 /** POST: 同一Materialから複数Angleを提案する（保存はしない。選択はPATCHで） */
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const session = await loadSession(params.id);
     if (!session) return NextResponse.json({ error: "ArticleSessionが見つかりません" }, { status: 404 });
@@ -37,10 +35,8 @@ export async function POST(
 }
 
 /** PATCH { angleId } または { angle: "自由記述" }: 本人が選択・編集する */
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const session = await loadSession(params.id);
     if (!session) return NextResponse.json({ error: "ArticleSessionが見つかりません" }, { status: 404 });

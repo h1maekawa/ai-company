@@ -4,6 +4,8 @@ export type SyncStatusValue = "connected" | "warning" | "disconnected" | "not_co
 export type SystemSyncStatus = { service: string; status: SyncStatusValue; last_checked_at: string; last_success_at?: string | null; last_sync_at?: string | null; item_count?: number | null; message?: string | null; last_error?: string | null; metadata?: Record<string, unknown> };
 export const syncStatusRepository = {
   configured: () => Boolean(getSupabaseConfig()),
-  list: () => supabaseRequest<SystemSyncStatus[]>("system_sync_status?select=*&order=service.asc"),
+  list: () => supabaseRequest<SystemSyncStatus[]>("system_sync_status?select=*&service=in.(knowledge_index,note_runner)&order=service.asc"),
   upsert: (value: SystemSyncStatus) => supabaseRequest("system_sync_status?on_conflict=service", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(value) }),
+  knowledgePending: (limit: number) => supabaseRequest<SystemSyncStatus[]>(`system_sync_status?select=*&service=like.knowledge_index:%25&status=eq.warning&order=last_checked_at.asc&limit=${Math.min(Math.max(limit, 1), 25)}`),
+  knowledgePath: async (service: string) => (await supabaseRequest<SystemSyncStatus[]>(`system_sync_status?select=*&service=eq.${encodeURIComponent(service)}&limit=1`))[0] ?? null,
 };

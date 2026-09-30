@@ -1,17 +1,20 @@
 /**
- * redis.ts — Upstash Redis client (fail-open)
+ * redis.ts — Upstash Redis client and cache-safe helpers
  *
- * Returns null if UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are not set,
- * so all callers can safely fall back to file persistence without throwing.
+ * Critical state callers must reject null and transport errors. Only cache
+ * callers should use the fail-open redisSafeGet/redisSafeSet helpers.
  */
 
 import { Redis } from "@upstash/redis";
+import { runtimeEnvironment } from "../company/runtime/environment";
 
 // --- Availability check ---
-export const isRedisAvailable = Boolean(
-  process.env.UPSTASH_REDIS_REST_URL &&
-  process.env.UPSTASH_REDIS_REST_TOKEN
-);
+const stage = runtimeEnvironment().stage;
+// Preview/development must have their own credentials. An inherited production
+// URL/token pair is deliberately ignored; direct Redis callers also stay isolated.
+const redisUrl = stage === "production" ? process.env.UPSTASH_REDIS_REST_URL : stage === "preview" ? process.env.UPSTASH_REDIS_REST_URL_PREVIEW : process.env.UPSTASH_REDIS_REST_URL_DEVELOPMENT;
+const redisToken = stage === "production" ? process.env.UPSTASH_REDIS_REST_TOKEN : stage === "preview" ? process.env.UPSTASH_REDIS_REST_TOKEN_PREVIEW : process.env.UPSTASH_REDIS_REST_TOKEN_DEVELOPMENT;
+export const isRedisAvailable = Boolean(redisUrl && redisToken);
 
 // --- Client singleton ---
 let _redis: Redis | null = null;
@@ -20,25 +23,28 @@ export function getRedisClient(): Redis | null {
   if (!isRedisAvailable) return null;
   if (!_redis) {
     _redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL!,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+      url: redisUrl!,
+      token: redisToken!,
     });
   }
   return _redis;
 }
 
 // --- Namespace helpers ---
+const busPrefix = runtimeEnvironment().stage === "production" ? "" : `${runtimeEnvironment().redisNamespace}:`;
 export const REDIS_KEYS = {
-  companyInbox:    "bus:company:inbox",
-  companyPipeline: "bus:company:pipeline",
-  personalInbox:   "bus:personal:inbox",
-  personalPipeline:"bus:personal:pipeline",
+  companyInbox:    `${busPrefix}bus:company:inbox`,
+  companyPipeline: `${busPrefix}bus:company:pipeline`,
+  personalInbox:   `${busPrefix}bus:personal:inbox`,
+  personalPipeline:`${busPrefix}bus:personal:pipeline`,
+  version: `${busPrefix}bus:version`,
+  snapshot: `${busPrefix}bus:snapshot`,
 } as const;
 
 /** Grilling Session（docs/15 D3）。本番ではRedisがSession Stateの唯一の永続実体。 */
 export const GRILL_KEYS = {
-  session: (id: string) => `grill:session:${id}`,
-  activeIndex: "grill:index:active",
+  session: (id: string) => `${busPrefix}grill:session:${id}`,
+  activeIndex: `${busPrefix}grill:index:active`,
 } as const;
 
 /**

@@ -8,6 +8,7 @@ export const PROTECTED_PATHS = [
   "app/lib/engineering/",
   ".github/workflows/",
   "middleware.ts",
+  "proxy.ts",
   "app/lib/auth/",
   "app/api/auth/",
   "supabase/migrations/",

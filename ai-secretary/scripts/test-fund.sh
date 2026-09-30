@@ -30,19 +30,25 @@ cat > "$DIST/mw-tsconfig.json" <<EOF
     "baseUrl": "$PWD",
     "paths": { "@/*": ["./*"] }
   },
-  "files": ["$PWD/middleware.ts", "$PWD/app/lib/auth/session.ts"]
+  "files": ["$PWD/proxy.ts", "$PWD/app/lib/auth/session.ts", "$PWD/app/lib/auth/read-limited-body.ts"]
 }
 EOF
 npx tsc -p "$DIST/mw-tsconfig.json"
-cp "$DIST/mw-raw/middleware.js" "$DIST/mw/middleware.js"
+cp "$DIST/mw-raw/proxy.js" "$DIST/mw/proxy.js"
 cp "$DIST/mw-raw/app/lib/auth/session.js" "$DIST/mw/session.js"
+cp "$DIST/mw-raw/app/lib/auth/security-store.js" "$DIST/mw/security-store.js"
+cp "$DIST/mw-raw/app/lib/auth/read-limited-body.js" "$DIST/mw/read-limited-body.js"
 node -e "
 const fs = require('fs');
-const p = process.env.FUND_DIST + '/mw/middleware.js';
+const p = process.env.FUND_DIST + '/mw/proxy.js';
 let s = fs.readFileSync(p, 'utf8');
 s = s.replace('@/app/lib/auth/session', './session');
 fs.writeFileSync(p, s);
+const storePath = process.env.FUND_DIST + '/mw/security-store.js';
+let store = fs.readFileSync(storePath, 'utf8');
+store = store.replace('require(\"@/app/lib/utils/redis\")', '{ getRedisClient: () => null }');
+fs.writeFileSync(storePath, store);
 "
 
 # NODE_PATH: /tmpへコンパイルしたmiddleware.jsが next/server を解決できるようにする
-NODE_PATH="$PWD/node_modules" node --test tests/fund/*.test.mjs
+NODE_ENV=test NODE_PATH="$PWD/node_modules" node --test tests/fund/*.test.mjs

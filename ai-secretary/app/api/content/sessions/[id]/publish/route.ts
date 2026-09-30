@@ -10,10 +10,8 @@ export const dynamic = "force-dynamic";
  * 本人操作による正式なPublish記録。AI Draftを自動でPublished扱いにはしない
  * （このAPIを本人が明示的に叩いたときだけPublishedContentが作られる）。
  */
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const session = await loadSession(params.id);
     if (!session) return NextResponse.json({ error: "ArticleSessionが見つかりません" }, { status: 404 });

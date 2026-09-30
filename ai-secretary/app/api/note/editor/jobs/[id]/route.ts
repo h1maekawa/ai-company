@@ -3,10 +3,8 @@ import { getLocalAiReviewJob } from "@/app/lib/note/editor/jobs";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const job = await getLocalAiReviewJob(params.id);
     if (!job) return NextResponse.json({ error: "ジョブが見つかりません" }, { status: 404 });

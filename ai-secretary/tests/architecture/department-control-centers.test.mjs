@@ -148,11 +148,13 @@ test("Company detail never fabricates Skill output and has no trade buttons", ()
   assert.doesNotMatch(detail, />[^<]*(買う|売る|注文する|BUY|SELL)[^<]*<\/(button|Link)>/);
 });
 
-test("Home cards stay compact and surface real Thesis alerts only", () => {
+test("Home cards stay compact and leave expensive detail-only alerts unconfirmed", () => {
   const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
   assert.match(overview, /item\.description/);
   assert.match(overview, /alertCount/);
-  assert.match(overview, /thesis_alerts/);
+  assert.match(overview, /\/api\/company\/home-summary/);
+  assert.match(overview, /未確認/);
+  assert.doesNotMatch(overview, /thesis_alerts/, "Home must not restore the expensive Fund detail fetch");
   assert.match(read("app/lib/config/navigation.ts"), /homeMetrics: \["portfolio_value", "unrealized_pl", "thesis_alerts"\]/);
   assert.doesNotMatch(overview, /MU 決算|changePct/);
 });

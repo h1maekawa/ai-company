@@ -1,8 +1,8 @@
-// Edge + Node compatible session helpers built on Web Crypto (crypto.subtle),
-// so the same code runs in middleware.ts (Edge runtime) and route handlers (Node runtime).
+// Session helpers built on Web Crypto for proxy.ts and route handlers.
 
 export const SESSION_COOKIE = "ai_secretary_session";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+import { isSessionRevoked, revokeSession } from "./security-store";
 
 async function hmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
@@ -27,7 +27,9 @@ function fromBase64Url(str: string): ArrayBuffer {
 }
 
 export async function createSessionToken(secret: string): Promise<string> {
-  const payload = String(Date.now() + SESSION_TTL_MS);
+  const version = process.env.SESSION_VERSION || "1";
+  const id = crypto.randomUUID();
+  const payload = `${Date.now() + SESSION_TTL_MS}:${version}:${id}`;
   const key = await hmacKey(secret);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   return `${payload}.${toBase64Url(sig)}`;
@@ -38,15 +40,17 @@ export async function verifySessionToken(
   secret: string
 ): Promise<boolean> {
   if (!token) return false;
-  const [payload, sig] = token.split(".");
-  if (!payload || !sig) return false;
+  const [payload, sig, extra] = token.split(".");
+  if (!payload || !sig || extra) return false;
 
-  const exp = Number(payload);
-  if (!Number.isFinite(exp) || Date.now() > exp) return false;
+  const [expiry, version, id] = payload.split(":");
+  const exp = Number(expiry);
+  if (!Number.isSafeInteger(exp) || Date.now() > exp || exp > Date.now() + SESSION_TTL_MS || version !== (process.env.SESSION_VERSION || "1") || !/^[0-9a-f-]{36}$/.test(id || "")) return false;
 
+  let signatureValid = false;
   try {
     const key = await hmacKey(secret);
-    return await crypto.subtle.verify(
+    signatureValid = await crypto.subtle.verify(
       "HMAC",
       key,
       fromBase64Url(sig),
@@ -55,6 +59,13 @@ export async function verifySessionToken(
   } catch {
     return false;
   }
+  return signatureValid && !(await isSessionRevoked(id));
+}
+
+export async function revokeSessionToken(token: string | undefined, secret: string): Promise<void> {
+  if (!token || !(await verifySessionToken(token, secret))) return;
+  const [expiry, , id] = token.split(".")[0].split(":");
+  await revokeSession(id, Math.max(1, Math.ceil((Number(expiry) - Date.now()) / 1000)));
 }
 
 // Constant-time password check: reuses HMAC-verify (which is constant-time

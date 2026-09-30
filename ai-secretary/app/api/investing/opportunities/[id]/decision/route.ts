@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { loadIntelligenceToday, appendInvestmentDecision } from "@/app/lib/investing/intelligence/store";
 import type { InvestmentDecisionRecord } from "@/app/lib/investing/intelligence/types";
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const origin = request.headers.get("origin");
   if (origin && new URL(request.url).origin !== origin) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
   const body = await request.json() as { decision?: string; reason?: string; scenario?: string };

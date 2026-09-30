@@ -11,10 +11,8 @@ export const dynamic = "force-dynamic";
  * 本人発言をメッセージへ追加し（Chat autosave）、AIが1〜2問だけ質問を返す。
  * AI一括記事生成はしない。
  */
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const session = await loadSession(params.id);
     if (!session) return NextResponse.json({ error: "ArticleSessionが見つかりません" }, { status: 404 });

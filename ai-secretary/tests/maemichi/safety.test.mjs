@@ -178,6 +178,7 @@ test("正しいCRON_SECRETは通る", () => {
 test("違うCRON_SECRETは拒否される", () => {
   process.env.CRON_SECRET = "cron-abc";
   assert.equal(machineAuth.verifyCronSecret(reqWith({ authorization: "Bearer wrong" })).ok, false);
+  assert.equal(machineAuth.verifyCronSecret(reqWith({}, "https://example.com/api/cron/x?secret=cron-abc")).ok, false);
 });
 
 test("ランナートークンも同様に検証される", () => {

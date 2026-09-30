@@ -2,69 +2,55 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { BUSINESS_DEPARTMENT_NAV, DEPARTMENT_NAV, KNOWLEDGE_NAV, type NavigationDepartmentId } from "@/app/lib/config/navigation";
-import type { DepartmentReadModel } from "@/app/lib/mobile-ceo/departments";
-import { UNKNOWN_LABEL } from "@/app/lib/mobile-ceo/controlCenter";
+import { BUSINESS_DEPARTMENT_NAV, KNOWLEDGE_NAV, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 
-type DepartmentMap = Partial<Record<NavigationDepartmentId, DepartmentReadModel | null>>;
+type Card = { id: NavigationDepartmentId; status: "active" | "attention" | "unknown"; currentWork: string[]; problems: string[] };
+type DepartmentMap = Partial<Record<NavigationDepartmentId, Card>>;
+type HomeSummary = { approvals: { pendingCount: number }; departments: Card[] };
 type Attention = { id: string; title: string; href: string };
 type ConnectionHealth = { services?: Array<{ service: string; label: string; status: string; message?: string }> };
 
-function allMetrics(model: DepartmentReadModel) {
-  return [model.northStar, ...model.outcomes, ...model.operations];
-}
-
-function statusOf(model: DepartmentReadModel | null | undefined) {
-  if (!model) return { label: UNKNOWN_LABEL, tone: "bg-slate-500" };
-  const decisionRequired = model.operations.find((metric) => metric.metric === "decision_required")?.value ?? 0;
-  const ciFailure = model.operations.concat(model.outcomes).find((metric) => metric.metric === "ci_failure")?.value ?? 0;
-  if (model.problems.length > 0 || decisionRequired > 0 || ciFailure > 0) return { label: "要確認", tone: "bg-amber-400" };
-  if (model.currentWork.length > 0) return { label: "稼働中", tone: "bg-emerald-400" };
-  return { label: "正常", tone: "bg-sky-400" };
+function statusOf(model: Card | undefined) {
+  if (model?.status === "attention") return { label: "要確認", tone: "bg-amber-400" };
+  if (model?.status === "active") return { label: "稼働中", tone: "bg-emerald-400" };
+  return { label: "未確認", tone: "bg-slate-500" };
 }
 
 export function DepartmentOverview() {
   const [departments, setDepartments] = useState<DepartmentMap>({});
   const [approvals, setApprovals] = useState<Attention[]>([]);
   const [systemAttention, setSystemAttention] = useState<Attention[]>([]);
+  const [summaryUnavailable, setSummaryUnavailable] = useState(false);
+  const [connectionsUnavailable, setConnectionsUnavailable] = useState(false);
 
   useEffect(() => {
     let active = true;
-    void Promise.all(DEPARTMENT_NAV.map(async (item) => {
-      try {
-        const response = await fetch(`/api/company/departments/${item.id}`);
-        return [item.id, response.ok ? (await response.json()).department as DepartmentReadModel : null] as const;
-      } catch { return [item.id, null] as const; }
-    })).then((entries) => { if (active) setDepartments(Object.fromEntries(entries)); });
-
-    void fetch("/api/company/approvals").then((response) => response.ok ? response.json() : null).then((payload) => {
-      if (!active || !payload) return;
-      const pending = Array.isArray(payload.pending) ? payload.pending : [];
-      setApprovals(pending.length ? [{ id: "approvals", title: `承認待ち ${pending.length}件`, href: "/ceo/approvals" }] : []);
-    }).catch(() => undefined);
+    void fetch("/api/company/home-summary").then(async (response) => {
+      if (!response.ok) throw new Error("HOME_SUMMARY_UNAVAILABLE");
+      return response.json() as Promise<HomeSummary>;
+    }).then((payload) => {
+      if (!active) return;
+      setDepartments(Object.fromEntries(payload.departments.map((card) => [card.id, card])));
+      const count = payload.approvals.pendingCount;
+      setApprovals(count ? [{ id: "approvals", title: `承認待ち ${count}件`, href: "/ceo/approvals" }] : []);
+      setSummaryUnavailable(false);
+    }).catch(() => { if (active) setSummaryUnavailable(true); });
 
     void fetch("/api/system/connections").then((response) => response.ok ? response.json() as Promise<ConnectionHealth> : null).then((payload) => {
-      if (!active || !payload) return;
+      if (!active) return;
+      if (!payload) { setConnectionsUnavailable(true); return; }
+      setConnectionsUnavailable(false);
       const critical = (payload.services ?? []).filter((service) => ["disconnected", "error"].includes(service.status));
       setSystemAttention(critical.slice(0, 1).map((service) => ({ id: `system-${service.service}`, title: service.message ?? `${service.label}の接続に問題があります`, href: "/connections" })));
-    }).catch(() => undefined);
+    }).catch(() => { if (active) setConnectionsUnavailable(true); });
     return () => { active = false; };
   }, []);
 
   const attention = useMemo(() => {
-    const departmentAttention = DEPARTMENT_NAV.flatMap((item) => {
+    const departmentAttention = BUSINESS_DEPARTMENT_NAV.flatMap((item) => {
       const model = departments[item.id];
       if (!model) return [];
-      const decision = model.operations.find((metric) => metric.metric === "decision_required" && metric.value !== null && metric.value > 0);
-      const ciFailure = model.outcomes.find((metric) => metric.metric === "ci_failure" && metric.value !== null && metric.value > 0);
-      // Thesis Alert は Thesis の実データ（WEAKENED / INVALIDATED）だけ。株価下落では出さない。
-      const thesis = model.operations.find((metric) => metric.metric === "thesis_alerts" && metric.value !== null && metric.value > 0);
-      return [
-        ...(decision ? [{ id: `${item.id}-decision`, title: `${item.label}: 判断待ち ${decision.value}件`, href: item.href }] : []),
-        ...(thesis ? [{ id: `${item.id}-thesis`, title: `${item.label}: Thesis Alert ${thesis.value}件`, href: item.href }] : []),
-        ...(ciFailure ? [{ id: `${item.id}-ci`, title: `${item.label}: CI失敗 ${ciFailure.value}件`, href: item.href }] : []),
-        ...model.problems.slice(0, 1).map((problem, index) => ({ id: `${item.id}-problem-${index}`, title: `${item.label}: ${problem}`, href: item.href })),
-      ];
+      return model.problems.slice(0, 1).map((problem, index) => ({ id: `${item.id}-problem-${index}`, title: `${item.label}: ${problem}`, href: item.href }));
     });
     return [...approvals, ...departmentAttention, ...systemAttention].slice(0, 5);
   }, [approvals, departments, systemAttention]);
@@ -77,6 +63,8 @@ export function DepartmentOverview() {
           <h2 id="ceo-attention-title" className="text-base font-semibold text-white">CEO Attention</h2>
           <span className="text-sm font-semibold text-amber-300">{attention.length}</span>
         </div>
+        {summaryUnavailable ? <p className="mt-3 text-sm text-slate-400">ホームの集計を取得できません。各部署を開いて確認してください。</p> : null}
+        {connectionsUnavailable ? <p className="mt-3 text-sm text-slate-400">接続状態は未確認です。</p> : null}
         {attention.length > 0 ? (
           <ul className="mt-3 space-y-2">
             {attention.map((item) => <li key={item.id}><Link href={item.href} className="flex min-h-11 items-center rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2 text-sm text-amber-100">{item.title}</Link></li>)}
@@ -92,7 +80,7 @@ export function DepartmentOverview() {
           {BUSINESS_DEPARTMENT_NAV.map((item) => {
             const model = departments[item.id];
             const status = statusOf(model);
-            const alertCount = model ? model.problems.length + allMetrics(model).filter((metric) => ["decision_required", "thesis_alerts", "ci_failure", "blocked"].includes(metric.metric) && (metric.value ?? 0) > 0).reduce((sum, metric) => sum + (metric.value ?? 0), 0) : 0;
+            const alertCount = model?.problems.length ?? 0;
             return (
               <Link key={item.id} href={item.href} className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/65 p-4 transition hover:border-violet-500/50 hover:bg-slate-900">
                 <h3 className="text-base font-semibold text-white"><span aria-hidden>{item.icon}</span> {item.label}</h3>

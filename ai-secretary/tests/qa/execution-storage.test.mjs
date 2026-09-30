@@ -18,14 +18,14 @@ test("local storage persists immutable learning and rejects corruption and symli
  const fs=require('node:fs/promises'), path=require('node:path'), assert=require('node:assert/strict');
  const store=require(${JSON.stringify(module)});
  (async()=>{
-  const state=store.emptyExecutionState();
+  const state=await store.loadExecutionState();
   state.runtime={runs:{},executions:[],artifacts:[],learning:[{id:'e1',type:'MISSION_SUCCEEDED',at:'2026-09-13'}]};
   await store.saveExecutionState(state);
   assert.deepEqual((await store.loadExecutionState()).runtime.learning,state.runtime.learning);
   const audit=await fs.readdir(path.join(process.env.VAULT_ROOT,'memory/learning'));
   assert.equal(audit.length,1);
   const changed=structuredClone(state); changed.runtime.learning[0].type='MISSION_FAILED';
-  await assert.rejects(store.saveExecutionState(changed),/LEARNING_APPEND_ONLY/);
+  await assert.rejects(store.saveExecutionState(changed,{expectedVersion:1}),/LEARNING_APPEND_ONLY/);
   const file=path.join(process.env.VAULT_ROOT,'memory/personal/company/execution.md');
   await fs.writeFile(file,'corrupt'); await assert.rejects(store.loadExecutionState(),/INVALID_EXECUTION_STATE/);
   await fs.unlink(file); const protectedFile=path.join(process.env.VAULT_ROOT,'protected.txt');

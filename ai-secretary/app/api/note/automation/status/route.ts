@@ -4,7 +4,7 @@ import { isSerpApiConfigured } from "@/app/lib/note/research/serpapi";
 import { isBufferConfigured } from "@/app/lib/note/publishing/buffer";
 import { loadResearchSettings } from "@/app/lib/note/research/store";
 import { loadPortfolio } from "@/app/lib/investing/portfolio";
-import { loadNews } from "@/app/lib/investing/news";
+import { loadStoredNewsStatus } from "@/app/lib/investing/news";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +26,7 @@ export async function GET(): Promise<NextResponse> {
       loadPortfolio(),
     ]);
 
-    const tickers = portfolio.positions
-      .filter((p) => p.assetClass === "us_stock")
-      .map((p) => p.code.toUpperCase());
-    const news = await loadNews(tickers).catch(() => ({ available: false }));
+    const news = await loadStoredNewsStatus();
 
     return NextResponse.json({
       ...status,
@@ -39,6 +36,8 @@ export async function GET(): Promise<NextResponse> {
       investing: {
         portfolioAvailable: portfolio.source !== "none",
         newsAvailable: news.available,
+        newsStale: news.stale,
+        newsFetchedAt: news.fetchedAt,
       },
       performanceSync: { lastRunAt: status.recent.lastMeasuredAt ?? status.recent.lastSyncedAt },
     });

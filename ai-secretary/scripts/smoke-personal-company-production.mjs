@@ -14,7 +14,11 @@ if (![200, 302, 307, 308].includes(company.response.status)) throw new Error(`CO
 
 const health = await get("/api/company/runtime/health");
 if (health.response.status !== 200) throw new Error(`RUNTIME_HEALTH_${health.response.status}:${health.body.slice(0, 300)}`);
-const payload = JSON.parse(health.body);
+if (JSON.parse(health.body).status !== "ok") throw new Error("RUNTIME_LIVENESS_INVALID");
+const detail = await get("/api/company/runtime/health/detail", true);
+if (detail.response.status !== (cookie ? 200 : 401)) throw new Error(`RUNTIME_DETAIL_${detail.response.status}`);
+const payload = cookie ? JSON.parse(detail.body) : null;
+if (payload) {
 for (const key of ["redisConnectivity", "missionRead", "approvalRead", "revenueRead"]) {
   if (payload.smokeTest?.[key] !== "ok") throw new Error(`SMOKE_${key}_${payload.smokeTest?.[key] ?? "missing"}`);
 }
@@ -25,6 +29,7 @@ if (payload.canary === "enabled") {
   if (payload.latestCanary.reviewVerdict !== "PASS" || payload.latestCanary.security?.status !== "PASS") throw new Error("CANARY_REVIEW_OR_SECURITY_FAILED");
   if (payload.latestCanary.externalActionCount !== 0) throw new Error("CANARY_EXTERNAL_ACTION_DETECTED");
 }
+}
 
 for (const path of ["/api/company/execution", "/api/company/approvals", "/api/company/revenue"]) {
   const result = await get(path, true);
@@ -32,4 +37,4 @@ for (const path of ["/api/company/execution", "/api/company/approvals", "/api/co
   if (result.response.status !== expected) throw new Error(`${path}_${result.response.status}`);
 }
 
-console.log(JSON.stringify({ ok: true, base, commit: payload.deployment?.commitSha, runtime: payload.deployment?.runtimeVersion, authenticatedChecks: Boolean(cookie) }));
+console.log(JSON.stringify({ ok: true, base, commit: payload?.deployment?.commitSha, runtime: payload?.deployment?.runtimeVersion, authenticatedChecks: Boolean(cookie) }));

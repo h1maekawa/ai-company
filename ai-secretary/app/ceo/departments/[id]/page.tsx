@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { DEPARTMENT_IDS, DEPARTMENT_NAV_BY_ID, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 import { DepartmentPage } from "@/components/mobile-ceo/DepartmentPage";
 
-export default function Page({ params }: { params: { id: string } }) {
+export default async function Page(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!DEPARTMENT_IDS.includes(params.id as NavigationDepartmentId)) notFound();
   const id = params.id as NavigationDepartmentId;
   const navigation = DEPARTMENT_NAV_BY_ID[id];

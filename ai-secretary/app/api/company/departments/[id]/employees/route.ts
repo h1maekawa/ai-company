@@ -9,7 +9,8 @@ import { skillEffectiveness } from "@/app/lib/company/evolution/skillObservabili
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!DEPARTMENT_IDS.includes(params.id as NavigationDepartmentId)) return NextResponse.json({ error: "UNKNOWN_DEPARTMENT" }, { status: 404 });
   const department = DEPARTMENT_NAV_BY_ID[params.id as NavigationDepartmentId];
   const entries = department.employeeIds.map(findSecretary).filter(Boolean);

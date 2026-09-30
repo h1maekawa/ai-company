@@ -34,6 +34,14 @@ export function emptyExecutionState(): ExecutionState {
 }
 
 let singleton: ExecutionStore | undefined;
+// Enumerable symbols survive the object spreads used by every facade caller,
+// while remaining absent from the serialized execution state.
+const readVersion = Symbol("execution-read-version");
+type VersionedState = ExecutionState & { [readVersion]?: number };
+function bindVersion(state: ExecutionState, version: number): ExecutionState {
+  Object.defineProperty(state, readVersion, { value: version, enumerable: true, configurable: true });
+  return state;
+}
 
 export function getExecutionStore(): ExecutionStore {
   if (singleton) return singleton;
@@ -51,7 +59,9 @@ export function getExecutionStore(): ExecutionStore {
 export function setExecutionStoreForTests(store?: ExecutionStore) { singleton = store; }
 
 export async function loadExecutionSnapshot(): Promise<ExecutionSnapshot> {
-  return getExecutionStore().load();
+  const snapshot = await getExecutionStore().load();
+  bindVersion(snapshot.state, snapshot.version);
+  return snapshot;
 }
 
 export async function loadExecutionState(): Promise<ExecutionState> {
@@ -61,6 +71,9 @@ export async function loadExecutionState(): Promise<ExecutionState> {
 export async function saveExecutionState(state: ExecutionState, options?: Partial<StoreSaveOptions>): Promise<ExecutionState> {
   assertProductionMutationAllowed();
   const store = getExecutionStore();
-  const expectedVersion = options?.expectedVersion ?? (await store.load()).version;
-  return (await store.save(state, { expectedVersion, lease: options?.lease })).state;
+  const boundVersion = (state as VersionedState)[readVersion];
+  if (boundVersion === undefined && options?.expectedVersion === undefined) throw new Error("EXECUTION_EXPECTED_VERSION_REQUIRED");
+  if (boundVersion !== undefined && options?.expectedVersion !== undefined && boundVersion !== options.expectedVersion) throw new Error("EXECUTION_VERSION_MISMATCH");
+  const saved = await store.save(state, { expectedVersion: options?.expectedVersion ?? boundVersion!, lease: options?.lease });
+  return bindVersion(saved.state, saved.version);
 }

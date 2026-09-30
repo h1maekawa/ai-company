@@ -4,7 +4,8 @@ import { executionTransaction } from "@/app/lib/company/execution/transaction";
 import { getExecutionStore, loadExecutionState, saveExecutionState } from "@/app/lib/company/execution/store";
 import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtection";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!isSameOriginMutation(req)) return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
   const key = req.headers.get("idempotency-key");
   if (!key) return NextResponse.json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });

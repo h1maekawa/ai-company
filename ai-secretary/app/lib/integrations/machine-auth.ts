@@ -25,8 +25,7 @@ export function verifyCronSecret(req: Request): { ok: boolean; reason?: string }
   const secret = process.env.CRON_SECRET;
   if (!secret) return { ok: false, reason: "CRON_SECRET が未設定です" };
 
-  const token =
-    bearer(req) ?? new URL(req.url).searchParams.get("secret") ?? req.headers.get("x-cron-secret");
+  const token = bearer(req) ?? req.headers.get("x-cron-secret");
   if (!token) return { ok: false, reason: "認証情報がありません" };
   return safeEqual(token, secret) ? { ok: true } : { ok: false, reason: "CRON_SECRET が一致しません" };
 }

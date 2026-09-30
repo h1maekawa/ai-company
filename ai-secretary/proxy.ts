@@ -21,7 +21,7 @@ const MACHINE_ROUTES = [
   "/api/local-runner/",
 ];
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (pathname === "/login" || pathname === "/api/auth/login") {
@@ -35,7 +35,9 @@ export async function middleware(req: NextRequest) {
 
   const secret = process.env.SESSION_SECRET;
   const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const valid = secret ? await verifySessionToken(token, secret) : false;
+  let valid = false;
+  try { valid = secret ? await verifySessionToken(token, secret) : false; }
+  catch { valid = false; }
 
   if (valid) {
     return NextResponse.next();

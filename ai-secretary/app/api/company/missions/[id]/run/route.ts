@@ -4,10 +4,8 @@ import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtect
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!isSameOriginMutation(req))
     return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
   try {
