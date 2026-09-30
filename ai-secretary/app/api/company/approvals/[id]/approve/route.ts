@@ -5,10 +5,8 @@ import { getExecutionStore } from "@/app/lib/company/execution/store";
 export const dynamic = "force-dynamic";
 
 /** POST /api/company/approvals/:id/approve（Phase 6 §27） */
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const store = getExecutionStore();
     const idempotencyKey = req.headers.get("idempotency-key") ?? params.id + ":APPROVED";

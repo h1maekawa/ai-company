@@ -5,10 +5,8 @@ import { postToSlack } from "@/app/lib/integrations/slack/blocks";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   const auth = verifyLocalAiWorkerToken(req);
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: 401 });
 

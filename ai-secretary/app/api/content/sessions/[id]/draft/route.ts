@@ -17,10 +17,8 @@ function makeId(prefix: string): string {
  * Outline承認前に本文完成版を勝手に生成しない（Outline未確定なら400）。
  * AI生成直後は必ず status: "draft"（Publishedにはならない）。
  */
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const session = await loadSession(params.id);
     if (!session) return NextResponse.json({ error: "ArticleSessionが見つかりません" }, { status: 404 });
@@ -82,10 +80,8 @@ export async function POST(
  *   { title?, body?, action?: "obsidian-save" | "publish-queue" | "approve" }
  * 本文直接編集、Obsidian保存、Publish Queueへの追加、本人承認をここでまとめて扱う。
  */
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const session = await loadSession(params.id);
     if (!session) return NextResponse.json({ error: "ArticleSessionが見つかりません" }, { status: 404 });

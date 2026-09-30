@@ -4,7 +4,8 @@ import { getExecutionStore, loadExecutionState, saveExecutionState } from "@/app
 import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtection";
 import { addAiReadyLabel, githubCredentialAvailable } from "@/app/lib/engineering/githubRequests";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!isSameOriginMutation(req)) return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
   if (!githubCredentialAvailable()) return NextResponse.json({ error: "GITHUB_CREDENTIAL_UNAVAILABLE" }, { status: 503 });
   const key = req.headers.get("idempotency-key");

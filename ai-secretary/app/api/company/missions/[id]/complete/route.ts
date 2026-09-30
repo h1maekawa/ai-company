@@ -7,10 +7,8 @@ export const dynamic = "force-dynamic";
  * POST /api/company/missions/:id/complete（Phase 6 §4）
  * 承認待ちのActionが残っている間は完了できない。
  */
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const result = await completeMission({ missionId: params.id });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });

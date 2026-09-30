@@ -4,14 +4,16 @@ import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtect
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const state = await loadExecutionState();
   const candidate = state.contentDraftCandidates.find((item) => item.id === params.id);
   return candidate ? NextResponse.json({ candidate }) : NextResponse.json({ error: "Draft Candidateが見つかりません" }, { status: 404 });
 }
 
 /** Human light-edit boundary. Lineage, review state, type and status are server-owned. */
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!isSameOriginMutation(req)) return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
   const idempotencyKey = req.headers.get("idempotency-key");
   if (!idempotencyKey) return NextResponse.json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });

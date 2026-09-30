@@ -7,10 +7,13 @@
  *  - 1つのソースが落ちてもリサーチ全体を失敗させない
  */
 
-import { redisSafeGet, redisSafeSet } from "../../utils/redis";
+import { createHash } from "node:crypto";
+import { getRedisClient, redisSafeGet } from "../../utils/redis";
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6時間
 const FETCH_TIMEOUT_MS = 12_000;
+const MAX_RESPONSE_BYTES = 400_000;
+const MAX_MEMORY_ENTRIES = 64;
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
 
@@ -20,7 +23,33 @@ type CacheEntry = { at: number; body: string };
 const memoryCache = new Map<string, CacheEntry>();
 
 function cacheKey(url: string): string {
-  return `note:research:page:${Buffer.from(url).toString("base64url").slice(0, 120)}`;
+  return `note:research:page:${createHash("sha256").update(url).digest("hex")}`;
+}
+function remember(key: string, entry: CacheEntry) {
+  memoryCache.delete(key);
+  memoryCache.set(key, entry);
+  while (memoryCache.size > MAX_MEMORY_ENTRIES) memoryCache.delete(memoryCache.keys().next().value!);
+}
+async function readLimited(response: Response): Promise<string> {
+  const length = Number(response.headers.get("content-length"));
+  if (Number.isFinite(length) && length > MAX_RESPONSE_BYTES) throw new Error("RESPONSE_TOO_LARGE");
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error("RESPONSE_TOO_LARGE");
+      }
+      chunks.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
 export type FetchResult =
@@ -34,12 +63,13 @@ export async function fetchPage(url: string): Promise<FetchResult> {
 
   const local = memoryCache.get(key);
   if (local && now - local.at < CACHE_TTL_MS) {
+    remember(key, local);
     return { ok: true, body: local.body, cached: true };
   }
 
   const remote = await redisSafeGet<CacheEntry>(key);
   if (remote && now - remote.at < CACHE_TTL_MS) {
-    memoryCache.set(key, remote);
+    remember(key, remote);
     return { ok: true, body: remote.body, cached: true };
   }
 
@@ -53,15 +83,13 @@ export async function fetchPage(url: string): Promise<FetchResult> {
     if (!res.ok) {
       return { ok: false, error: `HTTP ${res.status}` };
     }
-    const body = await res.text();
+    const body = await readLimited(res);
     const entry: CacheEntry = { at: now, body };
-    memoryCache.set(key, entry);
-    // 本文は大きいので Redis には長すぎるものを載せない
-    if (body.length < 400_000) await redisSafeSet(key, entry);
+    remember(key, entry);
+    try { await getRedisClient()?.set(key, entry, { ex: Math.ceil(CACHE_TTL_MS / 1000) }); } catch { /* cache is best effort */ }
     return { ok: true, body, cached: false };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "取得に失敗しました";
-    return { ok: false, error: message };
+    return { ok: false, error: error instanceof Error && error.message === "RESPONSE_TOO_LARGE" ? "RESPONSE_TOO_LARGE" : "FETCH_FAILED" };
   } finally {
     clearTimeout(timer);
   }

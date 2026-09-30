@@ -93,23 +93,26 @@ test("Candidate UIは既存APIのPromote・Merge Preview・Human Approvalを再�
   assert.match(ui, /previewToken/); assert.match(ui, /確認しただけではVaultは変更されません/);
 });
 
-test("昇格・MergeはVault保存後にIndexを更新し、再同期はreadとupsertだけ", () => {
+test("昇格・MergeはVault保存後にIndexを更新し、通常再試行は差分だけ", () => {
   const lifecycle = read("app/lib/knowledge/lifecycle.ts");
+  const writer = read("app/lib/memory/knowledge.ts");
   const sync = read("app/lib/knowledge/indexSync.ts");
-  assert.ok(lifecycle.indexOf("saveKnowledge({") < lifecycle.indexOf("indexKnowledgePathBestEffort(saved.path)"));
+  assert.ok(writer.indexOf("saveFile(targetFilePath") < writer.indexOf("indexKnowledgePathBestEffort(targetFilePath)"));
   assert.ok(lifecycle.indexOf("saveFile(targetPath") < lifecycle.indexOf("indexKnowledgePathBestEffort(targetPath)"));
-  assert.match(sync, /listMarkdownPathsRecursively/); assert.match(sync, /vaultDocumentStore\.getFile/); assert.match(sync, /\.upsert\(records\)/);
-  assert.doesNotMatch(sync, /saveFile|delete|rename|move/);
+  assert.match(sync, /listMarkdownPathsRecursively/); assert.match(sync, /vaultDocumentStore\.getFile/);
+  assert.match(sync, /knowledgePending\(limit\)/);
+  assert.match(sync, /sourceVersion: version, indexVersion: version/);
+  assert.doesNotMatch(sync, /saveFile\(|\.delete\(|\.rename\(|\.move\(/);
 });
 
-test("Connections Knowledge件数は同期済みIndexを優先しVault fallbackも再帰総数を使う", () => {
+test("ConnectionsはVault原文と同期済みIndexを分離し、healthでVault全件走査しない", () => {
   const health = read("app/lib/system/health.ts");
   const ui = read("components/connections/ConnectionsDashboard.tsx");
-  assert.match(health, /indexStatus\?\.status === "connected"/);
+  assert.match(health, /Vault原文の状態は別表示/);
   assert.match(health, /supabaseKnowledgeIndexRepository\.count\(\)/);
-  assert.match(health, /readVaultKnowledgeIndexRecords\(\)/);
-  assert.doesNotMatch(health, /listFiles\("memory\/knowledge"\)/);
-  assert.match(ui, /service\.itemCount!=null/);
+  assert.match(health, /source-directory/);
+  assert.doesNotMatch(health, /readVaultKnowledgeIndexRecords|listMarkdownPathsRecursively/);
+  assert.match(ui, /service\.itemCount\s*!=\s*null/);
 });
 
 test("Connection testはread-onlyで7サービスを判定する", () => {

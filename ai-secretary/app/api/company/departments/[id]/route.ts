@@ -20,9 +20,10 @@ export const dynamic = "force-dynamic";
 const json = async (promise: Promise<Response>) => { try { const response = await promise; return response.ok ? response.json() : null; } catch { return null; } };
 const request = (url: string) => new NextRequest(url);
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!DEPARTMENT_IDS.includes(params.id as DepartmentId)) return NextResponse.json({ error: "UNKNOWN_DEPARTMENT" }, { status: 404 });
-  const id = params.id as DepartmentId; const origin = req.nextUrl.origin;
+  const id = params.id as DepartmentId;const origin = req.nextUrl.origin;
   let data: Record<string, unknown> = {};
   if (id === "creator") { const [a,b,c,d] = await Promise.all([json(content(request(`${origin}/api/content/dashboard?period=month`))), json(economics(request(`${origin}/api/company/economics`))), json(opportunities()), json(execution())]); data = { content:a, economics:b, opportunities:c, execution:d }; }
   if (id === "fund") { const [a,b,c,d,e,f,portfolio] = await Promise.all([json(recommendations()), json(decisions()), json(transactions()), json(performance()), json(learning()), json(outcomes()), loadPortfolio().catch(() => null)]); data = { recommendations:a, decisions:b, transactions:c, performance:d, learning:e, outcomes:f, portfolio }; }

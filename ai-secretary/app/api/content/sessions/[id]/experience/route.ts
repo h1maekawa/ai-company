@@ -11,10 +11,8 @@ export const dynamic = "force-dynamic";
  * POST { action: "save", experience }                   候補をExperience Libraryへcandidateとして保存
  * PATCH { experienceId, decision: "approve"|"reject" }   本人承認/修正。承認前は絶対にapprovedにしない
  */
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const session = await loadSession(params.id);
     if (!session) return NextResponse.json({ error: "ArticleSessionが見つかりません" }, { status: 404 });

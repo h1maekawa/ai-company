@@ -7,10 +7,8 @@ import { normalizeNoteMetrics, type NoteMetricsPayload } from "@/app/lib/note/pu
 export const dynamic = "force-dynamic";
 
 /** POST /api/local-runner/note/jobs/:id/complete — ランナーが成功を報告する */
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   const auth = verifyRunnerToken(req);
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: 401 });
 

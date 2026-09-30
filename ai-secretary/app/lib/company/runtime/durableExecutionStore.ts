@@ -26,6 +26,9 @@ redis.call('SET', KEYS[2], next)
 redis.call('SET', KEYS[4], ARGV[5])
 return {1, next}
 `;
+const LOAD_SCRIPT = `
+return {redis.call('GET', KEYS[1]), redis.call('GET', KEYS[2]), redis.call('GET', KEYS[3])}
+`;
 const MIGRATE_SCRIPT = `
 if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
 redis.call('SET', KEYS[1], ARGV[1])
@@ -75,19 +78,19 @@ export class DurableExecutionStore implements ExecutionStore {
 
   async load(): Promise<ExecutionSnapshot> {
     try {
-      const [stored, rawVersion, schema] = await Promise.all([
-        this.redis.get<ExecutionState>(this.key("snapshot")),
-        this.redis.get<number>(this.key("version")),
-        this.redis.get<string>(this.key("schema")),
-      ]);
+      const [rawState, rawVersion, schema] = await this.redis.eval(LOAD_SCRIPT, [this.key("snapshot"), this.key("version"), this.key("schema")], []) as [string | null, string | null, string | null];
+      if (rawState === "" || (rawState !== null && rawVersion === null)) throw new StoreUnavailableError("EXECUTION_SNAPSHOT_INCOMPLETE");
+      const stored = rawState ? JSON.parse(rawState) as ExecutionState : null;
       if (stored && schema !== RUNTIME_SCHEMA_VERSION) throw new StoreUnavailableError("EXECUTION_SCHEMA_MISMATCH");
+      if (!stored && rawVersion !== null) throw new StoreUnavailableError("EXECUTION_SNAPSHOT_MISSING");
       if (!stored && this.prefix.startsWith("prod:")) {
-        const legacy = await this.redis.get<ExecutionState>(LEGACY_KEY);
+        const [legacyRaw, legacyRawVersion] = await this.redis.eval(LOAD_SCRIPT, [LEGACY_KEY, LEGACY_VERSION, this.key("schema")], []) as [string | null, string | null, string | null];
+        const legacy = legacyRaw ? JSON.parse(legacyRaw) as ExecutionState : null;
         if (legacy) {
           if (process.env.EXECUTION_STORE_MIGRATION !== "legacy-v8-to-execution-v1") throw new StoreUnavailableError("EXECUTION_SCHEMA_MIGRATION_REQUIRED");
-          const legacyVersion = Number(await this.redis.get<number>(LEGACY_VERSION) ?? 0);
+          const legacyVersion = Number(legacyRawVersion ?? 0);
           await this.redis.eval(MIGRATE_SCRIPT, [this.key("snapshot"), this.key("version"), this.key("schema")], [JSON.stringify(normalizeExecutionState(legacy)), String(legacyVersion), RUNTIME_SCHEMA_VERSION]);
-          return { schemaVersion: RUNTIME_SCHEMA_VERSION, version: legacyVersion, state: normalizeExecutionState(legacy), updatedAt: new Date().toISOString() };
+          return this.load();
         }
       }
       return { schemaVersion: RUNTIME_SCHEMA_VERSION, version: Number(rawVersion ?? 0), state: normalizeExecutionState(stored), updatedAt: new Date().toISOString() };

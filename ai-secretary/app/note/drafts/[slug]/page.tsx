@@ -37,7 +37,8 @@ function Inline({ text }: { text: string }) {
   });
 }
 
-export default async function MobileNoteDraftPage({ params }: { params: { slug: string } }) {
+export default async function MobileNoteDraftPage(props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   let draft;
   try {
     draft = await loadDraftBySlug(params.slug);

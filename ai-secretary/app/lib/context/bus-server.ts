@@ -1,13 +1,14 @@
 import fs from "fs";
 import { ContextBus, serializeBus, parseBus, createDefaultBus, InboxItem, TaskNode } from "./bus";
 import { getBusFilePath, getBusDir } from "../runtime/bus";
-import { redisSafeGet, redisSafeSet, REDIS_KEYS } from "../utils/redis";
+import { getRedisClient, REDIS_KEYS } from "../utils/redis";
+import { runtimeEnvironment } from "../company/runtime/environment";
 
 // Resolved via runtime/bus.ts — supports local (memory/) and Vercel (/tmp) environments
 const BUS_FILE_PATH = getBusFilePath();
 
 // ---------------------------------------------------------------------------
-// Phase B: Redis Read helpers
+// Atomic Redis read helpers
 // ---------------------------------------------------------------------------
 
 type RedisQueues = {
@@ -16,75 +17,90 @@ type RedisQueues = {
   personalInbox: InboxItem[];
   personalPipeline: TaskNode[];
 };
+const busVersion = Symbol("bus-read-version");
+type VersionedBus = ContextBus & { [busVersion]?: number };
+const keys = [REDIS_KEYS.companyInbox, REDIS_KEYS.companyPipeline, REDIS_KEYS.personalInbox, REDIS_KEYS.personalPipeline, REDIS_KEYS.version, REDIS_KEYS.snapshot];
+const READ_SCRIPT = `return {redis.call('GET', KEYS[1]), redis.call('GET', KEYS[2]), redis.call('GET', KEYS[3]), redis.call('GET', KEYS[4]), redis.call('GET', KEYS[5]), redis.call('GET', KEYS[6])}`;
+const WRITE_SCRIPT = `
+local current = tonumber(redis.call('GET', KEYS[5]) or '0')
+if current ~= tonumber(ARGV[1]) then return {0, current} end
+redis.call('SET', KEYS[1], ARGV[2])
+redis.call('SET', KEYS[2], ARGV[3])
+redis.call('SET', KEYS[3], ARGV[4])
+redis.call('SET', KEYS[4], ARGV[5])
+redis.call('SET', KEYS[5], current + 1)
+redis.call('SET', KEYS[6], ARGV[6])
+return {1, current + 1}
+`;
+function bindVersion(bus: ContextBus, version: number): ContextBus {
+  Object.defineProperty(bus, busVersion, { value: version, enumerable: true, configurable: true });
+  return bus;
+}
 
-async function readFromRedis(): Promise<RedisQueues | null> {
+async function readFromRedis(): Promise<{ queues: RedisQueues | null; version: number; snapshot: ContextBus | null }> {
+  const client = getRedisClient();
+  if (!client) throw new Error("BUS_REDIS_REQUIRED");
   try {
-    const [companyInbox, companyPipeline, personalInbox, personalPipeline] =
-      await Promise.all([
-        redisSafeGet<InboxItem[]>(REDIS_KEYS.companyInbox),
-        redisSafeGet<TaskNode[]>(REDIS_KEYS.companyPipeline),
-        redisSafeGet<InboxItem[]>(REDIS_KEYS.personalInbox),
-        redisSafeGet<TaskNode[]>(REDIS_KEYS.personalPipeline),
-      ]);
-
-    const hasAny =
-      companyInbox || companyPipeline || personalInbox || personalPipeline;
-
-    if (!hasAny) return null;
-
-    return {
-      companyInbox:    companyInbox    ?? [],
-      companyPipeline: companyPipeline ?? [],
-      personalInbox:   personalInbox   ?? [],
-      personalPipeline:personalPipeline ?? [],
-    };
-  } catch (err) {
-    console.warn("[bus-server] Redis read failed, continuing with file only.", err);
-    return null;
-  }
+    const row = await client.eval(READ_SCRIPT, keys, []) as (string | null)[];
+    const snapshot = row[5] ? parseBus(row[5]) : null;
+    if (row.slice(0, 4).every((value) => value === null)) {
+      if (snapshot || row[4] !== null) throw new Error("BUS_PARTIAL_STATE");
+      return { queues: null, version: Number(row[4] ?? 0), snapshot: null };
+    }
+    if (row.slice(0, 4).some((value) => value === null)) throw new Error("BUS_PARTIAL_STATE");
+    const queues = {
+      companyInbox: JSON.parse(row[0]!), companyPipeline: JSON.parse(row[1]!),
+      personalInbox: JSON.parse(row[2]!), personalPipeline: JSON.parse(row[3]!),
+    } as RedisQueues;
+    if (snapshot && (JSON.stringify(snapshot.company?.inboxQueue ?? []) !== JSON.stringify(queues.companyInbox)
+      || JSON.stringify(snapshot.company?.taskPipeline ?? []) !== JSON.stringify(queues.companyPipeline)
+      || JSON.stringify(snapshot.personal?.inboxQueue ?? []) !== JSON.stringify(queues.personalInbox)
+      || JSON.stringify(snapshot.personal?.taskPipeline ?? []) !== JSON.stringify(queues.personalPipeline))) throw new Error("BUS_SNAPSHOT_MISMATCH");
+    return { queues, version: Number(row[4] ?? 0), snapshot };
+  } catch { throw new Error("BUS_REDIS_READ_FAILED"); }
 }
 
 // ---------------------------------------------------------------------------
-// Phase C: Redis Write helpers
+// Atomic Redis write helpers
 // ---------------------------------------------------------------------------
 
 async function writeToRedis(bus: ContextBus): Promise<void> {
-  await Promise.all([
-    redisSafeSet(REDIS_KEYS.companyInbox,    bus.company?.inboxQueue    ?? []),
-    redisSafeSet(REDIS_KEYS.companyPipeline, bus.company?.taskPipeline  ?? []),
-    redisSafeSet(REDIS_KEYS.personalInbox,   bus.personal?.inboxQueue   ?? []),
-    redisSafeSet(REDIS_KEYS.personalPipeline,bus.personal?.taskPipeline ?? []),
-  ]);
-  // redisSafeSet never throws — fail-open policy is enforced inside redis.ts
+  const client = getRedisClient();
+  if (!client) throw new Error("BUS_REDIS_REQUIRED");
+  const expected = (bus as VersionedBus)[busVersion];
+  if (expected === undefined) throw new Error("BUS_EXPECTED_VERSION_REQUIRED");
+  let result: [number, number];
+  try {
+    result = await client.eval(WRITE_SCRIPT, keys, [String(expected), JSON.stringify(bus.company?.inboxQueue ?? []), JSON.stringify(bus.company?.taskPipeline ?? []), JSON.stringify(bus.personal?.inboxQueue ?? []), JSON.stringify(bus.personal?.taskPipeline ?? []), serializeBus(bus)]) as [number, number];
+  } catch { throw new Error("BUS_REDIS_WRITE_FAILED"); }
+  if (Number(result[0]) !== 1) throw new Error("BUS_CONFLICT");
+  bindVersion(bus, Number(result[1]));
 }
 
 // ---------------------------------------------------------------------------
-// loadBus — Redis first, file fallback, then default
+// loadBus — hosted Redis is authoritative; local development may use a file
 // ---------------------------------------------------------------------------
 
 /**
  * Loads ContextBus state.
- * Priority: Redis > File > Default
+ * Hosted: Redis only. Local development without Redis: file or default.
  */
 export async function loadBus(): Promise<ContextBus> {
-  // 1. Try file first to get full bus shape (includes meta, schemaVersion, etc.)
+  const useRedis = Boolean(getRedisClient()) || runtimeEnvironment().stage !== "development";
+  // Hosted instances must never substitute an ephemeral file for Redis.
+  const redisState = useRedis ? await readFromRedis() : null;
+  // The local file is used only when no Redis client is configured.
   let fileBus: ContextBus | null = null;
-  try {
-    if (fs.existsSync(BUS_FILE_PATH)) {
-      const content = fs.readFileSync(BUS_FILE_PATH, "utf-8");
-      if (content && content.trim()) {
-        fileBus = parseBus(content); // parseBus handles schemaVersion migration
-      }
-    }
-  } catch (e) {
-    console.warn(`[bus-server] Bus file not found or invalid at ${BUS_FILE_PATH}.`, e);
+  if (!useRedis && fs.existsSync(BUS_FILE_PATH)) {
+    const content = fs.readFileSync(BUS_FILE_PATH, "utf-8");
+    if (content && content.trim()) fileBus = parseBus(content);
   }
 
-  // 2. Overlay Redis data (more recent) on top of file data
-  const redisQueues = await readFromRedis();
-  const base = fileBus ?? createDefaultBus();
+  // Legacy queue keys remain readable; a full snapshot preserves bus metadata.
+  const redisQueues = redisState?.queues;
+  const base = useRedis ? (redisState?.snapshot ?? createDefaultBus()) : (fileBus ?? createDefaultBus());
   if (redisQueues) {
-    return {
+    return bindVersion({
       ...base,
       company: {
         ...base.company,
@@ -96,14 +112,14 @@ export async function loadBus(): Promise<ContextBus> {
         inboxQueue:   redisQueues.personalInbox,
         taskPipeline: redisQueues.personalPipeline,
       },
-    };
+    }, redisState!.version);
   }
 
-  return base;
+  return bindVersion(base, redisState?.version ?? 0);
 }
 
 // ---------------------------------------------------------------------------
-// saveBus — Redis first, file second (mirror), EROFS-safe
+// saveBus — Redis first, optional file mirror
 // ---------------------------------------------------------------------------
 
 /**
@@ -111,8 +127,8 @@ export async function loadBus(): Promise<ContextBus> {
  * Order: Redis (source of truth) → file (mirror, EROFS-safe)
  */
 export async function saveBus(bus: ContextBus): Promise<void> {
-  // Phase C: Write to Redis first (fail-open — errors are swallowed inside writeToRedis)
-  await writeToRedis(bus);
+  const useRedis = Boolean(getRedisClient()) || runtimeEnvironment().stage !== "development";
+  if (useRedis) await writeToRedis(bus);
 
   // Phase D: Write to file (mirror) with EROFS fallback
   const dir = getBusDir();
@@ -128,11 +144,12 @@ export async function saveBus(bus: ContextBus): Promise<void> {
         fs.writeFileSync("/tmp/current-bus.json", serializeBus(bus), "utf-8");
       } catch (innerErr) {
         console.error("[bus-server] /tmp fallback also failed", innerErr);
-        // Do not rethrow — Redis already has the data
+        if (!useRedis) throw innerErr;
       }
     } else {
       // Non-EROFS error on file write — log but don't block (Redis is source of truth)
       console.error("[bus-server] Unexpected file write error", err);
+      if (!useRedis) throw err;
     }
   }
 }

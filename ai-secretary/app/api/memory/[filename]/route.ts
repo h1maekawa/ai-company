@@ -36,10 +36,8 @@ function getInitialTemplate(filename: string): string {
   return "";
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { filename: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ filename: string }> }) {
+  const params = await props.params;
   const { filename } = params;
 
   if (!ALLOWED_FILENAMES.includes(filename)) {
@@ -62,10 +60,8 @@ export async function GET(
   }
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { filename: string } }
-) {
+export async function PUT(request: NextRequest, props: { params: Promise<{ filename: string }> }) {
+  const params = await props.params;
   const { filename } = params;
 
   if (!ALLOWED_FILENAMES.includes(filename)) {

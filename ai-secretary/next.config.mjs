@@ -9,6 +9,7 @@ const csp = [
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
+  "frame-ancestors 'none'",
 ].join("; ");
 
 const nextConfig = {
@@ -18,6 +19,7 @@ const nextConfig = {
       headers: [
         { key: "Content-Security-Policy", value: csp },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        { key: "X-Content-Type-Options", value: "nosniff" },
       ],
      }];
   },

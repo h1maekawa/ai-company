@@ -16,7 +16,7 @@ test("three Human Gates are separate and no endpoint auto-crosses ai-ready", () 
 });
 
 test("ai-ready is authenticated by middleware, same-origin, idempotent and server-bound", () => {
-  const middleware = read("middleware.ts");
+  const middleware = read("proxy.ts");
   const ready = read("app/api/company/skill-specifications/[id]/ai-ready/route.ts");
   assert.doesNotMatch(middleware, /skill-specifications/);
   assert.match(ready, /isSameOriginMutation/);

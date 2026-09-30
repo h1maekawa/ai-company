@@ -11,7 +11,7 @@
  */
 
 import { fetchPage, hashId, stripTags } from "../fetcher";
-import { redisSafeGet, redisSafeSet } from "../../../utils/redis";
+import { getRedisClient, redisSafeGet, redisSafeSet } from "../../../utils/redis";
 import { ReferenceXAccount, ResearchItem, XResearchSettings } from "../types";
 import { detectGenres } from "./note";
 import { buildXQueries } from "../x-query";
@@ -119,6 +119,14 @@ type XApiUserResponse = { data?: { id?: string }; errors?: { detail?: string }[]
  * 「上限を超えたら止める」ための保守的な見積もりとして使う。
  */
 const COST_PER_REQUEST_USD = 0.01;
+const X_DEFER_KEY = "note:research:x:defer-until";
+
+export function retryAfterMs(header: string | null, now = Date.now()): number {
+  if (!header) return 60 * 60 * 1000;
+  const seconds = Number(header);
+  const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - now;
+  return Number.isFinite(delay) ? Math.max(60_000, Math.min(delay, 24 * 60 * 60 * 1000)) : 60 * 60 * 1000;
+}
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
@@ -141,9 +149,17 @@ async function callXApiRaw(url: string): Promise<{ json?: unknown; error?: strin
   if (!token) return { error: "X_API_BEARER_TOKEN が未設定です" };
 
   try {
+    const redis = getRedisClient();
+    const deferUntil = await redis?.get<number>(X_DEFER_KEY);
+    if (deferUntil && deferUntil > Date.now()) return { error: `X API retry deferred until ${new Date(deferUntil).toISOString()}` };
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (res.status === 401) return { error: "X APIの認証に失敗しました（401）" };
-    if (res.status === 429) return { error: "X APIの利用上限に達しました（429）" };
+    if (res.status === 429) {
+      const delay = retryAfterMs(res.headers.get("Retry-After"));
+      const until = Date.now() + delay;
+      await redis?.set(X_DEFER_KEY, until, { ex: Math.ceil(delay / 1000) });
+      return { error: `X APIの利用上限に達しました（429）。再試行は${new Date(until).toISOString()}以降` };
+    }
     if (!res.ok) return { error: `X API エラー: HTTP ${res.status}` };
     return { json: await res.json() };
   } catch (error) {

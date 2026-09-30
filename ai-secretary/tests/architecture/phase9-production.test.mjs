@@ -7,8 +7,9 @@ const environment = read("app/lib/company/runtime/environment.ts");
 const durable = read("app/lib/company/runtime/durableExecutionStore.ts");
 const canary = read("app/lib/company/runtime/canaryStore.ts");
 const health = read("app/api/company/runtime/health/route.ts");
+const detailHealth = read("app/api/company/runtime/health/detail/route.ts");
 const cycle = read("app/lib/company/runtime/autonomousCycle.ts");
-const middleware = read("middleware.ts");
+const middleware = read("proxy.ts");
 const smoke = read("scripts/smoke-personal-company-production.mjs");
 
 test("Vercel is the only production authority and Cloudflare is secondary", () => {
@@ -49,13 +50,16 @@ test("cron uses one global lease and bounded execution", () => {
 
 test("canary results have a separate namespace and escalation threshold", () => {
   assert.match(canary, /:canary:execution:v1:results/);
-  assert.match(health, /CANARY_CONSECUTIVE_FAILURES/);
-  assert.match(health, /canaries\.slice\(0, 3\)\.every/);
+  assert.match(detailHealth, /CANARY_CONSECUTIVE_FAILURES/);
+  assert.match(detailHealth, /canaries\.slice\(0, 3\)\.every/);
 });
 
-test("health endpoint is public and returns secret-free smoke status", () => {
+test("public health is minimal; detailed readiness requires a session", () => {
   assert.match(middleware, /\/api\/company\/runtime\/health/);
-  assert.match(health, /redisConnectivity/);
+  assert.match(health, /status: "ok"/);
+  assert.doesNotMatch(health, /redisConnectivity|deployment|canary|missionRead/);
+  assert.match(detailHealth, /verifySessionToken/);
+  assert.match(detailHealth, /redisConnectivity/);
   assert.doesNotMatch(health, /TOKEN|SECRET|PASSWORD/);
 });
 

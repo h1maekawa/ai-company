@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { vaultKnowledgeSearch } from "@/app/lib/knowledge/search";
 import { vaultDocumentStore } from "@/app/lib/persistence/vaultStore";
 import { supabaseKnowledgeIndexRepository } from "@/app/lib/persistence/supabase/knowledgeIndexRepository";
+import { syncStatusRepository } from "@/app/lib/persistence/supabase/syncStatusRepository";
 import { listCandidates } from "@/app/lib/knowledge/lifecycle";
 import { parseFrontmatter } from "@/app/lib/knowledge/frontmatter";
-import { readVaultKnowledgeIndexRecords, resyncKnowledgeIndex } from "@/app/lib/knowledge/indexSync";
+import { readVaultKnowledgeIndexRecords, resyncKnowledgeIndex, retryPendingKnowledgeIndex } from "@/app/lib/knowledge/indexSync";
 import { isHumanReviewPending } from "@/app/lib/knowledge/types";
 import { loadExecutionState } from "@/app/lib/company/execution/store";
 import { deriveKnowledgeUsage, summarizeKnowledgeUsage } from "@/app/lib/company/evolution/skillCandidates";
@@ -28,7 +29,10 @@ export async function GET(req: NextRequest) {
       const knowledgeId = String(parsed.data.id ?? detailPath);
       const usage = usageFor(knowledgeId, detailPath);
       const relatedSkillCandidates = execution?.skillCandidates.filter((candidate) => candidate.sourceKnowledgeIds.includes(knowledgeId) || candidate.sourceKnowledgeIds.includes(detailPath)).map((candidate) => ({ id: candidate.id, name: candidate.name, status: candidate.status })) ?? [];
-      return NextResponse.json({ path: detailPath, frontmatter: parsed.data, body: parsed.body, usage, relatedSkillCandidates });
+      const indexSync = syncStatusRepository.configured()
+        ? await syncStatusRepository.knowledgePath(`knowledge_index:${detailPath}`).catch(() => null)
+        : null;
+      return NextResponse.json({ path: detailPath, frontmatter: parsed.data, body: parsed.body, usage, relatedSkillCandidates, indexSync });
     }
     const query = { text: sp.get("q") || undefined, domain: sp.get("domain") || undefined, tags: (sp.get("tags") || "").split(",").filter(Boolean), managedBy: sp.get("managedBy") || undefined, updatedAfter: sp.get("updatedAfter") || undefined, limit: 75 };
     let source: "supabase" | "vault" = "supabase";
@@ -66,7 +70,7 @@ export async function GET(req: NextRequest) {
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Knowledgeを取得できません" }, { status: 500 }); }
 }
 
-export async function POST() {
-  try { return NextResponse.json({ ok: true, ...(await resyncKnowledgeIndex()) }); }
+export async function POST(req: NextRequest) {
+  try { return NextResponse.json({ ok: true, ...(req.nextUrl.searchParams.get("full") === "1" ? await resyncKnowledgeIndex() : await retryPendingKnowledgeIndex()) }); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "同期できません" }, { status: 503 }); }
 }

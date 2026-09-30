@@ -16,15 +16,16 @@ const providerStatus = (status?: string): SystemMapStatus => status === "connect
 
 export async function GET(req: NextRequest) {
   const origin = req.nextUrl.origin;
-  const departments = await Promise.all(BUSINESS_DEPARTMENT_IDS.map(async (id) => {
-    const context = { params: { id } };
+  const departmentsPromise = Promise.all(BUSINESS_DEPARTMENT_IDS.map(async (id) => {
+    const context = { params: Promise.resolve({ id }) };
     const [detail, employees] = await Promise.all([
       safeJson(getDepartment(new NextRequest(`${origin}/api/company/departments/${id}`), context)),
       safeJson(getEmployees(new NextRequest(`${origin}/api/company/departments/${id}/employees`), context)),
     ]);
     return { id, detail: detail?.department ?? null, generatedAt: detail?.generatedAt ?? null, employees: employees?.employees ?? [] };
   }));
-  const [providers, research, execution] = await Promise.all([
+  const [departments, providers, research, execution] = await Promise.all([
+    departmentsPromise,
     checkAllConnections().catch(() => []),
     safeJson(getResearch(new NextRequest(`${origin}/api/company/research`))),
     safeJson(getExecutionObservability()),
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
   const providerNodes = providers.map((provider) => ({ id: provider.service, label: provider.label, icon: provider.icon, kind: "EXTERNAL_PROVIDER" as const, description: provider.message, status: providerStatus(provider.status) }));
   const vault = providers.find((provider) => provider.service === "vault");
   const researchHealth = Array.isArray(research?.health) ? research.health : null;
-  const researchStatus: SystemMapStatus = !researchHealth ? "UNKNOWN" : researchHealth.some((item: { status?: string }) => item.status === "FAILED") ? "ERROR" : researchHealth.some((item: { status?: string }) => ["PARTIAL", "STALE"].includes(item.status ?? "")) ? "PARTIAL" : researchHealth.length > 0 ? "ACTIVE" : "UNKNOWN";
+  const researchStatus: SystemMapStatus = !researchHealth ? "UNKNOWN" : researchHealth.some((item: { status?: string }) => item.status === "FAILED") ? "ERROR" : researchHealth.some((item: { status?: string }) => ["PARTIAL", "STALE"].includes(item.status ?? "")) ? "PARTIAL" : researchHealth.some((item: { status?: string }) => item.status === "UNKNOWN") ? "UNKNOWN" : researchHealth.length > 0 && researchHealth.every((item: { status?: string }) => item.status === "ACTIVE") ? "ACTIVE" : "UNKNOWN";
   const platformStatus: Record<string, SystemMapStatus> = {
     research: researchStatus,
     knowledge: providerStatus(vault?.status),

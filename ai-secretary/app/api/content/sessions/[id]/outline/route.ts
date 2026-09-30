@@ -6,10 +6,8 @@ import { loadContentCore } from "@/app/lib/content/core/store";
 export const dynamic = "force-dynamic";
 
 /** POST: Angle確定後に構成案を生成する（本文はここでは書かない） */
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const session = await loadSession(params.id);
     if (!session) return NextResponse.json({ error: "ArticleSessionが見つかりません" }, { status: 404 });
@@ -33,10 +31,8 @@ export async function POST(
 }
 
 /** PATCH { outline }: 本人が構成を編集して確定する */
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const session = await loadSession(params.id);
     if (!session) return NextResponse.json({ error: "ArticleSessionが見つかりません" }, { status: 404 });

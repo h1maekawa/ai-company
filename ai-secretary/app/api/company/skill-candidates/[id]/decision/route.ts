@@ -6,7 +6,8 @@ import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtect
 import { appendHumanDecisionFeedback, createHumanDecisionFeedback, emptyRunnerState } from "@/app/lib/mobile-ceo/controlCenter";
 import { DEPARTMENT_IDS } from "@/app/lib/config/navigation";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   if (!isSameOriginMutation(req)) return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });
   const key = req.headers.get("idempotency-key");
   if (!key) return NextResponse.json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });

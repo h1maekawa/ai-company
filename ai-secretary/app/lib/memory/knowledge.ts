@@ -6,6 +6,7 @@ import { CANONICAL_DOMAINS, requireCanonicalDomain, type CanonicalDomain } from 
 import { canWrite } from "../knowledge/writePolicy";
 import type { ApprovalGrant } from "../knowledge/approval";
 import { isKnowledgeStatus, managedByForStatus, type KnowledgeStatus } from "../knowledge/types";
+import { indexKnowledgePathBestEffort } from "../knowledge/indexSync";
 
 export interface KnowledgeSaveInput {
   title: string;
@@ -157,6 +158,7 @@ ${linkedContent}
   }
 
   await vaultDocumentStore.saveFile(targetFilePath, frontmatter, existingId ? sha : undefined);
+  await indexKnowledgePathBestEffort(targetFilePath);
 
   return { success: true, path: targetFilePath, id };
 }

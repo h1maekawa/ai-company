@@ -262,8 +262,6 @@ export async function promoteCandidate(
   };
   await vaultDocumentStore.saveFile(path, buildCaptureMarkdown(fm, item.body), undefined);
 
-  await indexKnowledgePathBestEffort(saved.path);
-
   return { candidate: { path, frontmatter: fm, body: item.body }, knowledgePath: saved.path };
 }
 

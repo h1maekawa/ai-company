@@ -9,10 +9,8 @@ export const dynamic = "force-dynamic";
  * POST: Recommendationを採用（selected）し、ArticleSession（またはX Draftの元Material）を作る。
  * Performance → Learning → Recommendation → Next Content のLoopを閉じる。
  */
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-): Promise<NextResponse> {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }): Promise<NextResponse> {
+  const params = await props.params;
   try {
     const recommendations = await loadRecommendations();
     const target = recommendations.find((r) => r.id === params.id);

@@ -17,7 +17,7 @@ const observability = read("app/api/company/runtime/observability/route.ts");
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 const observabilityCode = stripComments(observability);
 const health = read("app/api/company/runtime/health/route.ts");
-const middleware = read("middleware.ts");
+const middleware = read("proxy.ts");
 const admin = read("app/admin/page.tsx");
 
 test("internal observability が Execution Store の論理versionを返す", () => {

@@ -3,10 +3,8 @@ import { selectOpportunityMission } from "@/app/lib/company/execution/service";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const origin = req.headers.get("origin");
   if (origin && origin !== req.nextUrl.origin)
     return NextResponse.json({ error: "ORIGIN_DENIED" }, { status: 403 });

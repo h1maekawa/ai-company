@@ -9,7 +9,7 @@
  *   落ちた分の集計は日次レビューの結果（memory/company-review/daily/）に残る想定。
  */
 
-import { getVaultFile, saveVaultFile } from "../vault";
+import { getVaultFile, updateVaultFile } from "../vault";
 import type { CompanyEvent } from "./events";
 
 const EVENTS_PATH = "memory/company-review/events.md";
@@ -84,18 +84,7 @@ export async function appendCompanyEvents(events: CompanyEvent[]): Promise<void>
   if (events.length === 0) return;
 
   try {
-    let existing: CompanyEvent[] = [];
-    let sha: string | undefined;
-    try {
-      const file = await getVaultFile(EVENTS_PATH);
-      existing = extractJson(file.content || "");
-      sha = file.sha;
-    } catch {
-      // 初回作成
-    }
-
-    const next = pruneEvents([...existing, ...events]);
-    await saveVaultFile(EVENTS_PATH, buildMarkdown(next), sha);
+    await updateVaultFile(EVENTS_PATH, (content) => buildMarkdown(pruneEvents([...extractJson(content), ...events])));
   } catch (error) {
     console.error("[company/eventStore] イベントの記録に失敗:", error);
   }

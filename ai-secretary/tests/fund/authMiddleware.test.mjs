@@ -1,7 +1,7 @@
 /**
  * 未認証アクセス拒否テスト（docs/12_FUND_POLICY_ENGINE.md §19, §20）
  *
- * 実際の middleware.ts と app/lib/auth/session.ts をコンパイルして実行し、
+ * 実際の proxy.ts と app/lib/auth/session.ts をコンパイルして実行し、
  * - 未認証の /api/fund/* → 401
  * - 未認証の /fund → /login へリダイレクト
  * - 有効なセッションCookie → 通過
@@ -15,8 +15,8 @@ const DIST =
   process.env.FUND_DIST ??
   new URL("../../.test-dist", import.meta.url).pathname;
 
-const { middleware } = await import(pathToFileURL(`${DIST}/mw/middleware.js`).href);
-const { createSessionToken, SESSION_COOKIE } = await import(
+const { proxy: middleware } = await import(pathToFileURL(`${DIST}/mw/proxy.js`).href);
+const { createSessionToken, revokeSessionToken, SESSION_COOKIE } = await import(
   pathToFileURL(`${DIST}/mw/session.js`).href
 );
 const { NextRequest } = await import(
@@ -27,6 +27,7 @@ const { NextRequest } = await import(
   const require = createRequire(new URL("../../package.json", import.meta.url));
   return require("next/server");
 });
+const { recordLoginAttempt } = await import(pathToFileURL(`${DIST}/mw/security-store.js`).href);
 
 const SECRET = "test-secret-for-auth-check";
 
@@ -91,4 +92,32 @@ test("改竄されたCookieは拒否される", async () => {
   const tampered = token.slice(0, -4) + "AAAA";
   const res = await middleware(makeRequest("/api/fund/policy", tampered));
   assert.equal(res.status, 401);
+});
+
+test("ログアウト済みセッションとversion変更前のセッションは拒否される", async () => {
+  process.env.SESSION_SECRET = SECRET;
+  process.env.SESSION_VERSION = "before";
+  const token = await createSessionToken(SECRET);
+  await revokeSessionToken(token, SECRET);
+  assert.equal((await middleware(makeRequest("/api/fund/policy", token))).status, 401);
+  const newer = await createSessionToken(SECRET);
+  process.env.SESSION_VERSION = "after";
+  assert.equal((await middleware(makeRequest("/api/fund/policy", newer))).status, 401);
+  delete process.env.SESSION_VERSION;
+});
+
+test("公開healthだけ認証を免除し、詳細healthは401", async () => {
+  process.env.SESSION_SECRET = SECRET;
+  assert.equal((await middleware(makeRequest("/api/company/runtime/health"))).status, 200);
+  assert.equal((await middleware(makeRequest("/api/company/runtime/health/detail"))).status, 401);
+});
+
+test("ログイン試行は15分TTLの共有カウンタで10回を超える", async () => {
+  const identity = `test-${Date.now()}`;
+  let attempt;
+  for (let count = 1; count <= 11; count += 1) {
+    attempt = await recordLoginAttempt(identity);
+    assert.equal(attempt.count, count);
+  }
+  assert.ok(attempt.retryAfter > 0 && attempt.retryAfter <= 900);
 });
