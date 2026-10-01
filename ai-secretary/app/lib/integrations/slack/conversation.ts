@@ -18,6 +18,29 @@ export type ConversationIntent =
   | { type: "publish" }
   | { type: "help" };
 
+type SlackDirectMessageEvent = {
+  type?: string;
+  channelType?: string;
+  subtype?: string;
+  botId?: string;
+  channel?: string;
+  text?: string;
+  hasAudio?: boolean;
+};
+
+/** AI Companyとの1対1 DMだけを会話入力として受け付ける。 */
+export function isSupportedSlackDirectMessage(event: SlackDirectMessageEvent): boolean {
+  const supportedSubtype = !event.subtype || event.subtype === "file_share";
+  return Boolean(
+    event.type === "message" &&
+      event.channelType === "im" &&
+      supportedSubtype &&
+      !event.botId &&
+      event.channel &&
+      (event.text || event.hasAudio)
+  );
+}
+
 export function cleanSlackMessage(text: string): string {
   return text.replace(/<@[A-Z0-9]+>/gi, "").replace(/\s+/g, " ").trim();
 }

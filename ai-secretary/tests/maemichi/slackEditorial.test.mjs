@@ -6,7 +6,6 @@ import path from "node:path";
 const DIST = process.env.MAEMICHI_DIST;
 const questions = await import(path.join(DIST, "integrations/slack/editorial-questions.js"));
 const conversation = await import(path.join(DIST, "integrations/slack/conversation.js"));
-const editorialContext = await import(path.join(DIST, "integrations/slack/editorial-context.js"));
 
 test("投資ニュースでは2〜4問の壁打ちを行う", () => {
   const result = questions.editorialQuestions({
@@ -37,17 +36,25 @@ test("本人の回答と確認意図を会話から分離する", () => {
   assert.equal(conversation.classifyConversation("少し修正したい").type, "edit-viewpoint");
 });
 
-test("active EditorialContext threadはmentionなしmessageを受理できる", () => {
-  const active = editorialContext.newEditorialContext({ status: "awaiting-viewpoint" });
-  assert.equal(editorialContext.isActiveEditorialContext(active), true);
-});
-
-test("unrelated threadは完全一致Contextが無ければ無視する", () => {
-  assert.equal(editorialContext.isActiveEditorialContext(null), false);
-  assert.equal(editorialContext.isActiveEditorialContext(editorialContext.newEditorialContext({ status: "discarded" })), false);
-  const route = fs.readFileSync(path.resolve(process.cwd(), "app/api/integrations/slack/events/route.ts"), "utf8");
-  assert.match(route, /loadExactEditorialContext\(event\.channel, event\.thread_ts\)/);
-  assert.match(route, /if \(!directlySupported && !activeEditorialThread\) return json/);
+test("Slack会話はBotとの1対1 DMだけを受け付ける", () => {
+  assert.equal(conversation.isSupportedSlackDirectMessage({
+    type: "message", channelType: "im", channel: "D123", text: "今日の状況を教えて",
+  }), true);
+  assert.equal(conversation.isSupportedSlackDirectMessage({
+    type: "message", channelType: "im", subtype: "file_share", channel: "D123", hasAudio: true,
+  }), true);
+  assert.equal(conversation.isSupportedSlackDirectMessage({
+    type: "app_mention", channelType: "channel", channel: "C123", text: "<@BOT> 状況を教えて",
+  }), false);
+  assert.equal(conversation.isSupportedSlackDirectMessage({
+    type: "message", channelType: "channel", channel: "C123", text: "状況を教えて",
+  }), false);
+  assert.equal(conversation.isSupportedSlackDirectMessage({
+    type: "message", channelType: "mpim", channel: "G123", text: "状況を教えて",
+  }), false);
+  assert.equal(conversation.isSupportedSlackDirectMessage({
+    type: "message", channelType: "im", botId: "B123", channel: "D123", text: "bot reply",
+  }), false);
 });
 
 test("ボタン経由の旧直接生成アクションを廃止する", () => {
