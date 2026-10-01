@@ -100,6 +100,32 @@ test("Home summary reads execution state once and leaves unevidenced cards unkno
   assert.equal(result.body.departments.find((card) => card.id === "fund").status, "unknown");
 });
 
+test("Home summary degrades only AI Company when execution storage is unavailable", async () => {
+  const mod = load("app/api/company/home-summary/route.ts", {
+    "@/app/lib/company/homeAttention": { loadHomeAttention: async () => ({
+      attention: [{ id: "finance-review", title: "使用カテゴリ 未分類 1件", href: "/assets?tab=household", source: "資産", priority: "normal", order: 4 }],
+      unavailable: [],
+    }) },
+    "next/server": { NextResponse: { json: (body, options) => ({ body, options }) } },
+    "@/app/lib/company/execution/store": {
+      emptyExecutionState: () => ({ missions: [], actionRequests: [], approvals: [], plans: [], contentDraftCandidates: [], skillCandidates: [], skillEngineeringSpecifications: [], skillEngineeringHandoffs: [], companyImprovementSpecifications: [], companyImprovementHandoffs: [] }),
+      loadExecutionState: async () => { throw new Error("EXECUTION_SCHEMA_MISMATCH"); },
+    },
+    "@/app/lib/company/execution/approval": { applyExpiry: (items) => items },
+    "@/app/lib/config/navigation": { BUSINESS_DEPARTMENT_IDS: ["creator", "fund", "operations", "planning", "engineering"] },
+  });
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    const result = await mod.GET();
+    assert.equal(result.options?.status, undefined);
+    assert.equal(Array.from(result.body.unavailable).join(","), "AI Company");
+    assert.equal(result.body.attention[0].id, "finance-review");
+  } finally {
+    console.error = originalError;
+  }
+});
+
 test("status GET cannot call generating news path, and health cannot full-walk", () => {
   const status = read("app/api/note/automation/status/route.ts");
   const health = read("app/lib/system/health.ts");

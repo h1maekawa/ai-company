@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadHomeAttention } from "@/app/lib/company/homeAttention";
-import { loadExecutionState } from "@/app/lib/company/execution/store";
+import { emptyExecutionState, loadExecutionState } from "@/app/lib/company/execution/store";
 import { applyExpiry } from "@/app/lib/company/execution/approval";
 import { BUSINESS_DEPARTMENT_IDS, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 
@@ -21,7 +21,23 @@ const agentDepartment = (agent?: string): NavigationDepartmentId | null => {
 /** One bounded state read for Home. Missing department evidence stays unknown. */
 export async function GET(): Promise<NextResponse> {
   try {
-    const [state, extra] = await Promise.all([loadExecutionState(), loadHomeAttention().catch(() => ({ attention: [], unavailable: ["コンテンツ", "投資", "資産"] }))]);
+    const [execution, extra] = await Promise.all([
+      loadExecutionState()
+        .then((state) => ({ state, unavailable: false }))
+        .catch((error: unknown) => {
+          console.error("[home-summary] execution store unavailable", {
+            code: error instanceof Error ? error.message : "UNKNOWN",
+          });
+          return { state: emptyExecutionState(), unavailable: true };
+        }),
+      loadHomeAttention().catch((error: unknown) => {
+        console.error("[home-summary] external attention unavailable", {
+          code: error instanceof Error ? error.message : "UNKNOWN",
+        });
+        return { attention: [], unavailable: ["コンテンツ", "投資", "資産"] };
+      }),
+    ]);
+    const state = execution.state;
     const pending = applyExpiry(state.approvals).filter((approval) => approval.status === "PENDING");
     const cards: Card[] = BUSINESS_DEPARTMENT_IDS.map((id) => {
       const missions = state.missions.filter((mission) => agentDepartment(mission.routingContext?.requiredAgentId ?? mission.assignedAgentId) === id);
@@ -54,8 +70,12 @@ export async function GET(): Promise<NextResponse> {
       researchRuns ? `Researchを${researchRuns}件実行しました` : null,
       decisions ? `承認判断を${decisions}件記録しました` : null,
     ].filter((item): item is string => Boolean(item));
-    return NextResponse.json({ generatedAt: new Date().toISOString(), unavailable: extra.unavailable, approvals: { pendingCount: pending.length }, departments: cards, attention: attention.slice(0, 20), yesterday: { date: yesterday, facts: yesterdayFacts } }, { headers: { "Cache-Control": "private, no-store" } });
-  } catch {
+    const unavailable = execution.unavailable ? ["AI Company", ...extra.unavailable] : extra.unavailable;
+    return NextResponse.json({ generatedAt: new Date().toISOString(), unavailable, approvals: { pendingCount: pending.length }, departments: cards, attention: attention.slice(0, 20), yesterday: { date: yesterday, facts: yesterdayFacts } }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch (error: unknown) {
+    console.error("[home-summary] response build failed", {
+      code: error instanceof Error ? error.message : "UNKNOWN",
+    });
     return NextResponse.json({ error: "HOME_SUMMARY_UNAVAILABLE" }, { status: 503 });
   }
 }
