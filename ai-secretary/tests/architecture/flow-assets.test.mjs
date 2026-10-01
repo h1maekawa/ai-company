@@ -178,12 +178,23 @@ test("signed duplicate card event sends one notification through durable claim",
 });
 
 test("Assets proxies require session and Flow event uses exact machine-route exemption", () => {
-  for (const route of ["app/api/assets/summary/route.ts", "app/api/assets/card-activity/route.ts", "app/api/assets/debts/route.ts"]) {
+  for (const route of ["app/api/assets/summary/route.ts", "app/api/assets/card-activity/route.ts", "app/api/assets/debts/route.ts", "app/api/assets/transaction-reviews/route.ts"]) {
     assert.match(fs.readFileSync(route, "utf8"), /requireFinanceSession\(request\)/);
   }
   const proxy = fs.readFileSync("proxy.ts", "utf8");
   assert.match(proxy, /pathname === "\/api\/integrations\/flow\/events"/);
   assert.doesNotMatch(fs.readFileSync("app/assets/AssetsDashboard.tsx", "utf8"), /FLOW_FINANCE_INTEGRATION_TOKEN|x-import-secret/);
+});
+
+test("category review is available from assets and Home attention", () => {
+  const dashboard = fs.readFileSync("app/assets/AssetsDashboard.tsx", "utf8");
+  const panel = fs.readFileSync("app/assets/CategoryReviewPanel.tsx", "utf8");
+  const attention = fs.readFileSync("app/lib/company/homeAttention.ts", "utf8");
+  assert.match(dashboard, /CategoryReviewPanel/);
+  assert.match(panel, /\/api\/assets\/transaction-reviews/);
+  assert.match(panel, /使用カテゴリの確認/);
+  assert.match(attention, /使用カテゴリ 未分類/);
+  assert.match(attention, /\/assets\?tab=household/);
 });
 
 test("Assets debt UI uses Flow data with responsive list/table states", () => {

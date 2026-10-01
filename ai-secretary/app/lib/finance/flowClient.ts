@@ -19,6 +19,17 @@ export type CardActivityItem = {
 };
 export type CardActivity = { items: CardActivityItem[]; next_cursor?: string | null };
 
+export type TransactionReviewItem = {
+  id: string; date: string; amount: number; memo: string | null;
+  payment_method: string; card_issuer: string | null; auto_category: string | null;
+  review_reason: string | null;
+};
+export type TransactionReviews = {
+  month: string;
+  items: TransactionReviewItem[];
+  categories: Array<{ name: string; icon: string }>;
+};
+
 export type FlowDebtItem = {
   id: string;
   direction: "borrowed" | "lent";
@@ -132,6 +143,23 @@ export function flowCardActivity(month: string, limit: number, cursor?: string):
   const params = new URLSearchParams({ month, limit: String(limit) });
   if (cursor) params.set("cursor", cursor);
   return fetchFlow(`cards:${params}`, "/api/integrations/card-activity", params, 10_000);
+}
+export function flowTransactionReviews(month: string, limit = 20): Promise<Snapshot<TransactionReviews>> {
+  if (!validMonth(month) || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("INVALID_QUERY");
+  return fetchFlow(`reviews:${month}:${limit}`, "/api/integrations/transaction-reviews", new URLSearchParams({ month, limit: String(limit) }), 5_000);
+}
+export async function categorizeFlowTransaction(id: string, category: string): Promise<{ transaction: { id: string; date: string; amount: number; category: string } }> {
+  if (!id.trim() || !category.trim()) throw new Error("INVALID_CATEGORY_UPDATE");
+  if (!flowConfigured()) throw new Error("FLOW_NOT_CONFIGURED");
+  const response = await fetch(new URL("/api/integrations/transaction-reviews", flowBaseUrl()), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", "x-import-secret": process.env.FLOW_FINANCE_INTEGRATION_TOKEN! },
+    body: JSON.stringify({ id, category }), redirect: "error", cache: "no-store", signal: AbortSignal.timeout(5_000),
+  });
+  if (response.status === 401 || response.status === 403) throw new Error("FLOW_CATEGORY_FORBIDDEN");
+  if (!response.ok) throw new Error(`FLOW_HTTP_${response.status}`);
+  for (const key of cache.keys()) if (key.includes(":summary:") || key.includes(":reviews:")) cache.delete(key);
+  return response.json();
 }
 export function flowDebts(): Promise<Snapshot<FlowDebtSummary>> {
   return fetchFlow("debts:unsettled", "/api/integrations/debts", new URLSearchParams(), 10_000, parseFlowDebtSummary);

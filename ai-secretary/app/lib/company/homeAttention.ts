@@ -31,8 +31,8 @@ export async function loadHomeAttention() {
   if (finance.status === "fulfilled" && !finance.value.stale && finance.value.data) {
     const review = finance.value.data.review;
     if (Number.isInteger(review?.unreviewed_transactions) && Number.isInteger(review?.unassigned_card_usage) && typeof review.negative_balance_risk === "boolean") {
-      const labels = [review.unreviewed_transactions > 0 ? `カード明細 ${review.unreviewed_transactions}件 要確認` : null, review.unassigned_card_usage > 0 ? `カード割当待ち ${review.unassigned_card_usage}件` : null, review.negative_balance_risk ? "残高リスクあり" : null].filter(Boolean);
-      if (labels.length) attention.push({ id: "finance-review", title: labels.join(" · "), href: "/assets?tab=cards", source: "資産", priority: "normal", order: 4 });
+      const labels = [review.unreviewed_transactions > 0 ? `使用カテゴリ 未分類 ${review.unreviewed_transactions}件` : null, review.unassigned_card_usage > 0 ? `カード割当待ち ${review.unassigned_card_usage}件` : null, review.negative_balance_risk ? "残高リスクあり" : null].filter(Boolean);
+      if (labels.length) attention.push({ id: "finance-review", title: labels.join(" · "), href: review.unreviewed_transactions > 0 ? "/assets?tab=household" : "/assets?tab=cards", source: "資産", priority: "normal", order: 4 });
     } else unavailable.push("資産");
   } else unavailable.push("資産");
   return { attention, unavailable };
