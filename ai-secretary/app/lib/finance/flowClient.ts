@@ -103,8 +103,13 @@ async function fetchFlowOnce<T>(key: string, pathname: string, params: URLSearch
     url.search = params.toString();
     const response = await fetch(url, {
       headers: { "x-import-secret": process.env.FLOW_FINANCE_INTEGRATION_TOKEN! },
+      redirect: "error",
       cache: "no-store", signal: AbortSignal.timeout(5_000),
     });
+    if (response.status === 401 || response.status === 403) {
+      cache.delete(key);
+      return { data: null, fetchedAt: null, stale: true, error: "Flow+の認証または権限を確認してください", configured: true };
+    }
     if (!response.ok) throw new Error(`FLOW_HTTP_${response.status}`);
     const raw: unknown = await response.json();
     const data = parse ? parse(raw) : raw as T;

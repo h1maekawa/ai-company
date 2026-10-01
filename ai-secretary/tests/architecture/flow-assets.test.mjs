@@ -47,6 +47,31 @@ test("debt fetch shares requests, rejects cache poisoning and expires stale valu
   assert.equal((await code.flowDebts()).stale, false);
 });
 
+test("Flow auth failure clears cached financial data and redirects are rejected", async () => {
+  let now = Date.parse("2026-09-30T00:00:00Z");
+  class Clock extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
+  let status = 200;
+  const code = load("app/lib/finance/flowClient.ts", { "server-only": {} }, {
+    Date: Clock,
+    process: { env: { FLOW_FINANCE_BASE_URL: "https://flow.example", FLOW_FINANCE_INTEGRATION_TOKEN: "test" } },
+    fetch: async (_url, options) => {
+      assert.equal(options.redirect, "error");
+      return { ok: status === 200, status, json: async () => ({ items: [], totals: { borrowed: 0, lent: 0 } }) };
+    },
+  });
+  for (const denied of [401, 403]) {
+    status = 200;
+    assert.ok((await code.flowDebts()).data);
+    now += 11000;
+    status = denied;
+    const result = await code.flowDebts();
+    assert.equal(result.data, null);
+    assert.match(result.error, /認証または権限/);
+    status = 500;
+    assert.equal((await code.flowDebts()).data, null);
+  }
+});
+
 test("Home attention filters old opportunities and stale finance without hiding other sources", async () => {
   let stale = false;
   let count = 2;
