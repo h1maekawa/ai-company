@@ -8,14 +8,13 @@ import {
 import {
   cleanSlackMessage,
   followUpResearchTopic,
+  isSupportedSlackDirectMessage,
 } from "@/app/lib/integrations/slack/conversation";
 import { orchestrateSlackMessage } from "@/app/lib/integrations/slack/orchestrator";
 import { generateCandidateInBackground } from "@/app/lib/integrations/slack/generate";
 import { buildEditorialBrief } from "@/app/lib/integrations/slack/editorial-brief";
 import {
   loadEditorialContext,
-  loadExactEditorialContext,
-  isActiveEditorialContext,
   newEditorialContext,
   saveEditorialContext,
   viewpointText,
@@ -91,29 +90,24 @@ export async function POST(req: Request): Promise<Response> {
   if (payload.type === "url_verification") return json({ challenge: payload.challenge });
 
   const event = payload.event;
-  const directlySupported =
-    event?.type === "app_mention" ||
-    (event?.type === "message" && event.channel_type === "im");
   const audioFile = event?.files?.find(isSlackAudioFile);
-  const supportedSubtype = !event?.subtype || event.subtype === "file_share";
-  if (!supportedSubtype || event?.bot_id || !event?.channel || (!event.text && !audioFile)) {
+  if (!event || !event.channel || !isSupportedSlackDirectMessage({
+    type: event.type,
+    channelType: event.channel_type,
+    subtype: event.subtype,
+    botId: event.bot_id,
+    channel: event.channel,
+    text: event.text,
+    hasAudio: Boolean(audioFile),
+  })) {
     return json({ ok: true });
   }
-  const activeEditorialThread =
-    event.type === "message" &&
-    event.channel_type !== "im" &&
-    Boolean(event.thread_ts) &&
-    isActiveEditorialContext(
-      event.thread_ts ? await loadExactEditorialContext(event.channel, event.thread_ts) : null
-    );
-  if (!directlySupported && !activeEditorialThread) return json({ ok: true });
   if (payload.event_id && !(await claimOnce(`slack-event:${payload.event_id}`))) {
     return json({ ok: true, deduped: true });
   }
 
   const channel = event.channel;
-  // 新しいメンションへの返答を自動でスレッドへ隠さない。
-  // すでにスレッド内で話しかけられた場合だけ、そのスレッドへ返す。
+  // DM内でスレッドを使っている場合は、その会話コンテキストを維持する。
   const threadTs = event.thread_ts;
   runInBackground(
     handleIncomingMessage(event.text ?? "", audioFile, channel, threadTs).catch(async (error) => {
