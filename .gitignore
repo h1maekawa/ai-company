@@ -15,6 +15,8 @@ build/
 *.tsbuildinfo
 
 # Obsidian
+# Legacy local vault: not a configured Git submodule. Keep local contents private.
+/vault/AI会社/
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 .obsidian/plugins/obsidian-git/data.json

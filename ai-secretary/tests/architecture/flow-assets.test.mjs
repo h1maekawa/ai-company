@@ -73,17 +73,20 @@ test("Flow auth failure clears cached financial data and redirects are rejected"
 });
 
 test("Home attention filters old opportunities and stale finance without hiding other sources", async () => {
+  const fixedNow = Date.parse("2026-10-01T03:00:00Z");
+  class HomeClock extends Date { constructor(...args) { super(...(args.length ? args : [fixedNow])); } static now() { return fixedNow; } }
+  const generatedAt = new Date(fixedNow - 60_000).toISOString();
   let stale = false;
   let count = 2;
   const code = load("app/lib/company/homeAttention.ts", {
     "../note/automation/status": { getAutomationStatus: async () => ({ approvalQueue: Array(count).fill({}) }) },
     "../investing/intelligence/store": { loadIntelligenceToday: async () => ({ asOf: new Date().toISOString(), opportunities: [
-      { id: "go", ticker: "MU", gate: "GO_CANDIDATE", generatedAt: new Date().toISOString(), score: 82, coverage: 90 },
+      { id: "go", ticker: "MU", gate: "GO_CANDIDATE", generatedAt, score: 82, coverage: 90 },
       { id: "old", gate: "GO_CANDIDATE", generatedAt: "2020-01-01" },
       ...["PASS", "WAIT", "DATA_INCOMPLETE"].map(gate => ({ id: gate, gate, generatedAt: new Date().toISOString() })),
     ] }) },
     "../finance/flowClient": { flowFinanceSummary: async () => ({ stale, data: { review: { unreviewed_transactions: 3, unassigned_card_usage: 1, negative_balance_risk: false } } }) },
-  }, { setTimeout, clearTimeout });
+  }, { setTimeout, clearTimeout, Date: HomeClock });
   const first = await code.loadHomeAttention();
   assert.equal(first.attention.length, 3);
   assert.equal(first.attention.filter(item => item.id.startsWith("investment:")).length, 1);
