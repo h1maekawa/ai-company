@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { DEPARTMENT_NAV_BY_ID, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 
 type Card = { id: NavigationDepartmentId; status: "active" | "attention" | "unknown"; currentWork: string[]; problems: string[] };
-type Attention = { id: string; title: string; href: string; source: string; priority: "critical" | "high" | "normal" };
-type HomeSummary = { generatedAt: string; departments: Card[]; attention: Attention[]; yesterday: { date: string; facts: string[] } };
+type Attention = { id: string; title: string; href: string; source: string; priority: "critical" | "high" | "normal"; order?: number };
+type HomeSummary = { generatedAt: string; unavailable?: string[]; departments: Card[]; attention: Attention[]; yesterday: { date: string; facts: string[] } };
 type ConnectionHealth = { services?: Array<{ service: string; label: string; status: string; message?: string }> };
 type Employee = { id: string; name: string; role: string; status: string; currentMissionTitle?: string; currentStep?: { title: string }; skills?: { name: string }[] };
 
@@ -57,17 +57,17 @@ export function DepartmentOverview() {
   }, [selected]);
 
   const cards = new Map(summary?.departments.map((card) => [card.id, card]) ?? []);
-  const attention = [...(summary?.attention ?? []), ...connectionAttention].sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority]);
+  const attention = [...(summary?.attention ?? []), ...connectionAttention].sort((a, b) => (a.order ?? (a.priority === "critical" ? 0 : 5)) - (b.order ?? (b.priority === "critical" ? 0 : 5)) || priorityRank[a.priority] - priorityRank[b.priority]);
   const selectedDepartment = DEPARTMENT_NAV_BY_ID[selected];
 
   return <div className="space-y-8">
-    <p role="status" className="text-sm text-slate-300">{summaryError ? "● 状態を確認できません" : !summary || !connectionsLoaded && !connectionError ? "● 状態を確認中です" : attention.length ? `● ${attention.length}件確認が必要です` : connectionError ? "● 接続状態は未取得です" : "● 確認が必要な項目はありません"}</p>
+    <p role="status" className="text-sm text-slate-300">{summaryError ? "● 状態を確認できません" : !summary || !connectionsLoaded && !connectionError ? "● 状態を確認中です" : attention.length ? `● ${attention.length}件確認が必要です` : summary.unavailable?.length ? "● 一部の確認事項は未取得です" : connectionError ? "● 接続状態は未取得です" : "● 確認が必要な項目はありません"}</p>
     <section aria-labelledby="attention-title">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div><h2 id="attention-title" className="text-xl font-semibold text-white">確認が必要</h2><p className="mt-1 text-sm text-slate-400">判断や対応が必要な項目だけ表示します。</p></div>
         <span className="text-sm text-slate-400">{summary ? `${attention.length}件` : "集計中"}</span>
       </div>
-      {summaryError && <p role="status" className="mt-3 text-sm text-amber-200">確認事項を取得できません。しばらくしてから再読み込みしてください。</p>}
+      {(summaryError || Boolean(summary?.unavailable?.length)) && <p role="status" className="mt-3 text-sm text-amber-200">{summary?.unavailable?.join("・")}の確認事項を取得できません。しばらくしてから再読み込みしてください。</p>}
       {connectionError && <p role="status" className="mt-2 text-sm text-slate-400">接続状態は未取得です。</p>}
       {attention.length ? <ul className="mt-4 flex snap-x gap-3 overflow-x-auto pb-3" aria-label="確認が必要な項目">
         {attention.map((item) => <li key={item.id} className="w-[min(78vw,17rem)] shrink-0 snap-start"><article className="flex h-full min-h-44 flex-col rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4">
@@ -75,7 +75,7 @@ export function DepartmentOverview() {
           <h3 className="mt-3 line-clamp-3 flex-1 font-semibold text-white">{item.title}</h3>
           <Link href={item.href} className="mt-4 flex min-h-11 items-center justify-center rounded-xl bg-amber-300 px-3 text-sm font-semibold text-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200">確認する</Link>
         </article></li>)}
-      </ul> : summary && connectionsLoaded && !connectionError ? <p className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4 text-sm text-emerald-200">現在、確認が必要な項目はありません。</p> : null}
+      </ul> : summary && !summary.unavailable?.length && connectionsLoaded && !connectionError ? <p className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4 text-sm text-emerald-200">現在、確認が必要な項目はありません。</p> : null}
     </section>
 
     <section aria-labelledby="status-title"><h2 id="status-title" className="text-xl font-semibold text-white">現在の状況</h2><p className="mt-1 text-sm text-slate-400">カードを選ぶとチームの状態を表示します。</p>

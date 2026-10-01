@@ -13,6 +13,86 @@ function load(path, imports, globals = {}) {
   return exports;
 }
 
+test("debt parser rejects malformed rows and mismatching totals", () => {
+  const { parseFlowDebtSummary: parse } = load("app/lib/finance/flowClient.ts", { "server-only": {} });
+  const row = { id: "1", direction: "borrowed", counterparty: "Person", amount: 2, date: "2026-09-30", due_date: null, memo: null, is_settled: false };
+  assert.equal(parse({ items: [], totals: { borrowed: 0, lent: 0 } }).items.length, 0);
+  for (const patch of [{ direction: "invalid" }, { amount: "2" }, { amount: NaN }, { amount: Infinity }, { date: "2026-02-30" }, { id: "" }, { memo: undefined }]) {
+    assert.throws(() => parse({ items: [{ ...row, ...patch }], totals: { borrowed: 2, lent: 0 } }));
+  }
+  assert.throws(() => parse({ items: [row], totals: { borrowed: 0, lent: 0 } }));
+  assert.throws(() => parse({ items: [row, row], totals: { borrowed: 4, lent: 0 } }));
+});
+
+test("debt fetch shares requests, rejects cache poisoning and expires stale values", async () => {
+  let now = Date.parse("2026-09-30T00:00:00Z");
+  class Clock extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
+  let calls = 0;
+  let invalid = false;
+  const code = load("app/lib/finance/flowClient.ts", { "server-only": {} }, {
+    Date: Clock,
+    process: { env: { FLOW_FINANCE_BASE_URL: "https://flow.example", FLOW_FINANCE_INTEGRATION_TOKEN: "test" } },
+    fetch: async () => { calls++; return { ok: true, json: async () => invalid ? { items: "bad" } : { items: [], totals: { borrowed: 0, lent: 0 } } }; },
+  });
+  await Promise.all([code.flowDebts(), code.flowDebts(), code.flowDebts()]);
+  assert.equal(calls, 1);
+  invalid = true; now += 11000;
+  const stale = await code.flowDebts();
+  assert.equal(stale.stale, true); assert.equal(stale.data.items.length, 0);
+  assert.match(stale.error, /応答形式/);
+  await code.flowDebts(); assert.equal(calls, 3);
+  now += 6 * 60 * 60_000;
+  assert.equal((await code.flowDebts()).data, null);
+  invalid = false;
+  assert.equal((await code.flowDebts()).stale, false);
+});
+
+test("Flow auth failure clears cached financial data and redirects are rejected", async () => {
+  let now = Date.parse("2026-09-30T00:00:00Z");
+  class Clock extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
+  let status = 200;
+  const code = load("app/lib/finance/flowClient.ts", { "server-only": {} }, {
+    Date: Clock,
+    process: { env: { FLOW_FINANCE_BASE_URL: "https://flow.example", FLOW_FINANCE_INTEGRATION_TOKEN: "test" } },
+    fetch: async (_url, options) => {
+      assert.equal(options.redirect, "error");
+      return { ok: status === 200, status, json: async () => ({ items: [], totals: { borrowed: 0, lent: 0 } }) };
+    },
+  });
+  for (const denied of [401, 403]) {
+    status = 200;
+    assert.ok((await code.flowDebts()).data);
+    now += 11000;
+    status = denied;
+    const result = await code.flowDebts();
+    assert.equal(result.data, null);
+    assert.match(result.error, /認証または権限/);
+    status = 500;
+    assert.equal((await code.flowDebts()).data, null);
+  }
+});
+
+test("Home attention filters old opportunities and stale finance without hiding other sources", async () => {
+  let stale = false;
+  let count = 2;
+  const code = load("app/lib/company/homeAttention.ts", {
+    "../note/automation/status": { getAutomationStatus: async () => ({ approvalQueue: Array(count).fill({}) }) },
+    "../investing/intelligence/store": { loadIntelligenceToday: async () => ({ asOf: new Date().toISOString(), opportunities: [
+      { id: "go", ticker: "MU", gate: "GO_CANDIDATE", generatedAt: new Date().toISOString(), score: 82, coverage: 90 },
+      { id: "old", gate: "GO_CANDIDATE", generatedAt: "2020-01-01" },
+      ...["PASS", "WAIT", "DATA_INCOMPLETE"].map(gate => ({ id: gate, gate, generatedAt: new Date().toISOString() })),
+    ] }) },
+    "../finance/flowClient": { flowFinanceSummary: async () => ({ stale, data: { review: { unreviewed_transactions: 3, unassigned_card_usage: 1, negative_balance_risk: false } } }) },
+  }, { setTimeout, clearTimeout });
+  const first = await code.loadHomeAttention();
+  assert.equal(first.attention.length, 3);
+  assert.equal(first.attention.filter(item => item.id.startsWith("investment:")).length, 1);
+  stale = true; count = 0;
+  const second = await code.loadHomeAttention();
+  assert.equal(second.attention.length, 1);
+  assert.ok(second.unavailable.includes("資産"));
+});
+
 test("Flow event rejects missing secret, stale timestamp and altered body", () => {
   const event = { event: "card_transaction.created", transactionId: "tx-1", date: "2026-09-30", merchant: "Shop", amount: 4980, card: "Card", raw_email: "must be dropped" };
   const raw = JSON.stringify(event);
@@ -37,6 +117,7 @@ test("Flow client forwards server token and marks cached values stale on outage"
   const code = load("app/lib/finance/flowClient.ts", { "server-only": {} }, { fetch: async (url, options) => {
     calls.push({ url: String(url), options });
     if (fail) throw new Error("offline");
+    if (String(url).includes("/api/integrations/debts")) return { ok: true, json: async () => ({ items: [], totals: { borrowed: 0, lent: 0 } }) };
     return { ok: true, json: async () => ({ month: "2026-09", assets: { total: 100 } }) };
   } });
   try {
@@ -49,6 +130,11 @@ test("Flow client forwards server token and marks cached values stale on outage"
     const stale = await code.flowCardActivity("2026-09", 20);
     assert.equal(stale.stale, true);
     assert.equal(stale.data, null);
+    fail = false;
+    const debts = await code.flowDebts();
+    assert.equal(debts.data.totals.borrowed, 0);
+    assert.equal(debts.data.totals.lent, 0);
+    assert.match(calls.at(-1).url, /\/api\/integrations\/debts$/);
   } finally {
     for (const [name, value] of Object.entries(original)) value === undefined ? delete process.env[name] : process.env[name] = value;
   }
@@ -89,10 +175,22 @@ test("signed duplicate card event sends one notification through durable claim",
 });
 
 test("Assets proxies require session and Flow event uses exact machine-route exemption", () => {
-  for (const route of ["app/api/assets/summary/route.ts", "app/api/assets/card-activity/route.ts"]) {
+  for (const route of ["app/api/assets/summary/route.ts", "app/api/assets/card-activity/route.ts", "app/api/assets/debts/route.ts"]) {
     assert.match(fs.readFileSync(route, "utf8"), /requireFinanceSession\(request\)/);
   }
   const proxy = fs.readFileSync("proxy.ts", "utf8");
   assert.match(proxy, /pathname === "\/api\/integrations\/flow\/events"/);
   assert.doesNotMatch(fs.readFileSync("app/assets/AssetsDashboard.tsx", "utf8"), /FLOW_FINANCE_INTEGRATION_TOKEN|x-import-secret/);
+});
+
+test("Assets debt UI uses Flow data with responsive list/table states", () => {
+  const dashboard = fs.readFileSync("app/assets/AssetsDashboard.tsx", "utf8");
+  assert.doesNotMatch(dashboard, /この情報はまだ提供されていません/);
+  assert.match(dashboard, /\/api\/assets\/debts/);
+  assert.match(dashboard, /借りている/);
+  assert.match(dashboard, /貸している/);
+  assert.match(dashboard, /未精算の貸し借りはありません/);
+  assert.match(dashboard, /Flow\+から最新値を取得できません/);
+  assert.match(dashboard, /md:hidden/);
+  assert.match(dashboard, /hidden overflow-x-auto md:block/);
 });
