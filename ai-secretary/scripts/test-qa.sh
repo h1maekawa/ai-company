@@ -24,6 +24,8 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "paths": { "@/*": ["./*"] }
   },
   "files": [
+    "$PWD/app/lib/integrations/slack/memory/recorder.ts",
+    "$PWD/app/lib/integrations/slack/blocks.ts",
     "$PWD/app/lib/qa/types.ts",
     "$PWD/app/lib/qa/contentChecks.ts",
     "$PWD/app/lib/qa/factChecks.ts",
@@ -149,5 +151,5 @@ for (const file of walk(root).filter((f) => f.endsWith('.js'))) {
 }
 "
 
-node --test tests/qa/*.test.mjs
+NODE_PATH="$PWD/node_modules${NODE_PATH:+:$NODE_PATH}" node --test tests/qa/*.test.mjs
 echo "✅ QAゲートのテストが通りました"

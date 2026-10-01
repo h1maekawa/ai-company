@@ -15,10 +15,20 @@ export class VaultApiError extends Error {
   constructor(public readonly status: number, public readonly filePath: string) { super(`VAULT_API_ERROR_${status}`); }
 }
 /** Reapply a pure document edit to the latest version after a competing write. */
+const documentUpdates = new Map<string, Promise<unknown>>();
 export async function updateVaultFile(filePath: string, transform: (content: string) => string, maxAttempts = 3): Promise<{ sha: string }> {
+  const previous = documentUpdates.get(filePath) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(() => updateVaultDocument(filePath, transform, maxAttempts));
+  documentUpdates.set(filePath, next);
+  try { return await next; }
+  finally { if (documentUpdates.get(filePath) === next) documentUpdates.delete(filePath); }
+}
+async function updateVaultDocument(filePath: string, transform: (content: string) => string, maxAttempts: number): Promise<{ sha: string }> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const current = await getVaultFile(filePath);
-    try { return await saveVaultFile(filePath, transform(current.content), current.sha); }
+    const updated = transform(current.content);
+    if (updated === current.content) return { sha: current.sha ?? 'local-sha' };
+    try { return await saveVaultFile(filePath, updated, current.sha); }
     catch (error) { if (!(error instanceof VaultConflictError) || attempt === maxAttempts - 1) throw error; }
   }
   throw new VaultConflictError(filePath);
@@ -60,6 +70,7 @@ export async function getVaultFile(filePath: string): Promise<VaultFile> {
         'User-Agent': 'Vault-API',
       },
       cache: 'no-store', // Always fetch fresh contents
+      signal: AbortSignal.timeout(8000),
     });
 
     if (response.status === 404) {
@@ -127,6 +138,7 @@ export async function saveVaultFile(
           'User-Agent': 'Vault-API',
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(8000),
       });
 
     const response = await put();

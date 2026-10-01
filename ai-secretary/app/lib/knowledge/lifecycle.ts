@@ -9,6 +9,8 @@
  */
 
 import { vaultDocumentStore } from "../persistence/vaultStore";
+import { createHash } from "node:crypto";
+import { updateVaultFile } from "../vault";
 import { indexKnowledgePathBestEffort } from "./indexSync";
 import { generateUniqueId } from "../utils/id";
 import { toSlug } from "../utils/slug";
@@ -111,7 +113,23 @@ export async function captureToInbox(input: {
   content: string;
   source: CaptureSource;
   title?: string;
+  idempotencyKey?: string;
 }): Promise<CaptureItem> {
+  if (input.idempotencyKey) {
+    const hash = createHash("sha256").update(input.idempotencyKey).digest("hex");
+    const path = `${INBOX_DIR}/cap-${hash}.md`;
+    const date = today();
+    const fm: CaptureFrontmatter = { id: `cap-${hash}`, type: "capture", status: "captured", managed_by: managedByForStatus("captured"), source: input.source, created: date, updated: date, title: input.title };
+    let result: CaptureItem | undefined;
+    await updateVaultFile(path, (content) => {
+      if (content.trim()) { result = parseCaptureFile(path, content); return content; }
+      const permission = canAiAutoWrite(path, "");
+      if (!permission.allowed) throw new Error("CAPTURE_WRITE_DENIED");
+      result = { path, frontmatter: fm, body: input.content };
+      return buildCaptureMarkdown(fm, input.content);
+    });
+    return result!;
+  }
   const id = await generateUniqueId("cap");
   const slug = toSlug(input.title || input.content.slice(0, 24)) || "capture";
   const date = today();

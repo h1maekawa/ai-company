@@ -19,6 +19,9 @@ import { isValidApprovalGrant } from "./approval";
  * ※ memory/knowledge/ は **含めない**（正式Knowledge = Human Managed、promote 経由でのみ作成）。
  */
 export const AI_MANAGED_PREFIXES = [
+  "memory/conversations/slack/", // Slack Conversation Memory v1 (raw + derived summary)
+  "memory/decisions/slack/", // Explicit Slack decisions only
+  "memory/planning/task-candidates/", // Pending candidates, never executable tasks
   "memory/personal/inbox/",
   "memory/personal/note/drafts/",
   "memory/personal/grilling/", // Grilling working state

@@ -4,6 +4,8 @@ import { runAutonomousCycle } from "@/app/lib/company/runtime/autonomousCycle";
 import { validateRuntimeEnvironment } from "@/app/lib/company/runtime/environment";
 import { runtimeLog } from "@/app/lib/company/runtime/runtimeLog";
 import { runScheduledRealModelCanary } from "@/app/lib/company/runtime/modelCanary";
+import { drainSlackMemoryJobs } from "@/app/lib/integrations/slack/memory/jobs";
+import { runInBackground } from "@/app/lib/integrations/vercel-background";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,6 +17,8 @@ export async function GET(req: NextRequest) {
   const validation = validateRuntimeEnvironment();
   if (!validation.ok || validation.environment.authority !== "vercel")
     return NextResponse.json({ error: validation.errors[0] ?? "VERCEL_PRODUCTION_AUTHORITY_REQUIRED" }, { status: 403 });
+  // Memory maintenance is independent of model canaries and autonomous execution.
+  runInBackground(drainSlackMemoryJobs(4));
   let canary: Awaited<ReturnType<typeof runScheduledRealModelCanary>> | { status: "SKIPPED"; reason: string };
   try {
     canary = validation.environment.realModelCanaryEnabled
