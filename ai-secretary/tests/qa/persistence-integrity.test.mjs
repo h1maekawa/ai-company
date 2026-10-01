@@ -43,6 +43,19 @@ test("durable execution snapshot uses one atomic Redis read", async () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
+test("durable execution snapshot accepts Upstash auto-deserialized JSON", async () => {
+  const script = `
+    const assert=require('node:assert/strict');
+    const {DurableExecutionStore}=require(${JSON.stringify(compiled("company/runtime/durableExecutionStore.js"))});
+    const {RUNTIME_SCHEMA_VERSION}=require(${JSON.stringify(compiled("company/runtime/deploymentMetadata.js"))});
+    const state={missions:[],actionRequests:[],approvals:[],plans:[],contentDraftCandidates:[],skillCandidates:[],skillEngineeringSpecifications:[],skillEngineeringHandoffs:[],companyImprovementSpecifications:[],companyImprovementHandoffs:[]};
+    const redis={eval:async()=>[state,7,RUNTIME_SCHEMA_VERSION]};
+    new DurableExecutionStore(redis,'test').load().then(snapshot=>{assert.equal(snapshot.version,7);assert.deepEqual(snapshot.state.missions,[]);assert.deepEqual(snapshot.state.companyImprovementHandoffs,[])}).catch(e=>{console.error(e);process.exitCode=1});
+  `;
+  const result = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", env: { ...process.env, NODE_PATH: path.join(process.cwd(), "node_modules") } });
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test("vault retries only a pure transformation on freshly read content", () => {
   const script = `
     const assert=require('node:assert/strict');
@@ -87,6 +100,20 @@ test("hosted ContextBus does not treat Redis failure as an empty bus or successf
       await assert.rejects(bus.loadBus(),/BUS_REDIS_READ_FAILED/);
       await assert.rejects(bus.saveBus(loaded),/BUS_REDIS_WRITE_FAILED/);
     })().catch(e=>{console.error(e);process.exitCode=1});
+  `;
+  const result = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", env: { ...process.env, NODE_PATH: path.join(process.cwd(), "node_modules"), VERCEL_ENV: "preview" } });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("hosted ContextBus accepts Upstash auto-deserialized JSON", () => {
+  const script = `
+    const assert=require('node:assert/strict');
+    const redis=require(${JSON.stringify(compiled("utils/redis.js"))});
+    const queues=[[],[],[],[]];
+    const snapshot={company:{inboxQueue:[],taskPipeline:[]},personal:{inboxQueue:[],taskPipeline:[]}};
+    redis.getRedisClient=()=>({eval:async()=>[...queues,3,snapshot]});
+    const bus=require(${JSON.stringify(compiled("context/bus-server.js"))});
+    bus.loadBus().then(loaded=>{assert.deepEqual(loaded.company.inboxQueue,[]);assert.deepEqual(loaded.personal.taskPipeline,[])}).catch(e=>{console.error(e);process.exitCode=1});
   `;
   const result = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", env: { ...process.env, NODE_PATH: path.join(process.cwd(), "node_modules"), VERCEL_ENV: "preview" } });
   assert.equal(result.status, 0, result.stderr);

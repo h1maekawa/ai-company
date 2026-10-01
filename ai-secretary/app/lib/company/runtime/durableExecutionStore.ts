@@ -65,6 +65,15 @@ if redis.call('EXISTS', KEYS[1]) == 0 or redis.call('PTTL', KEYS[1]) <= 0 then r
 return redis.call('HMGET', KEYS[1], 'missionId', 'holderId', 'fencingToken', 'acquiredAt', 'expiresAt', 'heartbeatAt')
 `;
 
+function parseStoredState(raw: unknown): ExecutionState | null {
+  if (raw === null || raw === "") return null;
+  const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new StoreUnavailableError("EXECUTION_SNAPSHOT_INVALID");
+  }
+  return parsed as ExecutionState;
+}
+
 export class DurableExecutionStore implements ExecutionStore {
   readonly kind = "durable" as const;
   private readonly prefix: string;
@@ -78,14 +87,14 @@ export class DurableExecutionStore implements ExecutionStore {
 
   async load(): Promise<ExecutionSnapshot> {
     try {
-      const [rawState, rawVersion, schema] = await this.redis.eval(LOAD_SCRIPT, [this.key("snapshot"), this.key("version"), this.key("schema")], []) as [string | null, string | null, string | null];
+      const [rawState, rawVersion, schema] = await this.redis.eval(LOAD_SCRIPT, [this.key("snapshot"), this.key("version"), this.key("schema")], []) as [unknown, string | number | null, string | null];
       if (rawState === "" || (rawState !== null && rawVersion === null)) throw new StoreUnavailableError("EXECUTION_SNAPSHOT_INCOMPLETE");
-      const stored = rawState ? JSON.parse(rawState) as ExecutionState : null;
+      const stored = parseStoredState(rawState);
       if (stored && schema !== RUNTIME_SCHEMA_VERSION) throw new StoreUnavailableError("EXECUTION_SCHEMA_MISMATCH");
       if (!stored && rawVersion !== null) throw new StoreUnavailableError("EXECUTION_SNAPSHOT_MISSING");
       if (!stored && this.prefix.startsWith("prod:")) {
-        const [legacyRaw, legacyRawVersion] = await this.redis.eval(LOAD_SCRIPT, [LEGACY_KEY, LEGACY_VERSION, this.key("schema")], []) as [string | null, string | null, string | null];
-        const legacy = legacyRaw ? JSON.parse(legacyRaw) as ExecutionState : null;
+        const [legacyRaw, legacyRawVersion] = await this.redis.eval(LOAD_SCRIPT, [LEGACY_KEY, LEGACY_VERSION, this.key("schema")], []) as [unknown, string | number | null, string | null];
+        const legacy = parseStoredState(legacyRaw);
         if (legacy) {
           if (process.env.EXECUTION_STORE_MIGRATION !== "legacy-v8-to-execution-v1") throw new StoreUnavailableError("EXECUTION_SCHEMA_MIGRATION_REQUIRED");
           const legacyVersion = Number(legacyRawVersion ?? 0);

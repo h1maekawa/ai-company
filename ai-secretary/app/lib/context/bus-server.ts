@@ -32,6 +32,9 @@ redis.call('SET', KEYS[5], current + 1)
 redis.call('SET', KEYS[6], ARGV[6])
 return {1, current + 1}
 `;
+function parseRedisJson<T>(value: unknown): T {
+  return (typeof value === "string" ? JSON.parse(value) : value) as T;
+}
 function bindVersion(bus: ContextBus, version: number): ContextBus {
   Object.defineProperty(bus, busVersion, { value: version, enumerable: true, configurable: true });
   return bus;
@@ -41,16 +44,16 @@ async function readFromRedis(): Promise<{ queues: RedisQueues | null; version: n
   const client = getRedisClient();
   if (!client) throw new Error("BUS_REDIS_REQUIRED");
   try {
-    const row = await client.eval(READ_SCRIPT, keys, []) as (string | null)[];
-    const snapshot = row[5] ? parseBus(row[5]) : null;
+    const row = await client.eval(READ_SCRIPT, keys, []) as unknown[];
+    const snapshot = row[5] ? parseBus(typeof row[5] === "string" ? row[5] : JSON.stringify(row[5])) : null;
     if (row.slice(0, 4).every((value) => value === null)) {
       if (snapshot || row[4] !== null) throw new Error("BUS_PARTIAL_STATE");
       return { queues: null, version: Number(row[4] ?? 0), snapshot: null };
     }
     if (row.slice(0, 4).some((value) => value === null)) throw new Error("BUS_PARTIAL_STATE");
     const queues = {
-      companyInbox: JSON.parse(row[0]!), companyPipeline: JSON.parse(row[1]!),
-      personalInbox: JSON.parse(row[2]!), personalPipeline: JSON.parse(row[3]!),
+      companyInbox: parseRedisJson<InboxItem[]>(row[0]), companyPipeline: parseRedisJson<TaskNode[]>(row[1]),
+      personalInbox: parseRedisJson<InboxItem[]>(row[2]), personalPipeline: parseRedisJson<TaskNode[]>(row[3]),
     } as RedisQueues;
     if (snapshot && (JSON.stringify(snapshot.company?.inboxQueue ?? []) !== JSON.stringify(queues.companyInbox)
       || JSON.stringify(snapshot.company?.taskPipeline ?? []) !== JSON.stringify(queues.companyPipeline)
