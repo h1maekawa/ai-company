@@ -1,9 +1,11 @@
 import { updateVaultFile } from "../../../vault";
 import { assertAiAutoWritable } from "../../../knowledge/writePolicy";
 import { fingerprint, jstDate } from "./store";
+import { redactMemoryText } from "./privacy";
 
 export type CeoDecision = { subjectType: "approval" | "opportunity"; subjectId: string; title: string; decision: "GO" | "WAIT" | "PASS" | "APPROVED" | "REJECTED"; reason: string | null; decidedAt: string; slackUserId: string; channel: string | null; messageTs: string | null };
-export async function saveCeoDecision(input: CeoDecision) {
+export async function saveCeoDecision(decision: CeoDecision) {
+  const input = { ...decision, title: redactMemoryText(decision.title).text, reason: decision.reason === null ? null : redactMemoryText(decision.reason).text };
   const id = fingerprint(`${input.subjectType}:${input.subjectId}:${input.decision}`);
   const path = `memory/decisions/slack/${id}.md`;
   await updateVaultFile(path, (content) => {
