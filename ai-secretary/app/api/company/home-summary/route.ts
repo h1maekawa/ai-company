@@ -46,6 +46,8 @@ export async function GET(): Promise<NextResponse> {
       return { id, status: problems.length ? "attention" : currentWork.length ? "active" : "unknown", currentWork, problems };
     });
     const attention: Attention[] = [];
+    const failedMemory = state.slackMemory?.jobs.filter((job) => job.status === "failed" && job.attempts >= 3).length ?? 0;
+    if (failedMemory) attention.push({ id: "slack-memory-failed", title: `Slack会話の保存・整理に失敗 ${failedMemory}件（再試行上限）`, href: "/admin/system-map", source: "会話メモリ", priority: "high" });
     if (pending.length) attention.push({ id: "approvals", title: `承認待ち ${pending.length}件`, href: "/ceo/approvals", source: "AI Company", priority: "high" });
     const activeRuntimeAttention = (state.runtime?.attention ?? []).filter((item) => !item.resolvedAt && item.type !== "FIRST_REVENUE" && item.type !== "APPROVAL_REQUIRED");
     for (const item of activeRuntimeAttention) {

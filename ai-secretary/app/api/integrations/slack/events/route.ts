@@ -11,6 +11,7 @@ import {
   isSupportedSlackDirectMessage,
 } from "@/app/lib/integrations/slack/conversation";
 import { orchestrateSlackMessage } from "@/app/lib/integrations/slack/orchestrator";
+import { withSlackConversationMemory, recordSlackTranscript, recordSlackArtifactRefs } from "@/app/lib/integrations/slack/memory/recorder";
 import { generateCandidateInBackground } from "@/app/lib/integrations/slack/generate";
 import { buildEditorialBrief } from "@/app/lib/integrations/slack/editorial-brief";
 import {
@@ -43,6 +44,7 @@ import {
   loadResearchSettings,
   loadSocialDrafts,
   saveResearchSettings,
+  RESEARCH_PATHS,
 } from "@/app/lib/note/research/store";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +58,7 @@ type SlackEventPayload = {
     type?: string;
     subtype?: string;
     bot_id?: string;
+    user?: string;
     text?: string;
     channel?: string;
     channel_type?: string;
@@ -110,12 +113,12 @@ export async function POST(req: Request): Promise<Response> {
   // DM内でスレッドを使っている場合は、その会話コンテキストを維持する。
   const threadTs = event.thread_ts;
   runInBackground(
-    handleIncomingMessage(event.text ?? "", audioFile, channel, threadTs).catch(async (error) => {
+    withSlackConversationMemory({ eventId: payload.event_id, channel, user: event.user, ts: event.ts, threadTs, text: event.text ?? "", audio: audioFile }, async () => handleIncomingMessage(event.text ?? "", audioFile, channel, threadTs).catch(async (error) => {
       console.error("[slack/events] 会話処理失敗", {
         errorType: error instanceof Error ? error.name : "unknown",
       });
       await postToSlack("処理に失敗しました。少し待ってから、もう一度話しかけてください。", undefined, { channel, threadTs });
-    })
+    }))
   );
   return json({ ok: true });
 }
@@ -140,6 +143,7 @@ async function handleIncomingMessage(
     );
   }
   const transcript = await transcribeSlackAudio(audioFile);
+  await recordSlackTranscript(transcript);
   const context = await loadEditorialContext(channel, threadTs);
   if (context?.status === "awaiting-viewpoint") {
     await reply(`🎙️ 文字起こし結果（未調整）\n\n${transcript}`, channel, threadTs);
@@ -187,6 +191,7 @@ async function saveVerbatimXDraft(transcript: string) {
     updatedAt: now,
   };
   await store.saveSocialDrafts([draft, ...drafts]);
+  recordSlackArtifactRefs({ generated: [`${RESEARCH_PATHS.socialDrafts}#${draft.id}`] });
 }
 
 async function reply(text: string, channel: string, threadTs?: string) {
@@ -274,6 +279,7 @@ async function handleConversation(text: string, channel: string, threadTs?: stri
       return reply("確認待ちの考えがありません。先にニュースを選び、質問へ答えてください。", channel, threadTs);
     }
     const confirmed = { ...currentContext.authorViewpoint, confirmedByUser: true };
+    recordSlackArtifactRefs({ confirmedViewpoint: confirmed.mainOpinion });
     await saveEditorialContext(channel, threadTs, {
       ...currentContext,
       status: "ready-to-generate",
@@ -523,6 +529,7 @@ async function runEditorialResearch(
   if (!result) {
     return reply("別のリサーチが進行中です。終わってから結果を確認してください。", channel, threadTs);
   }
+  recordSlackArtifactRefs({ research: result.topCandidates.map((candidate) => `${RESEARCH_PATHS.clusters}#${candidate.id}`) });
   if (!result.topCandidates.length) {
     await saveEditorialContext(channel, threadTs, newEditorialContext({
       status: "awaiting-research-refinement",

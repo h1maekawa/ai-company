@@ -430,7 +430,14 @@ export async function postToSlack(
           ...(options?.threadTs ? { thread_ts: options.threadTs } : {}),
         }),
       });
-      const body = (await res.json()) as { ok?: boolean; error?: string };
+      const body = (await res.json()) as { ok?: boolean; error?: string; ts?: string };
+      if (body.ok && options?.channel) {
+        // Optional recorder failure must never change a successful Slack delivery.
+        try {
+          const { recordSlackReply } = await import("./memory/recorder");
+          await recordSlackReply(text, blocks, destination, options.threadTs, body.ts);
+        } catch { console.info("[slack-memory]", { status: "MEMORY_REPLY_CAPTURE_FAILED" }); }
+      }
       return body.ok ? { ok: true } : { ok: false, error: body.error ?? "Slack APIエラー" };
     }
 

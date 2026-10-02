@@ -14,6 +14,8 @@ import type { ExecutionSnapshot, ExecutionStore, StoreSaveOptions } from "../run
 import { assertProductionMutationAllowed, runtimeEnvironment } from "../runtime/environment";
 
 export type ExecutionState = {
+  /** Pending Slack memory writes only. Vault remains the conversation source of truth. */
+  slackMemory?: import("../../integrations/slack/memory/types").SlackMemoryRuntime;
   runtime?: RunnerState;
   missions: ExecutionMission[];
   actionRequests: ActionRequest[];

@@ -1,4 +1,5 @@
 import { articleBlocks, draftBlocks, postToSlack } from "./blocks";
+import { recordSlackArtifactRefs } from "./memory/recorder";
 
 /**
  * 選ばれたリサーチ候補からX・noteの下書きを作り、Slackへ返す。
@@ -88,6 +89,7 @@ export async function generateCandidateInBackground(
       });
       if (result.drafts.length > 0) {
         await store.saveSocialDrafts([...result.drafts, ...drafts]);
+        recordSlackArtifactRefs({ generated: result.drafts.map((draft) => `${store.RESEARCH_PATHS.socialDrafts}#${draft.id}`) });
         await postToSlack(
           result.warning
             ? `✅ X投稿案ができました（${result.warning}）`
@@ -121,6 +123,7 @@ export async function generateCandidateInBackground(
     } else if (result.article) {
       const queue = await store.loadNoteQueue();
       await store.saveNoteQueue({ ...queue, articles: [result.article, ...queue.articles] });
+      recordSlackArtifactRefs({ generated: [`${store.RESEARCH_PATHS.noteQueue}#${result.article.id}`] });
       const blocks = articleBlocks(result.article);
       if (result.warning) {
         blocks.unshift({

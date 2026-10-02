@@ -21,6 +21,8 @@ export interface CaptureRequest {
   title?: string;
   /** false にすると AI整理せず captured のまま置く（バッチ整理したい場合） */
   organize?: boolean;
+  /** Stable source key for retried event consumers. Existing callers retain their behavior. */
+  idempotencyKey?: string;
 }
 
 export interface CaptureOutcome {
@@ -46,6 +48,7 @@ export async function captureKnowledgeCandidate(
       content,
       source: req.source,
       title: req.title,
+      idempotencyKey: req.idempotencyKey,
     });
 
     if (req.organize === false) {

@@ -2,6 +2,7 @@ import type { ExecutionState } from "../execution/store";
 
 export function normalizeExecutionState(state: Partial<ExecutionState> | null | undefined): ExecutionState {
   return {
+    ...(state?.slackMemory ? { slackMemory: state.slackMemory } : {}),
     runtime: state?.runtime,
     missions: (state?.missions ?? []).map((mission) => ({ ...mission, version: mission.version ?? 0 })),
     actionRequests: state?.actionRequests ?? [],
