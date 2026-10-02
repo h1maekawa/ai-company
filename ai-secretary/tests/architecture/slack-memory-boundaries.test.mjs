@@ -31,3 +31,19 @@ test("memory promotion cannot execute actions, bypass Knowledge capture or index
   assert.doesNotMatch(promotion, /executeAction|createMission|promoteToKnowledge|indexKnowledgePathBestEffort/);
   assert.match(read("app/lib/knowledge/indexSync.ts"), /path.startsWith\("memory\/knowledge\/"\)/);
 });
+
+test("every declared legacy Slack action is handled and removed actions stay absent", () => {
+  const blocks = read("app/lib/integrations/slack/blocks.ts");
+  const actions = read("app/api/integrations/slack/actions/route.ts");
+  const names = [...blocks.matchAll(/^  ([A-Za-z0-9]+): "maemichi_/gm)].map((match) => match[1]);
+  for (const name of names) assert.match(actions, new RegExp(`ACTIONS\\.${name}\\b`), name);
+  assert.doesNotMatch(blocks, /selectNewsItem|maemichi_select_news_item|editText|maemichi_edit_text/);
+  assert.match(actions, /case ACTIONS\.saveForLater[\s\S]*await saveForLater/);
+});
+
+test("Morning Brief cron is authenticated, scheduled at 07:00 JST and does not merge or deploy", () => {
+  const route = read("app/api/cron/morning-brief/route.ts");
+  assert.match(route, /verifyCronSecret/); assert.match(route, /scheduled-notification/); assert.match(route, /acquireLease/);
+  assert.match(read("vercel.json"), /\/api\/cron\/morning-brief[\s\S]*0 22 \* \* \*/);
+  assert.doesNotMatch(route, /merge|deploy|secret modification/i);
+});

@@ -13,6 +13,7 @@ import {
   saveExperiences,
   saveViewpoints,
   loadSocialDrafts,
+  loadResearchInbox,
   saveClusters,
   saveSocialDrafts,
 } from "@/app/lib/note/research/store";
@@ -37,6 +38,8 @@ import { editorialQuestions } from "@/app/lib/integrations/slack/editorial-quest
 import { COMPANY_APPROVAL_ACTION, canApproveInSlack, isAuthorizedSlackUser } from "@/app/lib/notifications/slack";
 import { getExecutionStore } from "@/app/lib/company/execution/store";
 import { decideApprovalRequest } from "@/app/lib/company/execution/service";
+import { saveForLater } from "@/app/lib/integrations/slack/savedForLater";
+import { saveCeoDecision } from "@/app/lib/integrations/slack/memory/ceoDecision";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -119,6 +122,9 @@ export async function POST(req: Request): Promise<Response> {
     if (!(await store.claimIdempotency("slack-approval", key))) return ok("この承認は処理中です。");
     const result = await decideApprovalRequest({ approvalId: value, decision: "APPROVED", reason: `Slack user ${slackUserId}` });
     if (!result.ok) return ok(result.error);
+    await saveCeoDecision({ subjectType: "approval", subjectId: approval.id, title: approval.title, decision: "APPROVED", reason: null,
+      decidedAt: new Date().toISOString(), slackUserId: slackUserId!, channel: channel ?? null,
+      messageTs: payload.container?.message_ts ?? payload.message?.ts ?? null });
     await store.completeIdempotency("slack-approval", key, { ok: true });
     return ok("承認をAI Companyへ反映しました。");
   }
@@ -131,6 +137,10 @@ export async function POST(req: Request): Promise<Response> {
 
   try {
     switch (actionId) {
+      // URL buttons navigate on Slack itself. The interaction is acknowledged only.
+      case ACTIONS.openSourceUrl:
+      case ACTIONS.openUi:
+        return ok("");
       case ACTIONS.skip: {
         const clusters = await loadClusters();
         await saveClusters(
@@ -258,8 +268,16 @@ export async function POST(req: Request): Promise<Response> {
         return ok("確認済みの考えを中心に下書きを作成します。外部公開はしません。");
       }
 
-      case ACTIONS.saveForLater:
-        return ok("あとで読むニュースとして残しました。投稿や意見の生成は行いません。");
+      case ACTIONS.saveForLater: {
+        const [clusters, research] = await Promise.all([loadClusters(), loadResearchInbox()]);
+        const cluster = clusters.find((item) => item.id === value);
+        const source = cluster?.researchItemIds.map((id) => research.find((item) => item.id === id)).find((item) => item?.sourceUrl)
+          ?? research.find((item) => item.id === value);
+        if (!source?.sourceUrl) return ok("元記事を確認できないため保存できませんでした。");
+        await saveForLater({ id: value, sourceUrl: source.sourceUrl, title: cluster?.title ?? source.title ?? source.textExcerpt.slice(0, 80),
+          savedAt: new Date().toISOString(), source: source.sourceType, category: cluster?.genreIds[0] ?? source.platform });
+        return ok("あとで読むニュースとして保存しました。投稿や意見の生成は行いません。");
+      }
 
       case ACTIONS.useOnce:
         return ok("今回の下書きだけに使用します。考え方・体験ライブラリには保存しません。");
@@ -586,7 +604,8 @@ async function handleNoteFinalizeRequest(articleId: string, triggerId?: string):
           type: "button",
           text: { type: "plain_text", text: "Note事業部で確認・設定", emoji: true },
           url: `${base}/note?view=queue&id=${articleId}`,
-          action_id: "open_ui",
+          action_id: ACTIONS.openUi,
+          value: articleId,
         },
       ],
     },

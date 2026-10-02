@@ -18,6 +18,8 @@ const extractor = require(compiled("integrations/slack/memory/extractor.js"));
 const { redactMemoryText } = require(compiled("integrations/slack/memory/privacy.js"));
 const promotion = require(compiled("integrations/slack/memory/promotion.js"));
 const { postToSlack } = require(compiled("integrations/slack/blocks.js"));
+const savedLater = require(compiled("integrations/slack/savedForLater.js"));
+const ceoDecision = require(compiled("integrations/slack/memory/ceoDecision.js"));
 let files, snapshot, failVault, failPrefix, slackOk, slackCalls, conflictOnce, serial;
 const event = (id = "Ev1", text = "こんにちは", extra = {}) => ({ eventId: id, channel: "D123ABC", user: "U123", ts: "1790868600.000100", text, ...extra });
 const memoryPath = (e) => store.conversationPath({ channel: e.channel, threadTs: e.threadTs ?? null, at: new Date(Number(e.ts) * 1000).toISOString() });
@@ -255,4 +257,19 @@ test("confirmed viewpoint uses literal prior user evidence and never invented co
   assert.deepEqual(confirmed.knowledgeCandidates[0].sourceEventIds, ["EvOpinion"]);
   const invented = await extractor.analyzeConversationMemory(a, "私は株式購入を決定しました。");
   assert.equal(invented.knowledgeCandidates.length, 0);
+});
+
+test("Save For Later persists canonical metadata and remains idempotent", async () => {
+  const item = { id: "news-1", sourceUrl: "https://news.example/article", title: "Source article", savedAt: "2026-10-02T00:00:00.000Z", source: "web", category: "ai" };
+  await savedLater.saveForLater(item); await savedLater.saveForLater({ ...item, savedAt: "later" });
+  const content = files.get(savedLater.SAVED_FOR_LATER_PATH).content;
+  const parsed = savedLater.parseSavedForLater(content);
+  assert.deepEqual(parsed, [item]); assert.match(content, /\[Source article\]\(https:\/\/news.example\/article\)/);
+});
+
+test("CEO approval decision is permanent and does not invent a reason", async () => {
+  const input = { subjectType: "approval", subjectId: "apr-1", title: "Approve draft", decision: "APPROVED", reason: null, decidedAt: "2026-10-02T00:00:00.000Z", slackUserId: "U123", channel: "D123", messageTs: "1.2" };
+  const path = await ceoDecision.saveCeoDecision(input); await ceoDecision.saveCeoDecision(input);
+  const content = files.get(path).content;
+  assert.match(content, /decision: APPROVED/); assert.match(content, /（理由未入力）/); assert.doesNotMatch(content, /Slack user/);
 });
