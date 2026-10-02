@@ -14,8 +14,9 @@ export type SlackBlock = Record<string, unknown>;
 
 /** actionIdは "維持したい情報:値" を : で連結して持つ */
 export const ACTIONS = {
+  openSourceUrl: "maemichi_open_source_url",
+  openUi: "maemichi_open_ui",
   startThinking: "maemichi_start_thinking",
-  selectNewsItem: "maemichi_select_news_item",
   saveForLater: "maemichi_save_for_later",
   addExperience: "maemichi_add_experience",
   regenerate: "maemichi_regenerate",
@@ -33,7 +34,6 @@ export const ACTIONS = {
   bufferQueue: "maemichi_buffer_queue",
   bufferNow: "maemichi_buffer_now",
   bufferSchedule: "maemichi_buffer_schedule",
-  editText: "maemichi_edit_text",
   moreConcrete: "maemichi_more_concrete",
   moreMaemichi: "maemichi_more_maemichi",
   removeLink: "maemichi_remove_link",
@@ -56,6 +56,16 @@ function button(text: string, actionId: string, value: string, style?: "primary"
     value,
     ...(style ? { style } : {}),
   };
+}
+
+export function safeSlackUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) ? url.toString() : null; }
+  catch { return null; }
+}
+function linkButton(text: string, value: string | undefined) {
+  const url = safeSlackUrl(value);
+  return url ? { type: "button", text: { type: "plain_text", text, emoji: true }, action_id: ACTIONS.openSourceUrl, value: url, url } : null;
 }
 
 /** 1件の候補カード */
@@ -135,10 +145,10 @@ export function candidateBlocks(
         ]
       : [
           button("このニュースについて考える", ACTIONS.startThinking, cluster.id, "primary"),
-          button("別のニュースを見る", ACTIONS.regenerate, cluster.id),
+          linkButton("元記事を読む", items.find((item) => safeSlackUrl(item.sourceUrl))?.sourceUrl),
           button("あとで読む", ACTIONS.saveForLater, cluster.id),
           button("見送る", ACTIONS.skip, cluster.id, "danger"),
-        ],
+        ].filter(Boolean),
   });
 
   blocks.push({ type: "divider" });
@@ -181,9 +191,10 @@ export function editorialBriefBlocks(
         block_id: `editorial-news:${news.id}`,
         elements: [
           button("このニュースについて考える", ACTIONS.startThinking, news.id, "primary"),
+          linkButton("元記事を読む", news.sourceResearchItemIds.map((id) => itemById.get(id)?.sourceUrl).find((url) => safeSlackUrl(url))),
           button("あとで読む", ACTIONS.saveForLater, news.id),
           button("見送る", ACTIONS.skip, news.id, "danger"),
-        ],
+        ].filter(Boolean),
       }
     );
   });

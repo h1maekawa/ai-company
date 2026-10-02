@@ -22,6 +22,7 @@ export const AI_MANAGED_PREFIXES = [
   "memory/conversations/slack/", // Slack Conversation Memory v1 (raw + derived summary)
   "memory/decisions/slack/", // Explicit Slack decisions only
   "memory/planning/task-candidates/", // Pending candidates, never executable tasks
+  "memory/personal/note/saved-for-later.md", // Slack reading queue
   "memory/personal/inbox/",
   "memory/personal/note/drafts/",
   "memory/personal/grilling/", // Grilling working state
