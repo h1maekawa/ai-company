@@ -3,7 +3,7 @@ import { buildDailyGrowthReview } from "../growthLoop";
 import { runPerformanceSync, type PerformanceSyncResult } from "./performanceSync";
 import { runAutoApproval, type AutoApprovalResult } from "../../review/autoApprove";
 import {
-  loadGrowthReviews, loadNoteQueue, loadPerformance, loadResearchSettings,
+  loadGrowthReviews, loadNoteQueue, loadPerformance, loadResearchSettings, loadResearchInbox,
   loadSocialDrafts, saveGrowthReviews, saveNoteQueue, saveResearchSettings,
 } from "../research/store";
 import type { PublishJob } from "../research/types";
@@ -14,6 +14,7 @@ import { buildWeeklyCeoReport, loadWeeklyCeoReports, saveWeeklyCeoReport, weekly
 import { postToSlack } from "../../integrations/slack/blocks";
 import { weekKeyTokyo } from "../operations";
 import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
+import { compareOwnWithCompetitors, selectComparableContent } from "../competitorIntelligence";
 
 export type NightlyGrowthResult = {
   reviewDate: string;
@@ -90,12 +91,13 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     autoApprovalError = error instanceof Error ? error.message : "Auto approval failed";
   }
 
-  const [performance, settings, queue, existingReviews, socialDrafts, styleProfile, workspace] =
+  const [performance, settings, queue, existingReviews, socialDrafts, styleProfile, workspace, researchItems] =
     await Promise.all([
       loadPerformance(), loadResearchSettings(), loadNoteQueue(), loadGrowthReviews(),
       loadSocialDrafts(), loadStyleProfile(),
       // 本人のX過去投稿（アーカイブ）。文体学習の「種」（TASK-N3 / 要件4）
       loadXWorkspace().catch(() => ({ ownedPosts: [], referenceNotes: [] })),
+      loadResearchInbox(),
     ]);
   const tokyoDate = tokyoDateKey(now);
   const pendingArticleIds = new Set(queue.jobs.filter((job) => job.kind === "note-metrics-sync" && (job.status === "pending" || job.status === "running")).map((job) => job.articleId));
@@ -118,13 +120,18 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     reason: `X Topic実績と${article.articleType} note候補を確認し、人が公開可否を判断`,
     priceSuggestion: article.priceSuggestion,
   }));
+  const own = performance.records.find((record) => record.platform === "x");
+  const comparable = own ? selectComparableContent({ items: researchItems, topic: own.trendClusterId ?? own.genreId, genreId: own.genreId, now }) : [];
+  const comparison = own && comparable.length ? compareOwnWithCompetitors(own, comparable, now) : undefined;
   const experiments = await generateExperiments(JSON.stringify({
     records: performance.records.slice(0, 30), strategy: settings.growthStrategy,
+    competitorComparison: comparison ? { observations: comparison.observations, hypotheses: comparison.hypotheses, nextExperiments: comparison.nextExperiments, evidenceCount: comparison.evidenceCount, confidence: comparison.confidence } : "INSUFFICIENT_DATA",
   }));
   const review = buildDailyGrowthReview({
     records: performance.records, strategy: settings.growthStrategy,
     weights: settings.performanceWeights, winningTopicPolicy: settings.winningTopicPolicy,
     now, noteFreshness, xFreshness: performanceSyncError ? "partial" : "fresh", experiments, noteApprovalPriorities: priorities,
+    competitorDifferences: comparison?.observations, competitorEvidenceCount: comparison?.evidenceCount,
   });
   // 日付単位でidempotent。過去日は保持し、同日のretryは最新計測で置換する。
   await saveGrowthReviews([review, ...existingReviews.filter((item) => item.date !== review.date)]);

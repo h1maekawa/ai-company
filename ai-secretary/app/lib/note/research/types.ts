@@ -155,6 +155,8 @@ export type ResearchItem = {
   id: string;
   platform: ResearchPlatform;
   sourceType: ResearchSourceType;
+  /** 内容(news)と書き方(reference/buzz)、自社実績を混同しないための後方互換メタデータ。 */
+  sourceRole?: "news" | "buzz" | "reference" | "own-performance";
   sourceAccountId?: string;
   sourceUrl: string;
 
