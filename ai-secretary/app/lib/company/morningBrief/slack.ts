@@ -22,9 +22,17 @@ export function morningBriefBlocks(brief: MorningBrief): SlackBlock[] {
     }
   }
   if (!brief.items.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: "本日、CEO判断が必要な未処理事項はありません。" } });
+  if (brief.insights.length) {
+    blocks.push({ type: "divider" }, { type: "section", text: { type: "mrkdwn", text: "*INSIGHTS*" } });
+    for (const insight of brief.insights) {
+      const link = insight.deepLink ? absoluteDeepLink(insight.deepLink) : null;
+      blocks.push({ type: "section", text: { type: "mrkdwn", text: `*${plain(insight.title, 120)}*\n${plain(insight.summary, 1200)}` },
+        ...(link ? { accessory: { type: "button", text: { type: "plain_text", text: "Contentを見る" }, url: link } } : {}) });
+    }
+  }
   return blocks.slice(0, 50);
 }
 export async function sendMorningBrief(brief: MorningBrief) {
-  if (!absoluteDeepLink("/") || brief.items.some((item) => !absoluteDeepLink(item.deepLink))) return { ok: false, error: "APP_BASE_URL_OR_DEEP_LINK_INVALID" };
+  if (!absoluteDeepLink("/") || brief.items.some((item) => !absoluteDeepLink(item.deepLink)) || brief.insights.some((item) => item.deepLink && !absoluteDeepLink(item.deepLink))) return { ok: false, error: "APP_BASE_URL_OR_DEEP_LINK_INVALID" };
   return postToSlack(`AI Company Morning Brief ${brief.day}: CEO判断 ${brief.items.length}件`, morningBriefBlocks(brief));
 }
