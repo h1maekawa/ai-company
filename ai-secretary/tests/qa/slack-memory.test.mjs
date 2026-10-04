@@ -42,6 +42,7 @@ beforeEach(() => {
   });
   global.fetch = async (url, options = {}) => {
     if (url === "https://slack.com/api/chat.postMessage") { slackCalls++; return { ok: true, json: async () => ({ ok: slackOk, ts: "1790868601.000100", error: slackOk ? undefined : "offline" }) }; }
+    if (url === "https://api.github.com/repos/memory-test/vault") return { status: 200, ok: true };
     assert.match(String(url), /^https:\/\/api.github.com\/repos\/memory-test\/vault\/contents\//);
     const file = decodeURIComponent(new URL(url).pathname.split("/contents/")[1]);
     if (failVault || (failPrefix && file.startsWith(failPrefix))) throw new Error("simulated storage failure");

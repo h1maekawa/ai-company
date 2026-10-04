@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { resolveRawPath } from './runtime/paths';
+import { probeGithubRepository, type ConnectionFailureCode } from './system/vaultDiagnostics';
 
 const GITHUB_OWNER = process.env.GITHUB_OWNER || '';
 const GITHUB_REPO = process.env.GITHUB_REPO || '';
@@ -13,6 +14,17 @@ export class VaultConflictError extends Error {
 }
 export class VaultApiError extends Error {
   constructor(public readonly status: number, public readonly filePath: string) { super(`VAULT_API_ERROR_${status}`); }
+}
+export class VaultRepositoryNotAccessibleError extends Error {
+  readonly status: number;
+  constructor(public readonly failureCode: ConnectionFailureCode, status: number, public readonly filePath: string) { super(failureCode); this.status = status; }
+}
+let repositoryProbeCache: { at:number; ok:boolean; status:number; failureCode?:ConnectionFailureCode } | null = null;
+async function assertRepositoryAccessible(filePath: string) {
+  const cached = repositoryProbeCache && Date.now() - repositoryProbeCache.at < 45_000 ? repositoryProbeCache : null;
+  const result = cached ?? { at:Date.now(), ...(await probeGithubRepository({ owner:GITHUB_OWNER, repo:GITHUB_REPO, token:GITHUB_TOKEN, signal:AbortSignal.timeout(8000) })) };
+  repositoryProbeCache = result;
+  if (!result.ok) throw new VaultRepositoryNotAccessibleError(result.failureCode ?? 'UNKNOWN', result.status, filePath);
 }
 /** Reapply a pure document edit to the latest version after a competing write. */
 const documentUpdates = new Map<string, Promise<unknown>>();
@@ -60,8 +72,6 @@ export async function getVaultFile(filePath: string): Promise<VaultFile> {
     const githubPath = getGitHubPath(filePath);
     const url = `${API_BASE}/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}?ref=${encodeURIComponent(githubBranch())}`;
 
-    console.log(`[DEBUG] Vault-Utility GET request to: ${url}`);
-
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -74,6 +84,7 @@ export async function getVaultFile(filePath: string): Promise<VaultFile> {
     });
 
     if (response.status === 404) {
+      await assertRepositoryAccessible(filePath);
       return { content: '', sha: undefined };
     }
 
@@ -143,6 +154,7 @@ export async function saveVaultFile(
 
     const response = await put();
     if (response.status === 409) throw new VaultConflictError(filePath);
+    if (response.status === 404) { repositoryProbeCache = null; await assertRepositoryAccessible(filePath); }
 
     if (!response.ok) {
       throw new VaultApiError(response.status, filePath);

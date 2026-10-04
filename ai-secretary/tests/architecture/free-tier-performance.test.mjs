@@ -28,6 +28,7 @@ test("connection checks are single-flight, source-bound, and do not promote conf
     "../utils/redis": { isRedisAvailable: false },
     "../note/publishing/buffer": { isBufferConfigured: () => false },
     "../finance/flowClient": { flowConfigured: () => false },
+    "./vaultDiagnostics": { configuredVaultBranch: () => "main", probeGithubVault: async () => ({ ok: true, statuses: {} }) },
   }, { SLACK_WEBHOOK_URL: "https://example.invalid/webhook", LOCAL_RUNNER_TOKEN: "configured" });
   const [a, b] = await Promise.all([mod.checkAllConnections(), mod.checkAllConnections()]);
   assert.equal(a, b);
@@ -49,6 +50,7 @@ test("failed source probe stays unknown even when search index is readable", asy
     "../utils/redis": { isRedisAvailable: false },
     "../note/publishing/buffer": { isBufferConfigured: () => false },
     "../finance/flowClient": { flowConfigured: () => false },
+    "./vaultDiagnostics": { configuredVaultBranch: () => "main", probeGithubVault: async () => ({ ok: true, statuses: {} }) },
   });
   const result = await mod.checkAllConnections();
   assert.equal(result.find((x) => x.service === "vault").status, "unknown");
@@ -63,6 +65,7 @@ test("deadline yields unknown when source probe never settles", async () => {
     "../utils/redis": { isRedisAvailable: false },
     "../note/publishing/buffer": { isBufferConfigured: () => false },
     "../finance/flowClient": { flowConfigured: () => false },
+    "./vaultDiagnostics": { configuredVaultBranch: () => "main", probeGithubVault: async () => ({ ok: true, statuses: {} }) },
   }, {}, { setTimeout: (fn) => { queueMicrotask(fn); return 1; }, clearTimeout: () => {} });
   const result = await mod.checkAllConnections();
   assert.equal(result.find((x) => x.service === "vault").status, "unknown");
