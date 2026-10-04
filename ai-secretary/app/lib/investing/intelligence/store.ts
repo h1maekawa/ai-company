@@ -3,6 +3,7 @@ import type { IntelligenceToday, InvestmentDecisionRecord } from "./types";
 
 const TODAY_PATH = "memory/personal/fund/intelligence-today.json";
 const DECISIONS_PATH = "memory/personal/fund/intelligence-decisions.json";
+const THEME_HISTORY_PATH = "memory/personal/fund/theme-history/index.json";
 
 async function loadJson<T>(path: string, fallback: T): Promise<T> {
   try { const file = await getVaultFile(path); return file.content.trim() ? JSON.parse(file.content) as T : fallback; }
@@ -16,6 +17,12 @@ export async function loadIntelligenceToday(): Promise<IntelligenceToday | null>
 export async function saveIntelligenceToday(value: IntelligenceToday): Promise<void> {
   const current = await getVaultFile(TODAY_PATH).catch(() => ({ content: "", sha: undefined }));
   await saveVaultFile(TODAY_PATH, `${JSON.stringify(value, null, 2)}\n`, current.sha);
+}
+export async function saveThemeSnapshot(value: IntelligenceToday): Promise<void> {
+  const current = await getVaultFile(THEME_HISTORY_PATH).catch(() => ({ content: "", sha: undefined }));
+  const existing = current.content.trim() ? JSON.parse(current.content) as Array<{ asOf: string; themes: IntelligenceToday["themeStrength"] }> : [];
+  const day = value.asOf.slice(0, 10), next = [{ asOf: value.asOf, themes: value.themeStrength }, ...existing.filter((item) => item.asOf.slice(0, 10) !== day)].slice(0, 365);
+  await saveVaultFile(THEME_HISTORY_PATH, `${JSON.stringify(next, null, 2)}\n`, current.sha);
 }
 
 export async function loadInvestmentDecisions(): Promise<InvestmentDecisionRecord[]> {

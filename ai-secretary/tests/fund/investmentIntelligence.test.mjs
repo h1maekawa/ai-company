@@ -9,6 +9,11 @@ const { buildOpportunity, deriveMarketRegime } = await import(path.join(dist, "i
 const { investmentIntelligenceEnabled } = await import(path.join(dist, "intel/investing/intelligence/flags.js"));
 const { classifyNewsDirection, classifyNewsImpacts, newsTrustTier } = await import(path.join(dist, "intel/investing/intelligence/newsImpact.js"));
 const { buildInvestmentCandidates, normalizeTheme, sectorsForThemes } = await import(path.join(dist, "intel/investing/intelligence/themes.js"));
+const { buildThemeGraph, scoreTheme, detectMeaningfulThemeChanges } = await import(path.join(dist, "intel/investing/intelligence/themeIntelligence.js"));
+
+test("theme graph expands HBM and Data Center at most two hops without duplicates", () => { for (const seed of ["HBM", "Data Center"]) { const graph = buildThemeGraph([seed], [], 2); assert.equal(new Set(graph.nodes.map((x) => x.id)).size, graph.nodes.length); assert.equal(new Set(graph.edges.map((x) => `${x.from}|${x.to}|${x.relation}`)).size, graph.edges.length); } const hbm = buildThemeGraph(["HBM"], [], 2); assert.ok(hbm.nodes.some((x) => x.id === "ticker:MU")); assert.ok(hbm.nodes.some((x) => x.id === "ticker:AMAT")); });
+test("theme score is deterministic, stale news adds nothing, and missing data remains null", () => { const empty = scoreTheme("HBM", { news: [], sectors: [], opportunities: [] }); assert.equal(empty.score, null); assert.equal(empty.reason, "DATA_INCOMPLETE"); const stale = scoreTheme("HBM", { news: [{ id:"n", title:"", source:"Reuters", url:"https://reuters.com/a", publishedAt:"2020-01-01", fetchedAt:"2026-01-01", factSummary:"", interpretation:null, impact:"positive", impacts:[], trustTier:"TIER_2", relatedSectors:[], relatedThemes:["HBM"], relatedTickers:[], freshness:"stale" }], sectors:[], opportunities:[] }); assert.equal(stale.score, null); });
+test("meaningful changes detect new hot and score delta but suppress unchanged", () => { const base = { name:"HBM", score:60, coverage:.8, reason:"", evidenceRefs:["a"], freshness:"daily", hot:false }; assert.deepEqual(detectMeaningfulThemeChanges([{...base, score:80, hot:true}], [base]), ["NEW:HBM"]); assert.deepEqual(detectMeaningfulThemeChanges([base], [base]), []); });
 
 test("feature flag is enabled only by the exact true value", () => {
   const original = process.env.INVESTING_INTELLIGENCE_ENABLED;
