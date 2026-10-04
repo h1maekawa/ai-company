@@ -8,10 +8,31 @@ const { parseSecCompanyFacts } = await import(path.join(dist, "intel/investing/i
 const { buildOpportunity, deriveMarketRegime } = await import(path.join(dist, "intel/investing/intelligence/engine.js"));
 const { investmentIntelligenceEnabled } = await import(path.join(dist, "intel/investing/intelligence/flags.js"));
 const { classifyNewsDirection, classifyNewsImpacts, newsTrustTier } = await import(path.join(dist, "intel/investing/intelligence/newsImpact.js"));
-const { buildInvestmentCandidates, normalizeTheme, sectorsForThemes } = await import(path.join(dist, "intel/investing/intelligence/themes.js"));
+const { buildInvestmentCandidates, discoverThemeGraphCandidates, normalizeTheme, sectorsForThemes } = await import(path.join(dist, "intel/investing/intelligence/themes.js"));
 const { buildThemeGraph, scoreTheme, detectMeaningfulThemeChanges } = await import(path.join(dist, "intel/investing/intelligence/themeIntelligence.js"));
 
 test("theme graph expands HBM and Data Center at most two hops without duplicates", () => { for (const seed of ["HBM", "Data Center"]) { const graph = buildThemeGraph([seed], [], 2); assert.equal(new Set(graph.nodes.map((x) => x.id)).size, graph.nodes.length); assert.equal(new Set(graph.edges.map((x) => `${x.from}|${x.to}|${x.relation}`)).size, graph.edges.length); } const hbm = buildThemeGraph(["HBM"], [], 2); assert.ok(hbm.nodes.some((x) => x.id === "ticker:MU")); assert.ok(hbm.nodes.some((x) => x.id === "ticker:AMAT")); });
+test("hot theme graph discovers bounded deterministic candidates with provenance", () => {
+  const hot = (name, score = 90, coverage = .8) => ({ name, score, coverage, reason:"", evidenceRefs:["e1"], freshness:"daily", hot:true });
+  const first = discoverThemeGraphCandidates({ strengths: [hot("HBM")], existingCandidates: [] });
+  const second = discoverThemeGraphCandidates({ strengths: [hot("HBM")], existingCandidates: [] });
+  assert.deepEqual(first.map((item) => item.ticker), second.map((item) => item.ticker));
+  assert.ok(["AMAT", "LRCX", "KLAC"].every((ticker) => first.some((item) => item.ticker === ticker)));
+  assert.ok(first.every((item) => item.candidateSources.includes("theme-graph") && item.themeGraphDiscoveries.every((entry) => entry.hopDistance <= 2)));
+  assert.equal(new Set(first.map((item) => item.ticker)).size, first.length);
+  assert.ok(first.length <= 10);
+  const dataCenter = discoverThemeGraphCandidates({ strengths: [hot("Data Center")], existingCandidates: [], max: 20 });
+  assert.ok(["CEG", "ETN", "VRT", "TT", "ANET", "AVGO"].every((ticker) => dataCenter.some((item) => item.ticker === ticker)));
+});
+test("theme graph merges existing sources and rejects stale or low coverage seeds", () => {
+  const existing = buildInvestmentCandidates({ portfolio: [{ ticker:"AMAT", name:"Applied Materials" }], watchlist: [] });
+  const hot = { name:"HBM", score:90, coverage:.8, reason:"", evidenceRefs:["e1"], freshness:"daily", hot:true };
+  const added = discoverThemeGraphCandidates({ strengths:[hot], existingCandidates:existing, max:2 });
+  assert.equal(added.length, 2); assert.equal(new Set(added.map((item) => item.ticker)).size, 2);
+  assert.ok(existing[0].candidateSources.includes("portfolio")); assert.ok(existing[0].candidateSources.includes("theme-graph"));
+  assert.equal(discoverThemeGraphCandidates({ strengths:[{...hot, freshness:"stale"}], existingCandidates:[] }).length, 0);
+  assert.equal(discoverThemeGraphCandidates({ strengths:[{...hot, coverage:.5}], existingCandidates:[] }).length, 0);
+});
 test("theme score is deterministic, stale news adds nothing, and missing data remains null", () => { const empty = scoreTheme("HBM", { news: [], sectors: [], opportunities: [] }); assert.equal(empty.score, null); assert.equal(empty.reason, "DATA_INCOMPLETE"); const stale = scoreTheme("HBM", { news: [{ id:"n", title:"", source:"Reuters", url:"https://reuters.com/a", publishedAt:"2020-01-01", fetchedAt:"2026-01-01", factSummary:"", interpretation:null, impact:"positive", impacts:[], trustTier:"TIER_2", relatedSectors:[], relatedThemes:["HBM"], relatedTickers:[], freshness:"stale" }], sectors:[], opportunities:[] }); assert.equal(stale.score, null); });
 test("meaningful changes detect new hot and score delta but suppress unchanged", () => { const base = { name:"HBM", score:60, coverage:.8, reason:"", evidenceRefs:["a"], freshness:"daily", hot:false }; assert.deepEqual(detectMeaningfulThemeChanges([{...base, score:80, hot:true}], [base]), ["NEW:HBM"]); assert.deepEqual(detectMeaningfulThemeChanges([base], [base]), []); });
 

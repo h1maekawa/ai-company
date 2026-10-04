@@ -9,7 +9,7 @@ import { loadMacroSnapshot } from "./providers/macro";
 import { fetchSecFundamentals, fetchSecTickerMap } from "./providers/sec";
 import { loadSectorSnapshots } from "./providers/sector";
 import { saveIntelligenceToday, saveThemeSnapshot } from "./store";
-import { buildInvestmentCandidates } from "./themes";
+import { buildInvestmentCandidates, discoverThemeGraphCandidates } from "./themes";
 import { INVESTMENT_INTELLIGENCE_CONFIG } from "./config";
 import type { IntelligenceFreshness, IntelligenceToday, InvestmentEvidence, ProviderStatus } from "./types";
 import { buildThemeGraph, scoreTheme } from "./themeIntelligence";
@@ -30,7 +30,7 @@ export async function runDailyInvestmentResearch(now = new Date()): Promise<Inte
     max: 30,
   });
   let secOk = 0; let secErrors = 0;
-  const opportunities = await Promise.all(candidates.map(async (item) => {
+  const evaluateCandidates = (items: typeof candidates) => Promise.all(items.map(async (item) => {
     const ticker = item.ticker;
     const [bars, fundamentalResult] = await Promise.all([provider.getDailyBars(ticker, 30), fetchSecFundamentals(ticker, cikMap.get(ticker) ?? null)]);
     if (fundamentalResult.status === "OK") secOk++; else if (fundamentalResult.status === "ERROR") secErrors++;
@@ -41,9 +41,15 @@ export async function runDailyInvestmentResearch(now = new Date()): Promise<Inte
     const sector = sectors.find((entry) => item.sectors.includes(entry.name) && !["stale", "unknown"].includes(entry.freshness));
     return buildOpportunity({ ticker, name: item.name, theme: item.themes[0] ?? "Unclassified", bars, marketRegime, held: item.held, evidence: [...evidence, ...relatedNews], fundamental: fundamentalResult.data, sector, now });
   }));
-  opportunities.sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  const baseOpportunities = await evaluateCandidates(candidates);
   const themeNames = [...new Set(candidates.flatMap((item) => item.themes))];
-  const themeStrength = themeNames.map((name) => scoreTheme(name, { news: newsResult.items, sectors, opportunities }));
+  const initialThemeStrength = themeNames.map((name) => scoreTheme(name, { news: newsResult.items, sectors, opportunities: baseOpportunities }));
+  const graphCandidates = discoverThemeGraphCandidates({ strengths: initialThemeStrength, existingCandidates: candidates });
+  const graphOpportunities = await evaluateCandidates(graphCandidates);
+  const opportunities = [...baseOpportunities, ...graphOpportunities];
+  opportunities.sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.ticker.localeCompare(b.ticker));
+  const finalThemeNames = [...new Set([...candidates, ...graphCandidates].flatMap((item) => item.themes))];
+  const themeStrength = finalThemeNames.map((name) => scoreTheme(name, { news: newsResult.items, sectors, opportunities }));
   const themeGraph = buildThemeGraph(themeStrength.filter((item) => item.hot).map((item) => item.name), themeStrength);
   const providerStatus: ProviderStatus[] = [...macroResult.statuses, { provider: "SerpAPI", status: newsResult.status, checkedAt: now.toISOString() }, { provider: "SEC", status: !process.env.SEC_USER_AGENT ? "NOT_CONFIGURED" : secErrors > 0 && secOk === 0 ? "ERROR" : "OK", checkedAt: now.toISOString(), detail: `${secOk} symbols loaded` }];
   const result: IntelligenceToday = { asOf: now.toISOString(), runId: `investment-${tokyoDateKey(now)}`, marketRegime, marketRegimeDetail, marketEvidence, macro: macroResult.macro, economicNews: newsResult.items, sectors, providerStatus,
