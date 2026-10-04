@@ -24,10 +24,11 @@ type Insights = {
     dataFreshness: { x: string; note: string };
     xSummary: { postCount: number; impressions?: number; engagements?: number; linkClicks?: number; followersGained?: number };
     noteSummary: { views?: number; sales?: number; revenue?: number };
-    comparisons: Record<"yesterday" | "last7Days" | "previous7Days" | "last28Days", { postCount: number; impressions?: number; engagements?: number; linkClicks?: number }>;
+    comparisons: Record<"yesterday" | "last7Days" | "previous7Days" | "last28Days" | "last30Days", { postCount: number; impressions?: number; engagements?: number; linkClicks?: number }>;
     winningTopics: Array<{ topicId: string; averageScore: number }>;
     winningPatterns: Array<{ key: string; sampleSize: number; averageScore: number }>;
     bottleneck: string; insights: string[]; experiments: string[];
+    bestContent?: { contentId: string; impressions?: number }; competitorDifferences?: string[]; nextExperiment?: string; evidenceCount?: number;
     appliedChanges: Array<{ field: string; before: unknown; after: unknown; reason: string }>;
     noteApprovalPriorities: Array<{ articleId: string; title: string; reason: string; priceSuggestion?: string }>;
   };
@@ -109,13 +110,13 @@ export function GrowthInsights() {
 }
 
 function DailyReview({ review }: { review: NonNullable<Insights["dailyReview"]> }) {
-  const [period, setPeriod] = useState<"yesterday" | "last7Days" | "last28Days">("yesterday");
+  const [period, setPeriod] = useState<"yesterday" | "last7Days" | "last30Days">("yesterday");
   const selected = review.comparisons[period];
   const metric = (value?: number, prefix = "") => value === undefined ? "Unavailable" : `${prefix}${value.toLocaleString()}`;
   return <Card>
     <CardHeader title="今日の事業部レビュー" hint={`${review.date} / confidence: ${review.confidence}`} />
     <div className="mb-3 flex gap-1">
-      {(["yesterday", "last7Days", "last28Days"] as const).map((key) => <button key={key} onClick={() => setPeriod(key)} className={`rounded px-2 py-1 text-[10px] ${period === key ? "bg-brand text-white" : "bg-white/[0.05] text-sub"}`}>{key === "yesterday" ? "Today / Yesterday" : key === "last7Days" ? "7 Days" : "28 Days"}</button>)}
+      {(["yesterday", "last7Days", "last30Days"] as const).map((key) => <button key={key} onClick={() => setPeriod(key)} className={`rounded px-2 py-1 text-[10px] ${period === key ? "bg-brand text-white" : "bg-white/[0.05] text-sub"}`}>{key === "yesterday" ? "Yesterday" : key === "last7Days" ? "7 Days" : "30 Days"}</button>)}
     </div>
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       <ReviewMetric label="X投稿数" value={String(selected.postCount)} />
@@ -131,6 +132,7 @@ function DailyReview({ review }: { review: NonNullable<Insights["dailyReview"]> 
     <div className="mt-3 grid gap-3 sm:grid-cols-2">
       <ReviewSection title="今日の結論" lines={[...review.insights, `Bottleneck: ${review.bottleneck}`, review.winningPatterns[0] ? `Winning Pattern: ${review.winningPatterns[0].key}（n=${review.winningPatterns[0].sampleSize}）` : "Winning Pattern: 最低サンプル待ち"]} />
       <ReviewSection title="明日の戦略" lines={review.experiments.length ? review.experiments : ["データを蓄積し、現行戦略を維持"]} />
+      <ReviewSection title={`Comparable Content / ${review.confidence}`} lines={review.competitorDifferences?.length ? [...review.competitorDifferences, `Evidence: ${review.evidenceCount ?? 0}`, `Next: ${review.nextExperiment ?? "検証待ち"}`] : ["INSUFFICIENT_DATA"]} />
       <ReviewSection title="Applied Automatically" lines={review.appliedChanges.length ? review.appliedChanges.map((item) => `${item.field}: ${JSON.stringify(item.before)} → ${JSON.stringify(item.after)} / ${item.reason}`) : ["自動変更なし"]} />
       <ReviewSection title="Human Decision Needed" lines={review.noteApprovalPriorities.length ? review.noteApprovalPriorities.map((item) => `${item.title}${item.priceSuggestion ? ` / 価格候補 ${item.priceSuggestion}` : ""} — ${item.reason}`) : ["note公開候補なし。価格・公開は引き続き人が決定"]} />
     </div>

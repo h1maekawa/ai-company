@@ -1,0 +1,8 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+const intel = await import(path.join(process.env.MAEMICHI_DIST, "note/competitorIntelligence.js"));
+const item = (id, text, metrics = { likes: 10 }, role = "reference") => ({ id, platform: "x", sourceType: "reference-account", sourceRole: role, sourceUrl: `https://x.com/${id}`, textExcerpt: text, publicMetrics: metrics, detectedGenreIds: ["ai"], fetchedAt: "2026-10-03T00:00:00Z", publishedAt: "2026-10-03T00:00:00Z" });
+test("comparable selection requires role, genre, topic, recency and observed metrics", () => { const rows = [item("a", "AI GPU demand", { likes: 3 }), item("b", "AI GPU demand", {}, "news"), item("c", "料理の話")]; const selected = intel.selectComparableContent({ items: rows, topic: "AI GPU", genreId: "ai", now: new Date("2026-10-04T00:00:00Z") }); assert.deepEqual(selected.map((x) => x.id), ["a"]); });
+test("pattern stores structure, never raw copy, and never invents impressions", () => { const source = item("a", "3つのAI GPU論点？", { likes: 12 }); source.structurePattern = "hook→evidence→cta"; const pattern = intel.extractContentPattern(source); assert.equal(pattern.observedMetrics.impressions, undefined); assert.equal(JSON.stringify(pattern).includes(source.textExcerpt), false); assert.equal(pattern.numberLead, true); });
+test("comparison uses cautious hypothesis and exposes low confidence", () => { const comparison = intel.compareOwnWithCompetitors({ contentId: "own", platform: "x", genreId: "ai", purpose: "reach", publishedAt: "2026-10-03", measuredAt: "2026-10-04" }, [item("a", "3 AI points")]); assert.equal(comparison.confidence, "low"); assert.doesNotMatch(comparison.hypotheses.join(" "), /だから伸びた|caused/i); });

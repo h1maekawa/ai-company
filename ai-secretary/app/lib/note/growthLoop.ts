@@ -23,6 +23,13 @@ export type MetricSummary = {
   linkClicks?: number;
   profileVisits?: number;
   followersGained?: number;
+  likes?: number;
+  replies?: number;
+  reposts?: number;
+  bookmarks?: number;
+  profileClicks?: number;
+  followsFromPost?: number;
+  urlClicks?: number;
 };
 
 export type NoteMetricSummary = {
@@ -39,6 +46,7 @@ export type PeriodComparison = {
   last7Days: MetricSummary;
   previous7Days: MetricSummary;
   last28Days: MetricSummary;
+  last30Days: MetricSummary;
   movingAverage7d?: number;
   movingAverage28d?: number;
 };
@@ -89,6 +97,10 @@ export type DailyGrowthReview = {
   appliedChanges: AppliedStrategyChange[];
   skippedChanges: string[];
   confidence: StrategyConfidence;
+  bestContent?: { contentId: string; impressions?: number };
+  competitorDifferences?: string[];
+  nextExperiment?: string;
+  evidenceCount?: number;
   noteApprovalPriorities: { articleId: string; title: string; reason: string; priceSuggestion?: string }[];
 };
 
@@ -121,6 +133,10 @@ export function summarizeX(records: ContentPerformance[]): MetricSummary {
     linkClicks: sumObserved(x, (record) => record.linkClicks ?? record.urlClicks ?? record.noteClicks),
     profileVisits: sumObserved(x, (record) => record.profileVisits),
     followersGained: sumObserved(x, (record) => record.followersGained),
+    likes: sumObserved(x, (record) => record.likes), replies: sumObserved(x, (record) => record.replies),
+    reposts: sumObserved(x, (record) => record.reposts), bookmarks: sumObserved(x, (record) => record.bookmarks),
+    profileClicks: sumObserved(x, (record) => record.profileClicks), followsFromPost: sumObserved(x, (record) => record.followsFromPost),
+    urlClicks: sumObserved(x, (record) => record.urlClicks),
   };
 }
 
@@ -270,12 +286,15 @@ export function buildDailyGrowthReview(input: {
   noteFreshness?: "fresh" | "stale" | "unavailable";
   xFreshness?: "fresh" | "partial";
   experiments?: string[];
+  competitorDifferences?: string[];
+  competitorEvidenceCount?: number;
   noteApprovalPriorities?: DailyGrowthReview["noteApprovalPriorities"];
 }): DailyGrowthReview {
   const now = input.now ?? new Date();
   const last7 = inWindow(input.records, now, 7);
   const previous7 = inWindow(input.records, now, 14, 7);
   const last28 = inWindow(input.records, now, 28);
+  const last30 = inWindow(input.records, now, 30);
   const yesterday = inWindow(input.records, now, 1);
   const x7 = last7.filter((record) => record.platform === "x");
   const confidence = growthConfidence(x7.length);
@@ -292,7 +311,7 @@ export function buildDailyGrowthReview(input: {
     dataFreshness: { x: input.xFreshness ?? (x7.some((record) => record.metricsStale) ? "partial" : "fresh"), note: input.noteFreshness ?? "unavailable" },
     xSummary: summarizeX(yesterday), noteSummary: note,
     comparisons: {
-      yesterday: summarizeX(yesterday), last7Days: summarizeX(last7), previous7Days: summarizeX(previous7), last28Days: summarizeX(last28),
+      yesterday: summarizeX(yesterday), last7Days: summarizeX(last7), previous7Days: summarizeX(previous7), last28Days: summarizeX(last28), last30Days: summarizeX(last30),
       movingAverage7d: summarizeX(last7).impressions === undefined ? undefined : summarizeX(last7).impressions! / 7,
       movingAverage28d: summarizeX(last28).impressions === undefined ? undefined : summarizeX(last28).impressions! / 28,
     },
@@ -315,6 +334,8 @@ export function buildDailyGrowthReview(input: {
     strategyBefore: JSON.parse(JSON.stringify(input.strategy)), strategyAfter: updated.strategy,
     appliedChanges: updated.applied, skippedChanges: updated.skipped,
     confidence,
+    bestContent: [...x7].filter((record) => record.impressions !== undefined).sort((a, b) => (b.impressions ?? 0) - (a.impressions ?? 0))[0] ? (() => { const best = [...x7].filter((record) => record.impressions !== undefined).sort((a, b) => (b.impressions ?? 0) - (a.impressions ?? 0))[0]; return { contentId: best.contentId, impressions: best.impressions }; })() : undefined,
+    competitorDifferences: input.competitorDifferences?.slice(0, 5), nextExperiment: input.experiments?.[0], evidenceCount: input.competitorEvidenceCount ?? x7.length,
     noteApprovalPriorities: (input.noteApprovalPriorities ?? []).slice(0, 3),
   };
 }

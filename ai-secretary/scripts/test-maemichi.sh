@@ -19,6 +19,7 @@ npx tsc \
   app/lib/knowledge/walk.ts \
   app/lib/system/connections.ts \
   app/lib/note/growthLoop.ts \
+  app/lib/note/competitorIntelligence.ts \
   app/lib/note/safetyRepair.ts \
   app/lib/note/publishing/buffer.ts \
   app/lib/note/publishing/bufferMetrics.ts \
