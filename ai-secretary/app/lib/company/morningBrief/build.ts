@@ -1,6 +1,6 @@
 import type { NotificationEvent } from "../../notifications/types";
 import type { RevenueOpportunity } from "../opportunity/types";
-import type { MorningBrief, MorningBriefArea, MorningBriefItem } from "./types";
+import type { MorningBrief, MorningBriefArea, MorningBriefInsight, MorningBriefItem } from "./types";
 
 type HomeAttention = { id: string; title: string; href: string; source: string; priority: "high" | "normal" };
 const day = (date: Date) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
@@ -10,7 +10,7 @@ function area(event: NotificationEvent): MorningBriefArea {
   if (event.sourceType === "content") return "CONTENT";
   return "AI COMPANY";
 }
-export function buildMorningBrief(input: { notifications: NotificationEvent[]; homeAttention: HomeAttention[]; opportunities: RevenueOpportunity[]; notifiedFingerprints?: string[]; unavailable?: string[]; now?: Date }): MorningBrief {
+export function buildMorningBrief(input: { notifications: NotificationEvent[]; homeAttention: HomeAttention[]; opportunities: RevenueOpportunity[]; insights?: MorningBriefInsight[]; notifiedFingerprints?: string[]; unavailable?: string[]; now?: Date }): MorningBrief {
   const now = input.now ?? new Date();
   const items: MorningBriefItem[] = input.notifications.filter((event) => event.actionRequired && event.priority !== "INFO").map((event) => ({
     id: event.id, fingerprint: event.fingerprint, area: area(event), title: event.title, summary: event.summary,
@@ -31,5 +31,5 @@ export function buildMorningBrief(input: { notifications: NotificationEvent[]; h
   }
   const deduped = items.filter((item, index, all) => all.findIndex((other) => other.fingerprint === item.fingerprint) === index)
     .sort((a, b) => Number(b.priority === "CRITICAL") - Number(a.priority === "CRITICAL")).slice(0, 15);
-  return { day: day(now), generatedAt: now.toISOString(), items: deduped, unavailable: [...new Set(input.unavailable ?? [])] };
+  return { day: day(now), generatedAt: now.toISOString(), items: deduped, insights: (input.insights ?? []).slice(0, 5), unavailable: [...new Set(input.unavailable ?? [])] };
 }

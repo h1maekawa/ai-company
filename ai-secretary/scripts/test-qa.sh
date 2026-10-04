@@ -30,6 +30,7 @@ cat > "$DIST/tsconfig.json" <<TSCONFIG
     "$PWD/app/lib/integrations/slack/memory/ceoDecision.ts",
     "$PWD/app/lib/company/morningBrief/build.ts",
     "$PWD/app/lib/company/morningBrief/slack.ts",
+    "$PWD/app/lib/company/morningBrief/xGrowth.ts",
     "$PWD/app/lib/qa/types.ts",
     "$PWD/app/lib/qa/contentChecks.ts",
     "$PWD/app/lib/qa/factChecks.ts",
