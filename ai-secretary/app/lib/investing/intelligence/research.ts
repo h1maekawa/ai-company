@@ -8,10 +8,11 @@ import { fetchEconomicNews } from "./providers/economicNews";
 import { loadMacroSnapshot } from "./providers/macro";
 import { fetchSecFundamentals, fetchSecTickerMap } from "./providers/sec";
 import { loadSectorSnapshots } from "./providers/sector";
-import { saveIntelligenceToday } from "./store";
+import { saveIntelligenceToday, saveThemeSnapshot } from "./store";
 import { buildInvestmentCandidates } from "./themes";
 import { INVESTMENT_INTELLIGENCE_CONFIG } from "./config";
 import type { IntelligenceFreshness, IntelligenceToday, InvestmentEvidence, ProviderStatus } from "./types";
+import { buildThemeGraph, scoreTheme } from "./themeIntelligence";
 
 function freshnessOf(date: string | null, now: Date): IntelligenceFreshness { if (!date) return "unknown"; return now.getTime() - new Date(`${date}T23:59:59Z`).getTime() <= 4 * 86_400_000 ? "daily" : "stale"; }
 export { investmentIntelligenceEnabled } from "./flags";
@@ -41,12 +42,15 @@ export async function runDailyInvestmentResearch(now = new Date()): Promise<Inte
     return buildOpportunity({ ticker, name: item.name, theme: item.themes[0] ?? "Unclassified", bars, marketRegime, held: item.held, evidence: [...evidence, ...relatedNews], fundamental: fundamentalResult.data, sector, now });
   }));
   opportunities.sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  const themeNames = [...new Set(candidates.flatMap((item) => item.themes))];
+  const themeStrength = themeNames.map((name) => scoreTheme(name, { news: newsResult.items, sectors, opportunities }));
+  const themeGraph = buildThemeGraph(themeStrength.filter((item) => item.hot).map((item) => item.name), themeStrength);
   const providerStatus: ProviderStatus[] = [...macroResult.statuses, { provider: "SerpAPI", status: newsResult.status, checkedAt: now.toISOString() }, { provider: "SEC", status: !process.env.SEC_USER_AGENT ? "NOT_CONFIGURED" : secErrors > 0 && secOk === 0 ? "ERROR" : "OK", checkedAt: now.toISOString(), detail: `${secOk} symbols loaded` }];
   const result: IntelligenceToday = { asOf: now.toISOString(), runId: `investment-${tokyoDateKey(now)}`, marketRegime, marketRegimeDetail, marketEvidence, macro: macroResult.macro, economicNews: newsResult.items, sectors, providerStatus,
     sectorStrength: sectors.map((item) => ({ name: item.name, score: item.score, reason: item.score === null ? "市場データ未取得" : `${item.proxy}: 20日momentum ${item.momentum20d?.toFixed(1) ?? "—"}%` })),
-    themeStrength: [...new Set(candidates.flatMap((item) => item.themes))].map((name) => ({ name, score: null, reason: "個別Evidenceを優先して判定" })), opportunities,
+    themeStrength, themeGraph, opportunities,
     portfolioAlerts: opportunities.filter((item) => item.portfolioAction === "RECHECK_THESIS" && (item.relativeVolume ?? 0) >= 2).map((item) => ({ ticker: item.ticker, level: "warning" as const, message: `RVOL ${item.relativeVolume?.toFixed(2)}x。投資仮説を再確認してください` })), economicEvents: [],
     news: newsResult.items.map((item) => ({ id: item.id, sourceType: "news" as const, sourceName: item.source, sourceUrl: item.url, publishedAt: item.publishedAt, fetchedAt: item.fetchedAt, fact: item.factSummary, metric: "economic_news", value: item.impact, freshness: item.freshness })),
     summary: marketRegime === "DATA_INCOMPLETE" ? "市場データが不十分です。GO候補への昇格は停止しています。" : `市場は${marketRegime}。必須Evidenceと80%以上のcoverageを満たす場合のみGO候補になります。` };
-  await saveIntelligenceToday(result); return result;
+  await Promise.all([saveIntelligenceToday(result), saveThemeSnapshot(result)]); return result;
 }
