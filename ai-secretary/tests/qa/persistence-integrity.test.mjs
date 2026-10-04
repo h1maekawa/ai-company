@@ -86,6 +86,22 @@ test("GitHub 422 remains a distinct error and is never retried", () => {
   const result = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", env: { ...process.env, GITHUB_OWNER: "example", GITHUB_REPO: "example", GITHUB_TOKEN: "fake", GITHUB_BRANCH: "test-branch" } });
   assert.equal(result.status, 0, result.stderr);
 });
+test("missing Vault file is created only after repository accessibility is verified", () => {
+  const script = `
+    const assert=require('node:assert/strict'); const vault=require(${JSON.stringify(compiled("vault.js"))}); let calls=[];
+    global.fetch=async(url,opts)=>{ calls.push([url,opts.method]); if(opts.method==='GET'&&url.includes('/contents/'))return {status:404,ok:false}; if(opts.method==='GET')return {status:200,ok:true}; return {status:201,ok:true,json:async()=>({content:{sha:'created'}})}; };
+    vault.saveVaultFile('memory/new.md','new').then(result=>{assert.equal(result.sha,'created');assert.equal(calls.filter(([,m])=>m==='PUT').length,1);assert.ok(calls.some(([u])=>!u.includes('/contents/')))}).catch(e=>{console.error(e);process.exitCode=1});
+  `;
+  const result = spawnSync(process.execPath,["-e",script],{encoding:"utf8",env:{...process.env,GITHUB_OWNER:"example",GITHUB_REPO:"vault",GITHUB_TOKEN:"fake",GITHUB_BRANCH:"test-branch"}}); assert.equal(result.status,0,result.stderr);
+});
+test("missing Vault file never attempts create when repository is inaccessible", () => {
+  const script = `
+    const assert=require('node:assert/strict'); const vault=require(${JSON.stringify(compiled("vault.js"))}); let put=0;
+    global.fetch=async(url,opts)=>{if(opts.method==='PUT')put++;return {status:404,ok:false}};
+    vault.saveVaultFile('memory/new.md','new').then(()=>{process.exitCode=1}).catch(e=>{assert.equal(e.failureCode,'REPOSITORY_NOT_ACCESSIBLE');assert.equal(put,0)});
+  `;
+  const result = spawnSync(process.execPath,["-e",script],{encoding:"utf8",env:{...process.env,GITHUB_OWNER:"example",GITHUB_REPO:"vault",GITHUB_TOKEN:"fake",GITHUB_BRANCH:"test-branch"}}); assert.equal(result.status,0,result.stderr);
+});
 
 test("hosted ContextBus does not treat Redis failure as an empty bus or successful save", () => {
   const script = `

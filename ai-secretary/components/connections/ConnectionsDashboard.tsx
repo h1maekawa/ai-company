@@ -12,6 +12,7 @@ const evidence = (service: ConnectionHealth) => [
   ["到達", evidenceLabel(service.reachable)],
   ["最終操作", evidenceLabel(service.lastOperationOk)],
   ["鮮度", service.stale ? "古い" : "未検出"],
+  ...(service.failureCode ? [["診断コード", service.failureCode]] : []),
 ];
 export function ConnectionsDashboard() {
   const [services,setServices] = useState<ConnectionHealth[]>([]); const [selected,setSelected] = useState<ConnectionHealth|null>(null); const [loading,setLoading] = useState(true); const [error,setError] = useState("");

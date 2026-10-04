@@ -5,6 +5,7 @@ import { getRedisClient, isRedisAvailable } from "../utils/redis";
 import { countScheduled, isBufferConfigured } from "../note/publishing/buffer";
 import type { ConnectionHealth, ConnectionStatus } from "./connections";
 import { flowConfigured, flowFinanceSummary } from "../finance/flowClient";
+import { configuredVaultBranch, probeGithubVault, type VaultProbeResult } from "./vaultDiagnostics";
 
 const CACHE_MS = 45_000;
 const DEADLINE_MS = 5_000;
@@ -20,28 +21,30 @@ const deadline = async <T>(work: Promise<T>): Promise<T> => {
   finally { if (timer) clearTimeout(timer); }
 };
 
-async function checkVault(): Promise<ConnectionHealth> {
+const vaultFailure = (service: "vault" | "github", result: VaultProbeResult): ConnectionHealth => {
+  const label = service === "vault" ? "Obsidian / Vault" : "GitHub Vault", icon = service === "vault" ? "🧠" : "◈";
+  const messages = { TOKEN_INVALID:"GitHub Tokenが無効です", TOKEN_FORBIDDEN:"GitHub Tokenの権限が不足しています", REPOSITORY_NOT_ACCESSIBLE:"Repositoryへアクセスできません", BRANCH_NOT_FOUND:"設定されたBranchが見つかりません", VAULT_PATH_NOT_FOUND:"Vaultのmemory/knowledge pathが見つかりません", UNKNOWN:"GitHub Vaultの状態を確認できません" } as const;
+  const actions = { TOKEN_INVALID:"GitHub PATを再確認してください", TOKEN_FORBIDDEN:"PATのContents権限を確認してください", REPOSITORY_NOT_ACCESSIBLE:"Fine-grained PATのRepository access、Resource owner、Repository名を確認してください", BRANCH_NOT_FOUND:"GITHUB_BRANCH / GITHUB_PRODUCTION_BRANCHを確認してください", VAULT_PATH_NOT_FOUND:"対象Branchにmemory/knowledgeが存在するか確認してください", UNKNOWN:"GitHubとVercelのログを確認してください" } as const;
+  const code = result.failureCode ?? "UNKNOWN";
+  const authOk = code === "TOKEN_INVALID" || code === "TOKEN_FORBIDDEN" ? false : code === "REPOSITORY_NOT_ACCESSIBLE" ? null : true;
+  return health(service, label, icon, code === "TOKEN_INVALID" || code === "TOKEN_FORBIDDEN" ? "disconnected" : "warning", messages[code], { failureCode:code, action:actions[code], authOk, reachable:true, checkedBy:`vault-probe:${result.failedProbe ?? "unknown"}` });
+};
+async function checkVault(diagnostic?: VaultProbeResult): Promise<ConnectionHealth> {
   const github = Boolean(process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER && process.env.GITHUB_REPO);
   try {
     // Probe the source directory once. Index count does not establish source health.
     if (github) {
-      const url = `https://api.github.com/repos/${encodeURIComponent(process.env.GITHUB_OWNER!)}/${encodeURIComponent(process.env.GITHUB_REPO!)}/contents/memory/knowledge?ref=${encodeURIComponent(process.env.GITHUB_BRANCH || "main")}`;
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}`, Accept: "application/vnd.github+json" }, cache: "no-store", signal: AbortSignal.timeout(DEADLINE_MS) });
-      if (response.status === 401 || response.status === 403) return health("vault", "Obsidian / Vault", "🧠", "disconnected", "Vault原文の認証に失敗しました", { authOk: false, reachable: true, checkedBy: "source-directory" });
-      if (!response.ok) return health("vault", "Obsidian / Vault", "🧠", "warning", `Vault原文がHTTP ${response.status}を返しました`, { reachable: true, checkedBy: "source-directory" });
+      if (!diagnostic?.ok) return vaultFailure("vault", diagnostic ?? { ok:false, failureCode:"UNKNOWN", statuses:{} });
     } else {
       await deadline(vaultDocumentStore.listEntries("memory/knowledge"));
     }
     return health("vault", "Obsidian / Vault", "🧠", "connected", "Vault原文のディレクトリを読み取れます", { authOk: github ? true : null, reachable: true, lastSuccessAt: now(), checkedBy: "source-directory" });
   } catch { return unknown("vault", "Obsidian / Vault", "🧠", "Vault原文の状態を確認できません"); }
 }
-async function checkGithub(): Promise<ConnectionHealth> {
+async function checkGithub(diagnostic?: VaultProbeResult): Promise<ConnectionHealth> {
   if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) return health("github", "GitHub Vault", "◈", "not_configured", "GitHub Vaultは未設定です");
-  try {
-    const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(process.env.GITHUB_OWNER)}/${encodeURIComponent(process.env.GITHUB_REPO)}`, { headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}`, Accept: "application/vnd.github+json" }, cache: "no-store", signal: AbortSignal.timeout(DEADLINE_MS) });
-    if (response.status === 401 || response.status === 403) return health("github", "GitHub Vault", "◈", "disconnected", "GitHub認証に失敗しました", { authOk: false, reachable: true });
-    return response.ok ? health("github", "GitHub Vault", "◈", "connected", "GitHubリポジトリを読み取れます", { authOk: true, reachable: true, lastSuccessAt: now(), checkedBy: "repository-read" }) : health("github", "GitHub Vault", "◈", "warning", `GitHubがHTTP ${response.status}を返しました`, { reachable: true });
-  } catch { return unknown("github", "GitHub Vault", "◈", "GitHubの状態を確認できません"); }
+  if (!diagnostic?.ok) return vaultFailure("github", diagnostic ?? { ok:false, failureCode:"UNKNOWN", statuses:{} });
+  return health("github", "GitHub Vault", "◈", "connected", "GitHubリポジトリとVault pathを読み取れます", { authOk:true, reachable:true, lastSuccessAt:now(), checkedBy:"vault-probes" });
 }
 async function checkSupabase(stored?: SystemSyncStatus): Promise<ConnectionHealth> {
   if (!supabaseKnowledgeIndexRepository.configured()) return health("supabase", "Supabase Knowledge Index", "⚡", "not_configured", "高速Knowledge Indexは未設定です");
@@ -99,7 +102,9 @@ export async function checkAllConnections(options: { refresh?: boolean } = {}): 
   pending = (async () => {
     let stored: SystemSyncStatus[] = [];
     if (syncStatusRepository.configured()) { try { stored = await deadline(syncStatusRepository.list()); } catch { /* individual services remain unknown */ } }
-    const services = await Promise.all([checkVault(), checkGithub(), checkSupabase(stored.find((item) => item.service === "knowledge_index")), checkRedis(), checkBuffer(), Promise.resolve(checkRunner(stored.find((item) => item.service === "note_runner"))), checkSlack(), checkFlow()]);
+    const vaultConfigured = Boolean(process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER && process.env.GITHUB_REPO);
+    const vaultDiagnostic = vaultConfigured ? await probeGithubVault({ owner:process.env.GITHUB_OWNER!, repo:process.env.GITHUB_REPO!, token:process.env.GITHUB_TOKEN!, branch:configuredVaultBranch(), signal:AbortSignal.timeout(DEADLINE_MS) }).catch(() => ({ ok:false, failureCode:"UNKNOWN" as const, statuses:{} })) : undefined;
+    const services = await Promise.all([checkVault(vaultDiagnostic), checkGithub(vaultDiagnostic), checkSupabase(stored.find((item) => item.service === "knowledge_index")), checkRedis(), checkBuffer(), Promise.resolve(checkRunner(stored.find((item) => item.service === "note_runner"))), checkSlack(), checkFlow()]);
     cached = { at: Date.now(), services };
     return services;
   })();
