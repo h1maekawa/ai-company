@@ -1,4 +1,5 @@
-import type { InvestmentCandidate } from "./types";
+import { INVESTMENT_INTELLIGENCE_CONFIG } from "./config";
+import type { InvestmentCandidate, ThemeGraphDiscovery, ThemeStrength } from "./types";
 
 export type ThemeDefinition = { id: string; name: string; aliases: string[]; sectors: string[]; tickers: string[]; etfs: string[]; upstreamThemes: string[]; downstreamThemes: string[] };
 export const THEME_UNIVERSE: ThemeDefinition[] = [
@@ -27,4 +28,60 @@ export function buildInvestmentCandidates(input: { portfolio: Array<{ ticker: st
   for (const candidate of candidates.values()) for (const definition of THEME_UNIVERSE) if (definition.tickers.includes(candidate.ticker)) { if (!candidate.themes.includes(definition.name)) candidate.themes.push(definition.name); if (!candidate.candidateSources.includes("theme-universe")) candidate.candidateSources.push("theme-universe"); }
   for (const candidate of candidates.values()) candidate.sectors = sectorsForThemes(candidate.themes);
   return [...candidates.values()].slice(0, input.max ?? 30);
+}
+
+const validTicker = (ticker: string) => /^[A-Z][A-Z0-9.-]{0,9}$/.test(ticker);
+
+export function discoverThemeGraphCandidates(input: {
+  strengths: ThemeStrength[];
+  existingCandidates: InvestmentCandidate[];
+  max?: number;
+}): InvestmentCandidate[] {
+  const existing = new Map(input.existingCandidates.map((item) => [item.ticker, item]));
+  const hotSeeds = input.strengths
+    .filter((item) => item.hot && item.score !== null && item.score >= INVESTMENT_INTELLIGENCE_CONFIG.minimumHotThemeScore && item.coverage >= INVESTMENT_INTELLIGENCE_CONFIG.minimumHotThemeCoverage && !["stale", "unknown"].includes(item.freshness))
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || b.coverage - a.coverage || a.name.localeCompare(b.name));
+  const discoveries: Array<ThemeGraphDiscovery & { seedScore: number; seedCoverage: number }> = [];
+  for (const seed of hotSeeds) {
+    const queue: Array<{ theme: string; distance: 0 | 1 | 2 }> = [{ theme: normalizeTheme(seed.name), distance: 0 }];
+    const visited = new Set<string>();
+    while (queue.length) {
+      const current = queue.shift()!;
+      if (visited.has(current.theme)) continue;
+      visited.add(current.theme);
+      const definition = THEME_UNIVERSE.find((item) => item.name === current.theme);
+      if (!definition) continue;
+      for (const ticker of definition.tickers.map((value) => value.trim().toUpperCase()).filter(validTicker)) {
+        discoveries.push({ ticker, seedTheme: seed.name, discoveredTheme: definition.name, hopDistance: current.distance, seedScore: seed.score ?? 0, seedCoverage: seed.coverage });
+      }
+      if (current.distance < 2) {
+        const nextDistance = (current.distance + 1) as 1 | 2;
+        for (const related of [...definition.upstreamThemes, ...definition.downstreamThemes].map(normalizeTheme).sort()) queue.push({ theme: related, distance: nextDistance });
+      }
+    }
+  }
+  discoveries.sort((a, b) => b.seedScore - a.seedScore || b.seedCoverage - a.seedCoverage || a.hopDistance - b.hopDistance || a.ticker.localeCompare(b.ticker) || a.discoveredTheme.localeCompare(b.discoveredTheme));
+  const selected = new Map<string, InvestmentCandidate>();
+  const limit = input.max ?? INVESTMENT_INTELLIGENCE_CONFIG.maxThemeGraphCandidates;
+  for (const discovery of discoveries) {
+    const existingCandidate = existing.get(discovery.ticker);
+    if (existingCandidate) {
+      if (!existingCandidate.candidateSources.includes("theme-graph")) existingCandidate.candidateSources.push("theme-graph");
+      if (!existingCandidate.themes.includes(discovery.discoveredTheme)) existingCandidate.themes.push(discovery.discoveredTheme);
+      existingCandidate.themeGraphDiscoveries ??= [];
+      if (!existingCandidate.themeGraphDiscoveries.some((item) => item.seedTheme === discovery.seedTheme && item.discoveredTheme === discovery.discoveredTheme && item.hopDistance === discovery.hopDistance)) existingCandidate.themeGraphDiscoveries.push({ ticker: discovery.ticker, seedTheme: discovery.seedTheme, discoveredTheme: discovery.discoveredTheme, hopDistance: discovery.hopDistance });
+      existingCandidate.sectors = sectorsForThemes(existingCandidate.themes);
+      continue;
+    }
+    let candidate = selected.get(discovery.ticker);
+    if (!candidate) {
+      if (selected.size >= limit) continue;
+      candidate = { ticker: discovery.ticker, name: discovery.ticker, held: false, watchlisted: false, themes: [], sectors: [], aliases: [], candidateSources: ["theme-graph"], themeGraphDiscoveries: [] };
+      selected.set(discovery.ticker, candidate);
+    }
+    if (!candidate.themes.includes(discovery.discoveredTheme)) candidate.themes.push(discovery.discoveredTheme);
+    candidate.themeGraphDiscoveries!.push({ ticker: discovery.ticker, seedTheme: discovery.seedTheme, discoveredTheme: discovery.discoveredTheme, hopDistance: discovery.hopDistance });
+  }
+  for (const candidate of selected.values()) candidate.sectors = sectorsForThemes(candidate.themes);
+  return [...selected.values()];
 }
