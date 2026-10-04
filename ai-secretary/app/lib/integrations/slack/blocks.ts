@@ -59,13 +59,13 @@ function button(text: string, actionId: string, value: string, style?: "primary"
 }
 
 export function safeSlackUrl(value: string | undefined): string | null {
-  if (!value) return null;
-  try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) ? url.toString() : null; }
+  if (!value || !/^https?:\/\//i.test(value) || /[\s\\\u0000-\u001f\u007f]/.test(value)) return null;
+  try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.toString() : null; }
   catch { return null; }
 }
 function linkButton(text: string, value: string | undefined) {
   const url = safeSlackUrl(value);
-  return url ? { type: "button", text: { type: "plain_text", text, emoji: true }, action_id: ACTIONS.openSourceUrl, value: url, url } : null;
+  return url ? { type: "button", text: { type: "plain_text", text, emoji: true }, url } : null;
 }
 
 /** 1件の候補カード */
