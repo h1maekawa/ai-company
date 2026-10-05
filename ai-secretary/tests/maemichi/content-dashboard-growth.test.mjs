@@ -24,4 +24,12 @@ test("fewer than three comparable samples stays INSUFFICIENT_DATA", () => {
 test("missing review stays unavailable instead of inventing zero", () => {
   const result = dashboard.buildContentDashboardGrowth();
   assert.equal(result.status,"UNAVAILABLE"); assert.equal(result.impressions7d,null); assert.equal(result.impressions30d,null);
+  assert.equal(result.evidenceCount,null);
+});
+
+test("legacy review with missing comparisons degrades without inventing zero", () => {
+  const result = dashboard.buildContentDashboardGrowth({ measuredThrough:"2026-10-01T00:00:00Z" });
+  assert.equal(result.status,"INSUFFICIENT_DATA");
+  assert.equal(result.impressions7d,null); assert.equal(result.impressions30d,null);
+  assert.equal(result.evidenceCount,null); assert.equal(result.confidence,null);
 });
