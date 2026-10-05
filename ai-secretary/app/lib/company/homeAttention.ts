@@ -16,8 +16,10 @@ export async function loadHomeAttention() {
   ]);
   const attention: Attention[] = [];
   const unavailable: string[] = [];
+  let contentStatus: { effective: boolean; mode: string } | null = null;
   const [content, investment, finance] = results;
   if (content.status === "fulfilled") {
+    contentStatus = { effective: content.value.effective, mode: content.value.mode };
     const count = content.value.approvalQueue.length;
     if (count) attention.push({ id: "content-review", title: `X確認待ち ${count}件`, href: "/note?view=review", source: "コンテンツ", priority: "high", order: 3 });
   } else unavailable.push("コンテンツ");
@@ -35,5 +37,5 @@ export async function loadHomeAttention() {
       if (labels.length) attention.push({ id: "finance-review", title: labels.join(" · "), href: review.unreviewed_transactions > 0 ? "/assets?tab=household" : "/assets?tab=cards", source: "資産", priority: "normal", order: 4 });
     } else unavailable.push("資産");
   } else unavailable.push("資産");
-  return { attention, unavailable };
+  return { attention, unavailable, contentStatus };
 }

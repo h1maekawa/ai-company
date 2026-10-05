@@ -34,7 +34,7 @@ export async function GET(): Promise<NextResponse> {
         console.error("[home-summary] external attention unavailable", {
           code: error instanceof Error ? error.message : "UNKNOWN",
         });
-        return { attention: [], unavailable: ["コンテンツ", "投資", "資産"] };
+        return { attention: [], unavailable: ["コンテンツ", "投資", "資産"], contentStatus: null };
       }),
     ]);
     const state = execution.state;
@@ -73,7 +73,7 @@ export async function GET(): Promise<NextResponse> {
       decisions ? `承認判断を${decisions}件記録しました` : null,
     ].filter((item): item is string => Boolean(item));
     const unavailable = execution.unavailable ? ["AI Company", ...extra.unavailable] : extra.unavailable;
-    return NextResponse.json({ generatedAt: new Date().toISOString(), unavailable, approvals: { pendingCount: pending.length }, departments: cards, attention: attention.slice(0, 20), yesterday: { date: yesterday, facts: yesterdayFacts } }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ generatedAt: new Date().toISOString(), unavailable, approvals: { pendingCount: pending.length }, content: { automation: extra.contentStatus }, departments: cards, attention: attention.slice(0, 20), yesterday: { date: yesterday, facts: yesterdayFacts } }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error: unknown) {
     console.error("[home-summary] response build failed", {
       code: error instanceof Error ? error.message : "UNKNOWN",

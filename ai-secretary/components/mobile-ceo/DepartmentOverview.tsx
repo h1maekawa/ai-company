@@ -2,15 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { DEPARTMENT_NAV_BY_ID, type NavigationDepartmentId } from "@/app/lib/config/navigation";
+import { DEPARTMENT_NAV_BY_ID, QUICK_ACTIONS, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 
 type Card = { id: NavigationDepartmentId; status: "active" | "attention" | "unknown"; currentWork: string[]; problems: string[] };
 type Attention = { id: string; title: string; href: string; source: string; priority: "critical" | "high" | "normal"; order?: number };
-type HomeSummary = { generatedAt: string; unavailable?: string[]; departments: Card[]; attention: Attention[]; yesterday: { date: string; facts: string[] } };
+type HomeSummary = { generatedAt: string; unavailable?: string[]; content?: { automation?: AutomationSummary | null }; departments: Card[]; attention: Attention[]; yesterday: { date: string; facts: string[] } };
 type ConnectionHealth = { services?: Array<{ service: string; label: string; status: string; message?: string }> };
 type Employee = { id: string; name: string; role: string; status: string; currentMissionTitle?: string; currentStep?: { title: string }; skills?: { name: string }[] };
+type ContentSummary = {
+  queue?: { scheduled?: number | null; review?: number | null };
+  growth?: { status?: "AVAILABLE" | "INSUFFICIENT_DATA" | "UNAVAILABLE"; impressions7d?: number | null };
+};
+type AutomationSummary = { effective?: boolean; mode?: string };
 
 const STATUS_IDS: NavigationDepartmentId[] = ["creator", "fund", "operations", "engineering", "knowledge"];
+const CREATE_CONTENT_ACTION = QUICK_ACTIONS.find((action) => action.id === "write");
 const priorityText = { critical: "緊急", high: "優先", normal: "確認" };
 const priorityRank = { critical: 0, high: 1, normal: 2 };
 
@@ -26,6 +32,8 @@ export function DepartmentOverview() {
   const [connectionAttention, setConnectionAttention] = useState<Attention[]>([]);
   const [connectionError, setConnectionError] = useState(false);
   const [connectionsLoaded, setConnectionsLoaded] = useState(false);
+  const [contentSummary, setContentSummary] = useState<ContentSummary | null>(null);
+  const [contentSummaryFailed, setContentSummaryFailed] = useState(false);
   const [selected, setSelected] = useState<NavigationDepartmentId>("creator");
   const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [employeesError, setEmployeesError] = useState(false);
@@ -42,6 +50,10 @@ export function DepartmentOverview() {
         .filter((service) => ["disconnected", "error"].includes(service.status))
         .map((service) => ({ id: `connection:${service.service}`, title: service.message || `${service.label}の接続に問題があります`, href: "/connections", source: service.label, priority: "high" }))); })
       .catch(() => { if (!controller.signal.aborted) setConnectionError(true); });
+    void fetch("/api/content/home", { signal: controller.signal, cache: "no-store" })
+      .then((response) => { if (!response.ok) throw new Error("CONTENT_HOME_UNAVAILABLE"); return response.json() as Promise<ContentSummary>; })
+      .then(setContentSummary)
+      .catch(() => { if (!controller.signal.aborted) setContentSummaryFailed(true); });
     return () => controller.abort();
   }, []);
 
@@ -78,6 +90,13 @@ export function DepartmentOverview() {
       </ul> : summary && !summary.unavailable?.length && connectionsLoaded && !connectionError ? <p className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4 text-sm text-emerald-200">現在、確認が必要な項目はありません。</p> : null}
     </section>
 
+    <ContentBusinessCard
+      data={contentSummary}
+      failed={contentSummaryFailed}
+      automation={summary?.content?.automation ?? null}
+      automationFailed={summaryError || Boolean(summary?.unavailable?.includes("コンテンツ"))}
+    />
+
     <section aria-labelledby="status-title"><h2 id="status-title" className="text-xl font-semibold text-white">現在の状況</h2><p className="mt-1 text-sm text-slate-400">カードを選ぶとチームの状態を表示します。</p>
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
         {STATUS_IDS.map((id) => { const item = DEPARTMENT_NAV_BY_ID[id]; const model = cards.get(id); const status = statusOf(model); return <div key={id} className={`min-w-0 rounded-2xl border bg-slate-900/65 p-3 ${selected === id ? "border-violet-400" : "border-slate-800"}`}>
@@ -105,4 +124,32 @@ export function DepartmentOverview() {
       </section>
     </div>
   </div>;
+}
+
+function ContentBusinessCard({ data, failed, automation, automationFailed }: { data: ContentSummary | null; failed: boolean; automation: AutomationSummary | null; automationFailed: boolean }) {
+  const loading = !data && !failed;
+  const reviewCount = data?.queue?.review;
+  const metrics = [
+    { label: "投稿予定", value: metric(data?.queue?.scheduled, loading, failed), suffix: "件" },
+    { label: "確認待ち", value: metric(reviewCount, loading, failed), suffix: "件" },
+    { label: "直近7日 Impressions", value: metric(data?.growth?.impressions7d, loading, failed) },
+    { label: "Growth Intelligence", value: loading ? "…" : failed ? "未取得" : data?.growth?.status ?? "未取得" },
+    { label: "Automation", value: !automation && !automationFailed ? "…" : automationFailed ? "未取得" : automation?.effective === true ? "稼働可能" : automation?.effective === false ? "要設定" : "未取得" },
+  ];
+
+  return <section aria-labelledby="content-business-title" className="rounded-2xl border border-violet-400/25 bg-gradient-to-br from-violet-500/[0.10] to-slate-900/65 p-4 sm:p-5">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-300">Content Business</p><h2 id="content-business-title" className="mt-1 text-xl font-semibold text-white">SNS / コンテンツ</h2><p className="mt-1 text-sm text-slate-400">投稿・確認・成長の要点だけを表示します。</p></div><Link href={DEPARTMENT_NAV_BY_ID.creator.href} className="text-xs font-semibold text-violet-200 underline-offset-4 hover:underline">コンテンツチーム</Link></div>
+    <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">{metrics.map((item) => <div key={item.label} className="min-w-0 rounded-xl border border-white/10 bg-slate-950/35 p-3"><dt className="text-[10px] leading-4 text-slate-400">{item.label}</dt><dd className="mt-1 break-words text-sm font-semibold tabular-nums text-white">{item.value}{typeof item.value === "number" ? item.suffix : null}</dd></div>)}</dl>
+    <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+      <Link href={DEPARTMENT_NAV_BY_ID.creator.detailHref} className="col-span-2 inline-flex min-h-11 items-center justify-center rounded-xl bg-violet-500 px-4 text-sm font-semibold text-white hover:bg-violet-400">コンテンツを見る</Link>
+      {CREATE_CONTENT_ACTION ? <Link href={CREATE_CONTENT_ACTION.href} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-violet-400/35 px-3 text-sm font-semibold text-violet-100 hover:bg-violet-500/10">{CREATE_CONTENT_ACTION.label}</Link> : null}
+      {typeof reviewCount === "number" && reviewCount > 0 ? <Link href="/note?view=review" className="inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-400/35 px-3 text-sm font-semibold text-amber-100 hover:bg-amber-500/10">確認する</Link> : null}
+    </div>
+  </section>;
+}
+
+function metric(value: number | null | undefined, loading: boolean, failed: boolean): number | string {
+  if (loading) return "…";
+  if (failed || value == null) return "—";
+  return value;
 }

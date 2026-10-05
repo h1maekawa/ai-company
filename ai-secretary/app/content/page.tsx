@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { ArrowRight, BarChart3, CheckCircle2, PenLine, Settings } from "lucide-react";
+import { ArrowRight, BarChart3, CheckCircle2, LayoutDashboard, PenLine, Settings } from "lucide-react";
 import { AutomationMonitor } from "@/components/note/AutomationMonitor";
 import { PipelineSteps } from "@/components/note/PipelineSteps";
 import { AgentTaskList } from "@/components/note/AgentTaskList";
@@ -48,6 +48,7 @@ export default function ContentHomePage() {
         <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
           <div><h1 className="text-2xl font-bold text-white">経営ダッシュボード</h1><p className="mt-1 text-sm text-sub">運用・成長・制作パイプラインを一画面で確認します。制作と確認はContent Studioで行います。</p></div>
           <div className="grid grid-cols-2 gap-2 sm:flex">
+            <ActionLink href="/content" label="概要" icon={<LayoutDashboard className="h-4 w-4" />} />
             <ActionLink href="/note?view=create" label="投稿を作る" icon={<PenLine className="h-4 w-4" />} />
             <ActionLink href="/note?view=review" label="確認する" icon={<CheckCircle2 className="h-4 w-4" />} />
             <ActionLink href="/note?view=results" label="成果を見る" icon={<BarChart3 className="h-4 w-4" />} />

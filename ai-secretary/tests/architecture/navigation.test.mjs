@@ -158,13 +158,30 @@ test("Home exposes the Content executive dashboard without adding a fifth top na
   const homeApi = read("app/api/content/home/route.ts");
   assert.match(overview, /id === "creator" \? item\.detailHref : item\.href/);
   assert.match(overview, /事業ダッシュボード/);
-  for (const href of ["/note?view=create", "/note?view=review", "/note?view=results", "/note/settings"]) assert.ok(dashboard.includes(`href="${href}"`), href);
+  for (const href of ["/content", "/note?view=create", "/note?view=review", "/note?view=results", "/note/settings"]) assert.ok(dashboard.includes(`href="${href}"`), href);
   for (const label of ["経営ダッシュボード", "Automation & Queue", "Growth Intelligence", "Comparable Evidence", "Pipeline", "AIの状態"]) assert.match(dashboard, new RegExp(label));
   assert.match(dashboard, /INSUFFICIENT_DATA/);
   assert.doesNotMatch(dashboard, /competitor.*(?:text|excerpt)|textExcerpt/i);
   assert.match(homeApi, /buildContentDashboardGrowth/);
   const sidebar = read("components/app-shell/AppSidebar.tsx");
   assert.doesNotMatch(sidebar, /href="\/content"/);
+});
+
+test("Home makes SNS and Content discoverable without inventing missing metrics", () => {
+  const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
+  const navigation = read(NAVIGATION);
+  const homeSummary = read("app/api/company/home-summary/route.ts");
+  const homeAttention = read("app/lib/company/homeAttention.ts");
+  for (const label of ["SNS / コンテンツ", "投稿予定", "確認待ち", "直近7日 Impressions", "Growth Intelligence", "Automation"]) assert.match(overview, new RegExp(label));
+  assert.match(overview, /DEPARTMENT_NAV_BY_ID\.creator\.detailHref/);
+  assert.match(overview, /QUICK_ACTIONS\.find\(\(action\) => action\.id === "write"\)/);
+  assert.match(overview, /reviewCount === "number" && reviewCount > 0/);
+  assert.match(overview, /value == null\) return "—"/);
+  assert.doesNotMatch(overview, /queue\?\.scheduled\s*\?\?\s*0|queue\?\.review\s*\?\?\s*0|impressions7d\s*\?\?\s*0/);
+  assert.match(navigation, /id: "write"[\s\S]{0,120}href: "\/note\?view=create"/);
+  assert.match(homeSummary, /content: \{ automation: extra\.contentStatus \}/);
+  assert.match(homeAttention, /contentStatus = \{ effective: content\.value\.effective, mode: content\.value\.mode \}/);
+  assert.doesNotMatch(overview, /fetch\("\/api\/note\/automation\/status"/);
 });
 
 test("investing shows the five Investment areas and keeps every legacy route in the menu", () => {

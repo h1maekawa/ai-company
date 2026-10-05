@@ -221,7 +221,7 @@ export type QuickAction = {
 export const QUICK_ACTIONS: QuickAction[] = [
   { id: "ask", label: "秘書に相談", icon: "🤖", href: "/chat?node=assistant", hint: "やりたいことを話すだけ", primary: true },
   { id: "today", label: "今日を整理", icon: "🌅", href: "/planning", hint: "やることと時間割" },
-  { id: "write", label: "投稿を作る", icon: "✍️", href: "/note", hint: "X・noteの下書き" },
+  { id: "write", label: "投稿を作る", icon: "✍️", href: "/note?view=create", hint: "X・noteの下書き" },
   { id: "invest", label: "投資を見る", icon: "📈", href: "/investing", hint: "保有とニュース" },
   { id: "grill", label: "壁打ちする", icon: "🔥", href: "/grill", hint: "考えを詰める" },
 ];
