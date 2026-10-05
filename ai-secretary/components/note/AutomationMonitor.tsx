@@ -31,13 +31,13 @@ function QaBadge({ entry }: { entry: ApprovalQueueEntry }) {
   if (!entry.qa) return <span className="mt-1 block text-[10px] text-sub">自動テスト: 未実行</span>;
   const failed = entry.qa.checks.filter((check) => check.severity === "blocking" && check.status === "fail");
   return (
-    <span className="mt-1 block">
+    <span className="mt-1 block min-w-0 [overflow-wrap:anywhere]">
       <span className={`inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${entry.qa.passed ? "border-gain/25 bg-gain/10 text-gain" : "border-loss/25 bg-loss/10 text-loss"}`}>
         {entry.qa.passed ? "自動テスト通過" : "自動テスト未通過"}
       </span>
-      {entry.qaSummary && entry.qa.passed && <span className="ml-1.5 text-[10px] text-sub">{entry.qaSummary}</span>}
+      {entry.qaSummary && entry.qa.passed && <span className="ml-1.5 break-words text-[10px] text-sub [overflow-wrap:anywhere]">{entry.qaSummary}</span>}
       {failed.length > 0 && (
-        <span className="mt-0.5 block text-[10px] leading-relaxed text-loss/80">
+        <span className="mt-0.5 block min-w-0 break-words text-[10px] leading-relaxed text-loss/80 [overflow-wrap:anywhere]">
           {failed.map((check) => `${check.label}: ${check.detail}`).join(" / ")}
         </span>
       )}
@@ -70,10 +70,10 @@ export function AutomationMonitor() {
   const sortedSlots = [...today.slots].sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
 
   return (
-    <section className="space-y-3">
-      <div className="rounded-2xl border border-hairline bg-ink-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+    <section className="min-w-0 space-y-3">
+      <div className="min-w-0 rounded-2xl border border-hairline bg-ink-card p-5">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-sm font-semibold text-white">X 自動運転</p>
             <p className="mt-0.5 text-[10px] text-sub">Creator: {X_AUTOMATION_PERSONA_NAME}</p>
           </div>
@@ -82,9 +82,9 @@ export function AutomationMonitor() {
           </Link>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div className="mt-4 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-5">
           <SummaryItem label="自動運転" value={effective ? "稼働可能" : "要設定"} tone={effective ? "gain" : "loss"} icon={effective ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />} />
-          <div className={`rounded-xl border px-3 py-2.5 ${MODE_STYLE[mode]}`}>
+          <div className={`min-w-0 rounded-xl border px-3 py-2.5 ${MODE_STYLE[mode]}`}>
             <p className="text-[10px] opacity-75">運用モード</p>
             <p className="mt-1 text-sm font-bold uppercase">{mode}</p>
           </div>
@@ -93,7 +93,7 @@ export function AutomationMonitor() {
           <SummaryItem label="確認待ち" value={`${approvalQueue.length}件`} tone={approvalQueue.length ? "brand" : "default"} />
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+        <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 text-[11px]">
           <span className={`inline-flex items-center gap-1 ${effective ? "text-gain" : "text-loss"}`}>
             {effective ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
             {effective ? "自動投稿の稼働条件OK" : "自動予約は止まっています"}
@@ -102,13 +102,13 @@ export function AutomationMonitor() {
         </div>
 
         {blockers.length > 0 && (
-          <div className="mt-4 rounded-xl border border-loss/30 bg-loss/10 p-4">
+          <div className="mt-4 min-w-0 rounded-xl border border-loss/30 bg-loss/10 p-4">
             <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-loss"><AlertTriangle className="h-4 w-4" />自動投稿を動かすために直すこと</p>
             <ol className="mt-3 space-y-2">
               {blockers.map((blocker, index) => (
-                <li key={blocker.label} className="flex gap-2 text-xs leading-relaxed">
+                <li key={blocker.label} className="flex min-w-0 gap-2 text-xs leading-relaxed">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-loss/20 font-semibold text-loss">{index + 1}</span>
-                  <span><span className="font-semibold text-white">{blocker.label}</span><span className="mt-0.5 block text-sub">{blocker.howToFix}</span></span>
+                  <span className="min-w-0 break-words [overflow-wrap:anywhere]"><span className="font-semibold text-white">{blocker.label}</span><span className="mt-0.5 block text-sub">{blocker.howToFix}</span></span>
                 </li>
               ))}
             </ol>
@@ -116,18 +116,18 @@ export function AutomationMonitor() {
         )}
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <div className="rounded-2xl border border-hairline bg-ink-card p-5">
-          <div className="flex items-baseline justify-between gap-3">
+      <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+        <div className="min-w-0 rounded-2xl border border-hairline bg-ink-card p-5">
+          <div className="flex min-w-0 items-baseline justify-between gap-3">
             <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-white"><CalendarClock className="h-4 w-4 text-sub" />今日のX</p>
             <p className="text-xs tabular-nums text-sub">予約 {today.scheduled} / {today.limit}件</p>
           </div>
           {sortedSlots.length === 0 ? (
             <p className="mt-3 text-xs text-sub">本日の予約はまだありません。投稿案の生成は毎朝7:10（JST）に走ります。</p>
           ) : (
-            <ol className="mt-3 divide-y divide-hairline">
+            <ol className="mt-3 min-w-0 divide-y divide-hairline">
               {sortedSlots.map((slot) => (
-                <li key={slot.draftId} className="flex items-start gap-3 py-2.5 text-xs first:pt-0 last:pb-0">
+                <li key={slot.draftId} className="flex min-w-0 items-start gap-3 py-2.5 text-xs first:pt-0 last:pb-0">
                   <span className="shrink-0 rounded-md bg-white/[0.05] px-2 py-1 tabular-nums font-semibold text-white">{timeJst(slot.scheduledAt)}</span>
                   <span className="min-w-0 flex-1 truncate py-1 text-sub">{slot.text}</span>
                   <span className="shrink-0 py-1 text-[10px] text-sub">{slot.status}</span>
@@ -137,20 +137,20 @@ export function AutomationMonitor() {
           )}
         </div>
 
-        <div className="rounded-2xl border border-hairline bg-ink-card p-5">
-          <div className="flex items-baseline justify-between gap-3">
+        <div className="min-w-0 rounded-2xl border border-hairline bg-ink-card p-5">
+          <div className="flex min-w-0 items-baseline justify-between gap-3">
             <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-white"><Inbox className="h-4 w-4 text-sub" />確認待ち</p>
             <p className="text-xs tabular-nums text-sub">{approvalQueue.length}件</p>
           </div>
           {approvalQueue.length === 0 ? (
             <div className="mt-3 flex items-center gap-2 rounded-xl bg-gain/5 px-3 py-3 text-xs text-gain"><CheckCircle2 className="h-4 w-4 shrink-0" />現在、あなたの確認が必要な投稿はありません</div>
           ) : (
-            <ul className="mt-3 space-y-2">
+            <ul className="mt-3 min-w-0 space-y-2">
               {approvalQueue.slice(0, 5).map((entry) => (
-                <li key={entry.draftId} className="text-xs">
-                  <Link href="/note?view=review" className="block rounded-lg px-2 py-1.5 hover:bg-white/[0.04]">
-                    <span className="block truncate text-white">{entry.text}</span>
-                    <span className="mt-0.5 block text-[10px] text-loss/80">{entry.reason}</span>
+                <li key={entry.draftId} className="min-w-0 text-xs">
+                  <Link href="/note?view=review" className="block min-w-0 rounded-lg px-2 py-1.5 hover:bg-white/[0.04]">
+                    <span className="block min-w-0 truncate text-white">{entry.text}</span>
+                    <span className="mt-0.5 block min-w-0 break-words text-[10px] text-loss/80 [overflow-wrap:anywhere]">{entry.reason}</span>
                     <QaBadge entry={entry} />
                   </Link>
                 </li>
@@ -161,9 +161,9 @@ export function AutomationMonitor() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-hairline bg-ink-card p-5">
+      <div className="min-w-0 rounded-2xl border border-hairline bg-ink-card p-5">
         <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-brand" /><p className="text-sm font-semibold text-white">自動改善ループ</p></div>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mt-3 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
           <CompactStat label="Performance Sync" value={formatDateTime(status.improvementLoop.lastPerformanceSyncAt)} />
           <CompactStat label="Nightly Growth Review" value={formatDateTime(status.improvementLoop.lastNightlyGrowthReviewAt)} />
           <CompactStat label="Growth confidence" value={status.improvementLoop.growthConfidence ?? "未計測"} />
@@ -185,9 +185,9 @@ export function AutomationMonitor() {
 
 function SummaryItem({ label, value, tone = "default", icon }: { label: string; value: string; tone?: "default" | "gain" | "loss" | "brand"; icon?: ReactNode }) {
   const toneClass = { default: "border-hairline bg-white/[0.02] text-white", gain: "border-gain/25 bg-gain/10 text-gain", loss: "border-loss/25 bg-loss/10 text-loss", brand: "border-brand/25 bg-brand/10 text-brand" }[tone];
-  return <div className={`rounded-xl border px-3 py-2.5 ${toneClass}`}><p className="text-[10px] text-sub">{label}</p><p className="mt-1 flex items-center gap-1 text-sm font-bold tabular-nums">{icon}{value}</p></div>;
+  return <div className={`min-w-0 rounded-xl border px-3 py-2.5 ${toneClass}`}><p className="text-[10px] text-sub">{label}</p><p className="mt-1 flex min-w-0 items-center gap-1 break-words text-sm font-bold tabular-nums [overflow-wrap:anywhere]">{icon}{value}</p></div>;
 }
 
 function CompactStat({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl bg-white/[0.03] px-3 py-2.5"><p className="text-[10px] text-sub">{label}</p><p className="mt-1 truncate text-xs font-semibold text-white" title={value}>{value}</p></div>;
+  return <div className="min-w-0 rounded-xl bg-white/[0.03] px-3 py-2.5"><p className="text-[10px] text-sub">{label}</p><p className="mt-1 truncate text-xs font-semibold text-white" title={value}>{value}</p></div>;
 }

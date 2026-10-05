@@ -118,6 +118,18 @@ test("content department exposes four daily tabs and keeps settings separate", (
   assert.doesNotMatch(page, /AutomationSettings|BrandEditor|LineProgram|AffiliateManager/);
 });
 
+test("Automation Monitor stays shrinkable and preserves readable review reasons", () => {
+  const monitor = read("components/note/AutomationMonitor.tsx");
+  assert.match(monitor, /<section className="min-w-0 space-y-3">/);
+  assert.match(monitor, /grid min-w-0 gap-3 lg:grid-cols-2/);
+  assert.match(monitor, /<ul className="mt-3 min-w-0 space-y-2">/);
+  assert.match(monitor, /Link href="\/note\?view=review" className="block min-w-0/);
+  assert.match(monitor, /overflow-wrap:anywhere[^\n]+\{entry\.reason\}/);
+  assert.match(monitor, /overflow-wrap:anywhere[^\n]+\{entry\.qaSummary\}/);
+  assert.match(monitor, /overflow-wrap:anywhere[^\n]*">\s*\n\s*\{failed\.map/);
+  assert.match(monitor, /truncate[^\n]+\{entry\.text\}/, "post preview remains intentionally truncated");
+});
+
 test("content settings groups into four sections", () => {
   const settings = read("app/note/settings/page.tsx");
   const labels = [...settings.matchAll(/label: "([^"]+)", description:/g)].map((match) => match[1]);
