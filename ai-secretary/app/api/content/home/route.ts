@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { loadPerformance, loadPublishedContent } from "@/app/lib/note/research/store";
+import { loadGrowthReviews, loadNoteQueue, loadPerformance, loadPublishedContent, loadSocialDrafts } from "@/app/lib/note/research/store";
 import { loadLedger } from "@/app/lib/content/monetization/store";
 import { filterByPeriod, totalRevenue } from "@/app/lib/content/monetization/metrics";
 import { loadRecommendations } from "@/app/lib/content/learning/store";
 import { loadSessions } from "@/app/lib/content/note-studio/store";
+import { buildContentDashboardGrowth } from "@/app/lib/note/contentDashboardGrowth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +14,15 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(): Promise<NextResponse> {
   try {
-    const [published, performance, ledger, recommendations, sessions] = await Promise.all([
+    const [published, performance, ledger, recommendations, sessions, queue, socialDrafts, growthReviews] = await Promise.all([
       loadPublishedContent(),
       loadPerformance(),
       loadLedger(),
       loadRecommendations(),
       loadSessions(),
+      loadNoteQueue(),
+      loadSocialDrafts(),
+      loadGrowthReviews(),
     ]);
 
     const weekPublished = filterByPeriod(
@@ -53,6 +57,11 @@ export async function GET(): Promise<NextResponse> {
       nextActions,
       pendingRecommendations: pendingRecommendations.length,
       draftSessions: draftSessions.length,
+      queue: {
+        scheduled: socialDrafts.filter((item) => item.status === "queued" || item.status === "scheduled").length + queue.articles.filter((item) => item.status === "queued").length,
+        review: socialDrafts.filter((item) => item.status === "draft" || item.status === "approved").length + queue.articles.filter((item) => item.status === "draft" || item.status === "approved").length,
+      },
+      growth: buildContentDashboardGrowth(growthReviews[0]),
     });
   } catch (error) {
     console.error("[api/content/home] GET失敗:", error);
