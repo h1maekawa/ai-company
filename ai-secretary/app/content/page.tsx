@@ -20,7 +20,7 @@ type HomeData = {
     impressions7d: number | null;
     impressions30d: number | null;
     bestContent: { contentId: string; impressions: number | null } | null;
-    evidenceCount: number;
+    evidenceCount: number | null;
     confidence: "LOW" | "MEDIUM" | "HIGH" | null;
     observations: string[];
     nextExperiment: string | null;
@@ -111,7 +111,7 @@ function ActionLink({ href, label, icon }: { href:string; label:string; icon:Rea
 function GrowthCard({ data, loading, failed }: { data:HomeData["growth"] | null; loading:boolean; failed:boolean }) {
   const status = failed || !data ? "UNAVAILABLE" : data.status;
   return <section className="rounded-2xl border border-hairline bg-ink-card p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs text-sub">X Growth</p><h2 className="mt-1 text-base font-semibold text-white">Growth Intelligence</h2></div><span className="rounded-full border border-hairline px-2.5 py-1 text-[11px] text-sub">{loading ? "読込中" : status}</span></div>
-    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4"><Stat label="7日 Impressions" value={loading ? "…" : data?.impressions7d?.toLocaleString() ?? "—"} /><Stat label="30日 Impressions" value={loading ? "…" : data?.impressions30d?.toLocaleString() ?? "—"} /><Stat label="Comparable Evidence" value={loading ? "…" : data ? data.evidenceCount : "—"} suffix={data ? " samples" : undefined} /><Stat label="Confidence" value={loading ? "…" : data?.confidence ?? "—"} /></div>
+    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4"><Stat label="7日 Impressions" value={loading ? "…" : data?.impressions7d?.toLocaleString() ?? "—"} /><Stat label="30日 Impressions" value={loading ? "…" : data?.impressions30d?.toLocaleString() ?? "—"} /><Stat label="Comparable Evidence" value={loading ? "…" : data?.evidenceCount ?? "—"} suffix={data?.evidenceCount != null ? " samples" : undefined} /><Stat label="Confidence" value={loading ? "…" : data?.confidence ?? "—"} /></div>
     <div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-hairline bg-white/[0.02] p-3"><p className="text-[11px] text-sub">Best Content</p><p className="mt-1 break-all text-sm text-white">{data?.bestContent?.contentId ?? "—"}</p><p className="mt-1 text-xs text-sub">Impressions {data?.bestContent?.impressions?.toLocaleString() ?? "—"}</p></div><div className="rounded-xl border border-hairline bg-white/[0.02] p-3"><p className="text-[11px] text-sub">Next Experiment</p><p className="mt-1 text-sm text-white">{status === "AVAILABLE" ? data?.nextExperiment ?? "—" : status}</p></div></div>
     <div className="mt-3 rounded-xl border border-hairline bg-white/[0.02] p-3"><p className="text-[11px] text-sub">Observations</p>{status === "AVAILABLE" && data?.observations.length ? <ul className="mt-1 space-y-1 text-sm text-white">{data.observations.map((item)=><li key={item}>・{item}（相関・仮説。因果は未確認）</li>)}</ul> : <p className="mt-1 text-sm text-sub">{status}</p>}</div>
     <Link href="/note?view=results" className="mt-4 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-brand">成果を見る<ArrowRight className="h-4 w-4" /></Link>

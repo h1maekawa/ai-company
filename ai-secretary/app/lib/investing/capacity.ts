@@ -128,7 +128,8 @@ async function fetchFromFlowPlus(month: string): Promise<Capacity | null> {
         requiredScope: response.status === 403 ? requiredScope ?? "investment-capacity:read" : requiredScope,
         kind,
       };
-      console.error("[investing/capacity] Flow+ API error", {
+      const log = response.status === 401 || response.status === 403 ? console.warn : console.error;
+      log("[investing/capacity] Flow+ API unavailable", {
         status: response.status,
         requiredScope: lastFailure.requiredScope,
       });

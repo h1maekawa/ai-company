@@ -158,7 +158,7 @@ test("investment capacity reports 401, required scope on 403, timeout, and never
       "../vault": { getVaultFile: async () => { throw new Error("not used"); }, saveVaultFile: async () => undefined },
     }, {
       process: { env: { FLOWPLUS_BASE_URL: "https://flow.example", FLOWPLUS_API_SECRET: "capacity-secret" } },
-      console: { ...console, error: (...args) => logs.push(args) },
+      console: { ...console, error: (...args) => logs.push(args), warn: (...args) => logs.push(args) },
       fetch: async (_url, options) => {
         assert.equal(options.headers["x-import-secret"], "capacity-secret");
         assert.equal(options.cache, "no-store");
