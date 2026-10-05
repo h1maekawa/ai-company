@@ -59,7 +59,13 @@ function currentMonthJst(): string {
 }
 
 /** 接続に失敗したときの理由（シークレットは絶対に含めない） */
-export type CapacityFailure = { reason: string; hint: string };
+export type CapacityFailure = {
+  reason: string;
+  hint: string;
+  status: number | null;
+  requiredScope: string | null;
+  kind: "not_configured" | "authentication" | "authorization" | "upstream" | "timeout" | "network";
+};
 
 let lastFailure: CapacityFailure | null = null;
 
@@ -75,6 +81,9 @@ async function fetchFromFlowPlus(month: string): Promise<Capacity | null> {
     lastFailure = {
       reason: "未設定",
       hint: "FLOWPLUS_BASE_URL と FLOWPLUS_API_SECRET を設定して再デプロイしてください",
+      status: null,
+      requiredScope: null,
+      kind: "not_configured",
     };
     return null;
   }
@@ -85,21 +94,44 @@ async function fetchFromFlowPlus(month: string): Promise<Capacity | null> {
     const response = await fetch(url, {
       headers: { "x-import-secret": secret.trim() },
       cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
     });
 
     if (!response.ok) {
       const body = await response.text();
-      // 原因の切り分けに必要な情報だけを残す（シークレットは出さない）
+      let requiredScope: string | null = null;
+      try {
+        const parsed = JSON.parse(body) as { required_scope?: unknown; requiredScope?: unknown };
+        const candidate = parsed.required_scope ?? parsed.requiredScope;
+        if (typeof candidate === "string" && /^[a-z0-9:_-]{1,100}$/i.test(candidate)) requiredScope = candidate;
+      } catch {
+        const match = body.match(/required_scope[=:]\s*([a-z0-9:_-]{1,100})/i);
+        requiredScope = match?.[1] ?? null;
+      }
+      const kind = response.status === 401 ? "authentication" : response.status === 403 ? "authorization" : "upstream";
       lastFailure = {
-        reason: `家計簿APIが ${response.status} を返しました`,
+        reason:
+          response.status === 401
+            ? "Flow+の認証を確認できません"
+            : response.status === 403
+              ? "Flow+に投資可能額を読む権限がありません"
+              : `Flow+ APIが ${response.status} を返しました`,
         hint:
           response.status === 401
-            ? "連携キーが一致していません。家計簿の設定→連携タブで発行し直してください"
+            ? "Flow+側で連携トークンの認証状態を確認してください"
+            : response.status === 403
+              ? `Flow+側で連携トークンに ${requiredScope ?? "investment-capacity:read"} scope を付与してください`
             : response.status === 404
               ? "URLが違う可能性があります。FLOWPLUS_BASE_URL を確認してください"
-              : body.slice(0, 120),
+              : "Flow+側の投資可能額APIを確認してください",
+        status: response.status,
+        requiredScope: response.status === 403 ? requiredScope ?? "investment-capacity:read" : requiredScope,
+        kind,
       };
-      console.error("[investing/capacity] 家計簿APIがエラー:", response.status, body.slice(0, 200));
+      console.error("[investing/capacity] Flow+ API error", {
+        status: response.status,
+        requiredScope: lastFailure.requiredScope,
+      });
       return null;
     }
 
@@ -107,12 +139,16 @@ async function fetchFromFlowPlus(month: string): Promise<Capacity | null> {
     lastFailure = null;
     return { ...data, source: "flow_plus" };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const errorName = typeof error === "object" && error !== null && "name" in error ? String(error.name) : "";
+    const timedOut = errorName === "TimeoutError" || errorName === "AbortError";
     lastFailure = {
-      reason: "家計簿アプリへ接続できませんでした",
-      hint: `URLを確認してください（${new URL(url).origin}）: ${message.slice(0, 80)}`,
+      reason: timedOut ? "Flow+の応答がタイムアウトしました" : "Flow+へ接続できませんでした",
+      hint: timedOut ? "Flow+の稼働状況を確認してから再読み込みしてください" : `Flow+の稼働状況を確認してください（${new URL(url).origin}）`,
+      status: null,
+      requiredScope: null,
+      kind: timedOut ? "timeout" : "network",
     };
-    console.error("[investing/capacity] 接続失敗:", message);
+    console.error("[investing/capacity] Flow+ request failed", { kind: lastFailure.kind });
     return null;
   }
 }
@@ -230,5 +266,7 @@ export async function loadCapacity(
   }
   if (fetched) return fetched;
 
+  // Flow+が設定済みなら、その失敗を手入力値で隠さない。Flow+をfinance SSOTとして扱う。
+  if (isCapacityConfigured()) return null;
   return loadManual(month);
 }

@@ -11,11 +11,12 @@ import { HoldingsTable } from "@/components/investing/HoldingsTable";
 import { NewsPanel } from "@/components/investing/NewsPanel";
 import { AiSuggestCard } from "@/components/investing/AiSuggestCard";
 import { LearningBriefCard } from "@/components/investing/LearningBriefCard";
+import { CapacityCard } from "@/components/investing/CapacityCard";
 import { IntelligenceTodayPanel } from "@/components/investing/IntelligenceToday";
 import { Skeleton } from "@/components/investing/ui";
 import { FreshnessBadge } from "@/components/ui/Freshness";
 import { formatAsOf, relativeAge } from "@/app/lib/freshness";
-import { useAnalysis, useLearningBrief, useNews, usePortfolio } from "./usePortfolio";
+import { useAnalysis, useCapacity, useLearningBrief, useNews, usePortfolio } from "./usePortfolio";
 
 const SOURCE_LABEL: Record<string, string> = {
   holdings_csv: "楽天証券CSV",
@@ -26,6 +27,7 @@ const SOURCE_LABEL: Record<string, string> = {
 export default function InvestingDashboard() {
   const { data, loading, error } = usePortfolio();
   const analysis = useAnalysis();
+  const capacity = useCapacity();
   const news = useNews();
   const learning = useLearningBrief();
   const [question, setQuestion] = useState("");
@@ -86,6 +88,10 @@ export default function InvestingDashboard() {
       )}
 
       <IntelligenceTodayPanel />
+
+      <section className="mb-4">
+        <CapacityCard {...capacity} />
+      </section>
 
       {/* Investment portfolio facts only. Household totals live in /assets. */}
       <section className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">

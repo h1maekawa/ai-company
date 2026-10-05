@@ -38,16 +38,17 @@ export function CapacityCard({
   if (!capacity) {
     return (
       <Card>
-        <CardHeader title="今月の使えるお金" />
+        <CardHeader title="今月の投資可能額" hint="Flow+ · finance SSOT" />
         <EmptyState
           icon={<Wallet className="h-7 w-7" />}
-          title={failure?.reason ?? (configured ? "家計簿から取得できませんでした" : "家計簿と未連携です")}
+          title={failure?.reason ?? (configured ? "Flow+から取得できませんでした" : "Flow+と未連携です")}
           description={
             failure?.hint ??
             (configured
-              ? "家計簿アプリへ接続できていません。連携シークレットとURLをご確認ください。"
+              ? "Flow+から投資可能額を取得できていません。"
               : "FLOWPLUS_BASE_URL と FLOWPLUS_API_SECRET を設定すると、口座残高と予算から自動で算出されます。")
           }
+          action={failure?.requiredScope ? <p className="text-xs text-amber-200">必要な scope: <code className="rounded bg-amber-500/10 px-1.5 py-0.5">{failure.requiredScope}</code></p> : undefined}
         />
       </Card>
     );

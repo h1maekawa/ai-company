@@ -143,6 +143,73 @@ test("Flow client forwards server token and marks cached values stale on outage"
   }
 });
 
+test("investment capacity reports 401, required scope on 403, timeout, and never logs the token", async () => {
+  const fixture = {
+    target_month: "2026-10", available_cash: 100000, confirmed_income: 300000,
+    expected_income: 0, confirmed_expenses: 100000, pending_card_amount: 0,
+    fixed_expenses: 50000, scheduled_expenses: 0, already_invested: 0,
+    personal_cash_floor: 50000, investable_amount: 100000,
+    calculated_at: "2026-10-05T00:00:00Z", data_freshness: "current",
+    confidence: "high", missing_data: [], breakdown: [],
+  };
+  const run = async ({ status = 200, body = "", thrown = null } = {}) => {
+    const logs = [];
+    const code = load("app/lib/investing/capacity.ts", {
+      "../vault": { getVaultFile: async () => { throw new Error("not used"); }, saveVaultFile: async () => undefined },
+    }, {
+      process: { env: { FLOWPLUS_BASE_URL: "https://flow.example", FLOWPLUS_API_SECRET: "capacity-secret" } },
+      console: { ...console, error: (...args) => logs.push(args) },
+      fetch: async (_url, options) => {
+        assert.equal(options.headers["x-import-secret"], "capacity-secret");
+        assert.equal(options.cache, "no-store");
+        assert.ok(options.signal);
+        if (thrown) throw thrown;
+        return { ok: status === 200, status, text: async () => body, json: async () => fixture };
+      },
+    });
+    const capacity = await code.loadCapacity("2026-10", { persist: false });
+    assert.doesNotMatch(JSON.stringify(logs), /capacity-secret/);
+    return { capacity, failure: code.getLastFailure() };
+  };
+
+  const ok = await run();
+  assert.equal(ok.capacity.investable_amount, 100000);
+  assert.equal(ok.failure, null);
+
+  const unauthorized = await run({ status: 401, body: '{"error":"unauthorized"}' });
+  assert.equal(unauthorized.capacity, null);
+  assert.equal(unauthorized.failure.kind, "authentication");
+  assert.equal(unauthorized.failure.status, 401);
+
+  const forbidden = await run({ status: 403, body: '{"required_scope":"investment-capacity:read"}' });
+  assert.equal(forbidden.capacity, null);
+  assert.equal(forbidden.failure.kind, "authorization");
+  assert.equal(forbidden.failure.requiredScope, "investment-capacity:read");
+  assert.match(forbidden.failure.hint, /investment-capacity:read/);
+
+  const timeoutError = new Error("request timeout");
+  timeoutError.name = "TimeoutError";
+  const timeout = await run({ thrown: timeoutError });
+  assert.equal(timeout.capacity, null);
+  assert.equal(timeout.failure.kind, "timeout");
+});
+
+test("capacity failure is isolated from holdings, intelligence, news, and learning", () => {
+  const portfolioRoute = fs.readFileSync("app/api/investing/portfolio/route.ts", "utf8");
+  const dashboard = fs.readFileSync("app/investing/page.tsx", "utf8");
+  const hook = fs.readFileSync("app/investing/usePortfolio.ts", "utf8");
+  const card = fs.readFileSync("components/investing/CapacityCard.tsx", "utf8");
+  assert.doesNotMatch(portfolioRoute, /loadCapacity|investing\/capacity/);
+  assert.match(dashboard, /useCapacity\(\)/);
+  assert.match(dashboard, /usePortfolio\(\)/);
+  assert.match(dashboard, /useNews\(\)/);
+  assert.match(dashboard, /IntelligenceTodayPanel/);
+  assert.match(dashboard, /LearningBriefCard/);
+  assert.match(hook, /fetch\("\/api\/investing\/capacity"\)/);
+  assert.match(card, /必要な scope/);
+  assert.match(card, /failure\.requiredScope/);
+});
+
 test("signed duplicate card event sends one notification through durable claim", async () => {
   const previous = { secret: process.env.FLOW_EVENT_SECRET, channel: process.env.FLOW_EVENT_NOTIFY_CHANNEL };
   process.env.FLOW_EVENT_SECRET = "test-only-secret";
