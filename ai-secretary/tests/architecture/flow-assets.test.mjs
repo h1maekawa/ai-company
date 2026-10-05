@@ -152,15 +152,16 @@ test("investment capacity reports 401, required scope on 403, timeout, and never
     calculated_at: "2026-10-05T00:00:00Z", data_freshness: "current",
     confidence: "high", missing_data: [], breakdown: [],
   };
-  const run = async ({ status = 200, body = "", thrown = null } = {}) => {
+  const run = async ({ status = 200, body = "", thrown = null, env = { FLOWPLUS_BASE_URL: "https://flow.example", FLOWPLUS_API_SECRET: "capacity-secret" }, expectedSecret = "capacity-secret", expectedOrigin = "https://flow.example" } = {}) => {
     const logs = [];
     const code = load("app/lib/investing/capacity.ts", {
       "../vault": { getVaultFile: async () => { throw new Error("not used"); }, saveVaultFile: async () => undefined },
     }, {
-      process: { env: { FLOWPLUS_BASE_URL: "https://flow.example", FLOWPLUS_API_SECRET: "capacity-secret" } },
+      process: { env },
       console: { ...console, error: (...args) => logs.push(args), warn: (...args) => logs.push(args) },
       fetch: async (_url, options) => {
-        assert.equal(options.headers["x-import-secret"], "capacity-secret");
+        assert.match(String(_url), new RegExp(`^${expectedOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`));
+        assert.equal(options.headers["x-import-secret"], expectedSecret);
         assert.equal(options.cache, "no-store");
         assert.ok(options.signal);
         if (thrown) throw thrown;
@@ -175,6 +176,18 @@ test("investment capacity reports 401, required scope on 403, timeout, and never
   const ok = await run();
   assert.equal(ok.capacity.investable_amount, 100000);
   assert.equal(ok.failure, null);
+
+  const canonical = await run({
+    env: {
+      FLOW_FINANCE_BASE_URL: "https://finance.example",
+      FLOW_FINANCE_INTEGRATION_TOKEN: "finance-token",
+      FLOWPLUS_BASE_URL: "https://legacy.example",
+      FLOWPLUS_API_SECRET: "legacy-token",
+    },
+    expectedSecret: "finance-token",
+    expectedOrigin: "https://finance.example",
+  });
+  assert.equal(canonical.capacity.investable_amount, 100000);
 
   const unauthorized = await run({ status: 401, body: '{"error":"unauthorized"}' });
   assert.equal(unauthorized.capacity, null);

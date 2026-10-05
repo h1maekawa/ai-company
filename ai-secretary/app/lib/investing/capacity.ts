@@ -4,9 +4,8 @@
  * 金額はすべて家計簿側で決定的に計算されたものをそのまま使う。
  * こちら側で推定や補完はしない（取得できなければ「未取得」と表示する）。
  *
- * 必要な環境変数:
- *   FLOWPLUS_BASE_URL   … 家計簿アプリのURL（例 https://household-finance-smoky.vercel.app）
- *   FLOWPLUS_API_SECRET … 家計簿アプリで発行した連携シークレット
+ * 接続情報は他のFlow+ finance APIと同じ正規の環境変数を使う。
+ * 旧変数はローカル互換のfallbackとしてのみ残す。
  */
 
 import { getVaultFile, saveVaultFile } from "../vault";
@@ -46,8 +45,18 @@ export type Capacity = {
   source: "flow_plus" | "manual";
 };
 
+function capacityConnection(): { base: string; secret: string } | null {
+  const financeBase = process.env.FLOW_FINANCE_BASE_URL;
+  const financeSecret = process.env.FLOW_FINANCE_INTEGRATION_TOKEN;
+  if (financeBase && financeSecret) return { base: financeBase, secret: financeSecret };
+
+  const legacyBase = process.env.FLOWPLUS_BASE_URL;
+  const legacySecret = process.env.FLOWPLUS_API_SECRET;
+  return legacyBase && legacySecret ? { base: legacyBase, secret: legacySecret } : null;
+}
+
 export function isCapacityConfigured(): boolean {
-  return Boolean(process.env.FLOWPLUS_BASE_URL && process.env.FLOWPLUS_API_SECRET);
+  return capacityConnection() !== null;
 }
 
 function currentMonthJst(): string {
@@ -75,18 +84,18 @@ export function getLastFailure(): CapacityFailure | null {
 
 /** 家計簿アプリから取得する。到達できなければ null（理由は lastFailure に残す） */
 async function fetchFromFlowPlus(month: string): Promise<Capacity | null> {
-  const base = process.env.FLOWPLUS_BASE_URL;
-  const secret = process.env.FLOWPLUS_API_SECRET;
-  if (!base || !secret) {
+  const connection = capacityConnection();
+  if (!connection) {
     lastFailure = {
       reason: "未設定",
-      hint: "FLOWPLUS_BASE_URL と FLOWPLUS_API_SECRET を設定して再デプロイしてください",
+      hint: "Flow+ finance連携の設定を確認してください",
       status: null,
       requiredScope: null,
       kind: "not_configured",
     };
     return null;
   }
+  const { base, secret } = connection;
 
   const url = `${base.replace(/\/$/, "")}/api/integrations/investment-capacity?month=${month}`;
 
