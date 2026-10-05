@@ -152,6 +152,21 @@ test("creator department exposes the canonical content workflow", () => {
   }
 });
 
+test("Home exposes the Content executive dashboard without adding a fifth top navigation item", () => {
+  const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
+  const dashboard = read("app/content/page.tsx");
+  const homeApi = read("app/api/content/home/route.ts");
+  assert.match(overview, /id === "creator" \? item\.detailHref : item\.href/);
+  assert.match(overview, /事業ダッシュボード/);
+  for (const href of ["/note?view=create", "/note?view=review", "/note?view=results", "/note/settings"]) assert.ok(dashboard.includes(`href="${href}"`), href);
+  for (const label of ["経営ダッシュボード", "Automation & Queue", "Growth Intelligence", "Comparable Evidence", "Pipeline", "AIの状態"]) assert.match(dashboard, new RegExp(label));
+  assert.match(dashboard, /INSUFFICIENT_DATA/);
+  assert.doesNotMatch(dashboard, /competitor.*(?:text|excerpt)|textExcerpt/i);
+  assert.match(homeApi, /buildContentDashboardGrowth/);
+  const sidebar = read("components/app-shell/AppSidebar.tsx");
+  assert.doesNotMatch(sidebar, /href="\/content"/);
+});
+
 test("investing shows the five Investment areas and keeps every legacy route in the menu", () => {
   const shell = read("components/investing/Shell.tsx");
   const daily = shell.slice(

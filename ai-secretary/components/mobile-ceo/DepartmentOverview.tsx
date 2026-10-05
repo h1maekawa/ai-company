@@ -83,7 +83,7 @@ export function DepartmentOverview() {
         {STATUS_IDS.map((id) => { const item = DEPARTMENT_NAV_BY_ID[id]; const model = cards.get(id); const status = statusOf(model); return <div key={id} className={`min-w-0 rounded-2xl border bg-slate-900/65 p-3 ${selected === id ? "border-violet-400" : "border-slate-800"}`}>
           <button type="button" onClick={() => setSelected(id)} aria-pressed={selected === id} className="min-h-14 w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300"><span className="block font-semibold text-white"><span aria-hidden>{item.icon}</span> {item.label}</span><span className="mt-2 flex items-center gap-2 text-xs text-slate-300"><span className={`h-2 w-2 rounded-full ${status.tone}`} aria-hidden />{status.label}</span></button>
           <p className="mt-2 truncate text-xs text-slate-400">{model?.currentWork[0] ?? (model?.problems[0] || "活動情報は未取得")}</p>
-          <Link href={item.href} className="mt-3 inline-flex min-h-11 items-center text-xs font-semibold text-violet-200 underline-offset-4 hover:underline">詳細を見る</Link>
+          <Link href={id === "creator" ? item.detailHref : item.href} className="mt-3 inline-flex min-h-11 items-center text-xs font-semibold text-violet-200 underline-offset-4 hover:underline">{id === "creator" ? "事業ダッシュボード" : "詳細を見る"}</Link>
         </div>; })}
       </div>
     </section>
