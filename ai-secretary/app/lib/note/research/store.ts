@@ -61,6 +61,7 @@ export const RESEARCH_PATHS = {
   viewpoints: `${ROOT}/viewpoint-library.md`,
   growthReviews: `${ROOT}/daily-growth-reviews.md`,
   dailyXPlans: `${ROOT}/daily-x-plans.md`,
+  cleanupRuns: `${ROOT}/content-cleanup-runs.md`,
 } as const;
 
 function extractJson<T>(markdown: string): T | null {
@@ -491,6 +492,40 @@ export async function saveSocialDrafts(drafts: SocialDraft[]): Promise<SocialDra
     )
   );
   return drafts;
+}
+
+export type ContentCleanupRun = {
+  id: string;
+  planId: string;
+  status: "PLANNED" | "COMPLETED" | "FAILED";
+  startedAt: string;
+  completedAt?: string;
+  candidateIds: string[];
+  removedIds: string[];
+  retainedCount: number;
+  confirmedByHuman: true;
+  failureReason?: string;
+};
+
+type ContentCleanupRunFile = { runs: ContentCleanupRun[] };
+
+export async function loadContentCleanupRuns(): Promise<ContentCleanupRun[]> {
+  const data = await readJson<ContentCleanupRunFile>(RESEARCH_PATHS.cleanupRuns);
+  return Array.isArray(data?.runs) ? data.runs : [];
+}
+
+export async function appendContentCleanupRun(run: ContentCleanupRun): Promise<void> {
+  const runs = await loadContentCleanupRuns();
+  const next = [run, ...runs.filter((item) => item.id !== run.id)].slice(0, 100);
+  const human = next.slice(0, 30).map((item) =>
+    `- ${item.startedAt} [${item.status}] run=${item.id} plan=${item.planId} candidates=${item.candidateIds.length} removed=${item.removedIds.length}`
+  ).join("\n");
+  await write(RESEARCH_PATHS.cleanupRuns, buildDoc(
+    "content_cleanup_runs",
+    "Content cleanupの監査記録です。本文やSecretは保存せず、対象IDと結果だけを保持します。",
+    human || "（まだありません）",
+    { runs: next }
+  ));
 }
 
 /* ─── note公開キュー ───────────────────────── */

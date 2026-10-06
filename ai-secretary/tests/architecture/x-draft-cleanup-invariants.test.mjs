@@ -18,6 +18,10 @@ test("X draft cleanup mutation requires human confirmation, same origin, idempot
 test("X draft cleanup only touches SocialDraft[] and never cancels Buffer or edits history", () => {
   assert.match(route, /withLock\("daily-x-publish"/);
   assert.match(route, /bufferCancelled: false/);
+  assert.match(route, /appendContentCleanupRun/);
+  assert.match(route, /loadDailyXPlans/);
+  assert.match(route, /loadPerformance/);
+  assert.match(route, /loadRevenueEntries/);
   for (const forbidden of [/buffer\/client|deleteBufferPost|cancel.*Buffer\(/i, /savePublishingHistory|saveResearchInbox|saveClusters|savePerformance|saveGrowthReviews|saveRevenue/, /saveExecutionState/]) assert.doesNotMatch(route, forbidden);
   assert.doesNotMatch(route, /console\.[a-z]+\([^)]*\.text/, "must not log draft bodies");
   const lib = read("app/lib/note/maintenance/draftCleanup.ts");
