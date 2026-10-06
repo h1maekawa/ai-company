@@ -524,6 +524,10 @@ export type SocialDraft = {
   similarTo?: string;
 
   status: SocialDraftStatus;
+  /** 人間が保持指定した下書きは、cleanup候補から常に除外する。 */
+  humanKeep?: boolean;
+  /** 保持期限前でも安全に整理できることを示す明示的な分類。 */
+  cleanupDisposition?: "duplicate" | "superseded" | "testArtifact" | "legacy_review_only";
   scheduledAt?: string;
   bufferPostId?: string;
   /** Buffer公開後にX APIの本文・時刻照合で解決する */

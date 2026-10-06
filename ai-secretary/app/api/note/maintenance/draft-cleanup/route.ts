@@ -1,11 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { loadSocialDrafts, saveSocialDrafts } from "@/app/lib/note/research/store";
+import {
+  appendContentCleanupRun, loadDailyXPlans, loadHistoryFile, loadPerformance,
+  loadSocialDrafts, saveSocialDrafts,
+} from "@/app/lib/note/research/store";
+import { loadRevenueEntries } from "@/app/lib/company/revenueStore";
+import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
 import { withLock } from "@/app/lib/note/publishing/queue";
 import { applyDraftCleanup, planDraftCleanup } from "@/app/lib/note/maintenance/draftCleanup";
 import { isSameOriginMutation } from "@/app/lib/company/execution/requestProtection";
 import { getExecutionStore } from "@/app/lib/company/execution/store";
 
 export const dynamic = "force-dynamic";
+
+async function cleanupInput(now = new Date()) {
+  const [drafts, plans, history, performance, revenue] = await Promise.all([
+    loadSocialDrafts(), loadDailyXPlans(), loadHistoryFile(), loadPerformance(), loadRevenueEntries(),
+  ]);
+  const today = tokyoDateKey(now);
+  return {
+    drafts,
+    options: {
+      now,
+      references: {
+        currentPlanDraftIds: plans.filter((plan) => plan.date === today).flatMap((plan) => plan.slots.map((slot) => slot.draftId).filter((id): id is string => Boolean(id))),
+        historyDraftIds: history.entries.flatMap((entry) => [entry.contentId, entry.draftId].filter((id): id is string => Boolean(id))),
+        performanceContentIds: performance.records.map((record) => record.contentId),
+        revenueContentIds: revenue.map((entry) => entry.contentId).filter((id): id is string => Boolean(id)),
+      },
+    },
+  };
+}
 
 /**
  * 旧X下書きの一回限りの整理（Human-confirmed maintenance）。
@@ -19,7 +43,8 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(): Promise<NextResponse> {
   try {
-    const plan = planDraftCleanup(await loadSocialDrafts());
+    const { drafts, options } = await cleanupInput();
+    const plan = planDraftCleanup(drafts, options);
     return NextResponse.json({ dryRun: true, ...plan });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "DRY_RUN_FAILED" }, { status: 500 });
@@ -41,13 +66,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const result = await withLock("daily-x-publish", async () => {
-      const drafts = await loadSocialDrafts();
-      const plan = planDraftCleanup(drafts);
+      const { drafts, options } = await cleanupInput();
+      const plan = planDraftCleanup(drafts, options);
       // dry-run後に下書きが増減していたら、確認していない下書きを消さないよう中止する
       if (plan.planId !== body.planId) return { error: "PLAN_CHANGED_RERUN_DRY_RUN" as const, planId: plan.planId };
-      if (plan.targets.length) await saveSocialDrafts(applyDraftCleanup(drafts, plan));
+      const runId = `cleanup-${Date.now().toString(36)}-${plan.planId}`;
+      const startedAt = new Date().toISOString();
+      await appendContentCleanupRun({ id: runId, planId: plan.planId, status: "PLANNED", startedAt, candidateIds: plan.targets.map((item) => item.id), removedIds: [], retainedCount: plan.retained.length, confirmedByHuman: true });
+      try {
+        if (plan.targets.length) await saveSocialDrafts(applyDraftCleanup(drafts, plan));
+        await appendContentCleanupRun({ id: runId, planId: plan.planId, status: "COMPLETED", startedAt, completedAt: new Date().toISOString(), candidateIds: plan.targets.map((item) => item.id), removedIds: plan.targets.map((item) => item.id), retainedCount: plan.retained.length, confirmedByHuman: true });
+      } catch (error) {
+        await appendContentCleanupRun({ id: runId, planId: plan.planId, status: "FAILED", startedAt, completedAt: new Date().toISOString(), candidateIds: plan.targets.map((item) => item.id), removedIds: [], retainedCount: plan.retained.length, confirmedByHuman: true, failureReason: error instanceof Error ? error.name : "CLEANUP_FAILED" }).catch(() => undefined);
+        throw error;
+      }
       console.info("[x-draft-cleanup] removed", JSON.stringify(plan.targets));
-      return { dryRun: false, removed: plan.targets, before: plan.before, after: plan.after, retainedLinked: plan.retainedLinked, bufferCancelled: false };
+      return { dryRun: false, cleanupRunId: runId, removed: plan.targets, before: plan.before, after: plan.after, retained: plan.retained, bufferCancelled: false };
     });
     if (!result) return NextResponse.json({ error: "X_DAILY_AUTOMATION_RUNNING" }, { status: 409 });
     if ("error" in result) return NextResponse.json({ error: result.error, planId: result.planId }, { status: 409 });

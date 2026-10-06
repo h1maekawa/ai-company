@@ -10,7 +10,7 @@ const LABELS: Array<[keyof DraftCleanupPlan["before"], string]> = [
 
 /**
  * 旧X下書きの整理（1回限りのメンテナンス）。まずdry-runで件数とidを確認し、その内容を人間が承認したときだけ実行する。
- * Buffer予約・公開済み・Research・Performanceは変更しない。
+ * Buffer予約・公開済み・current plan・参照中のPerformance/Revenue/Knowledgeは変更しない。
  */
 export function DraftCleanup() {
   const [plan, setPlan] = useState<DraftCleanupPlan | null>(null);
@@ -40,12 +40,12 @@ export function DraftCleanup() {
 
   return (
     <div className="space-y-3 text-sm">
-      <p className="text-[11px] leading-relaxed text-sub">実行前に X Daily Automation を停止してください。queued / scheduled / published とBuffer紐付けのある下書きは削除しません。</p>
+      <p className="text-[11px] leading-relaxed text-sub">実行前に X Daily Automation を停止してください。公開・予約・外部紐付け・current plan・実績等から参照中の下書きは削除しません。</p>
       <button type="button" disabled={busy} onClick={() => void dryRun()} className="min-h-11 rounded-xl border border-hairline px-4 text-xs">dry-run（件数を確認）</button>
       {plan ? (
         <div className="space-y-2 rounded-xl border border-hairline p-3">
           <dl className="grid grid-cols-3 gap-2 text-xs">{LABELS.map(([key, label]) => <div key={key}><dt className="text-sub">{label}</dt><dd className="font-semibold">{plan.before[key]} → {plan.after[key]}</dd></div>)}</dl>
-          <p className="text-xs">削除対象 {plan.targets.length}件 / 外部紐付けのため保持 {plan.retainedLinked.length}件</p>
+          <p className="text-xs">削除対象 {plan.targets.length}件 / 保護条件により保持 {plan.retained.length}件</p>
           <details><summary className="min-h-11 cursor-pointer py-2 text-xs text-sub">対象ID</summary><ul className="max-h-40 overflow-y-auto text-[11px] text-sub">{plan.targets.map((item) => <li key={item.id}>{item.id} ({item.status})</li>)}</ul></details>
           <button type="button" disabled={busy || plan.targets.length === 0} onClick={() => void execute()} className="min-h-11 w-full rounded-xl bg-rose-800 text-xs font-semibold text-white disabled:opacity-50">人間として確認し、{plan.targets.length}件を削除</button>
         </div>

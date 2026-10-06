@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const cleanup = require(path.join(process.env.QA_DIST, "out/app/lib/note/maintenance/draftCleanup.js"));
 
-const draft = (id, status, extra = {}) => ({ id, status, text: `本文${id}`, xAccountId: "a", purpose: "growth", genreId: "g", urls: [], needsDisclosure: false, ...extra });
+const draft = (id, status, extra = {}) => ({ id, status, text: `本文${id}`, xAccountId: "a", purpose: "growth", genreId: "g", urls: [], needsDisclosure: false, createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z", ...extra });
 const fixture = () => [
   draft("d1", "draft"), draft("d2", "approved"), draft("d3", "failed"), draft("d4", "discarded"),
   draft("q1", "queued", { bufferPostId: "b1" }), draft("s1", "scheduled", { bufferPostId: "b2", scheduledAt: "2026-09-25T00:00:00Z" }),
@@ -14,35 +14,54 @@ const fixture = () => [
 ];
 
 test("draft / approved / failed / discarded だけが削除対象。queued / scheduled / published は保持", () => {
-  const plan = cleanup.planDraftCleanup(fixture());
+  const plan = cleanup.planDraftCleanup(fixture(), { now: new Date("2026-10-01T00:00:00Z") });
   assert.deepEqual(plan.targets.map((t) => t.id), ["d1", "d2", "d3", "d4"]);
   const kept = cleanup.applyDraftCleanup(fixture(), plan).map((d) => d.id);
   assert.deepEqual(kept, ["q1", "s1", "p1", "a-linked"]);
 });
 
 test("対象statusでもBuffer / X紐付けがあれば推測で削除しない", () => {
-  const plan = cleanup.planDraftCleanup(fixture());
-  assert.deepEqual(plan.retainedLinked, [{ id: "a-linked", status: "approved", reason: "bufferPostId" }]);
+  const plan = cleanup.planDraftCleanup(fixture(), { now: new Date("2026-10-01T00:00:00Z") });
+  assert.ok(plan.retained.find((item) => item.id === "a-linked")?.reasons.includes("buffer_link"));
 });
 
 test("dry-runは保存データを変更せず、before件数と対象ID一覧を返す（本文は含めない）", () => {
   const drafts = fixture();
   const snapshot = JSON.stringify(drafts);
-  const plan = cleanup.planDraftCleanup(drafts);
+  const plan = cleanup.planDraftCleanup(drafts, { now: new Date("2026-10-01T00:00:00Z") });
   assert.equal(JSON.stringify(drafts), snapshot);
   assert.equal(plan.before.total, 8);
   assert.equal(plan.before.draft, 1); assert.equal(plan.before.queued, 1); assert.equal(plan.before.scheduled, 1); assert.equal(plan.before.published, 1);
   assert.equal(plan.before.withBufferPostId, 4);
   assert.equal(plan.after.total, 4);
-  assert.deepEqual(plan.targets[0], { id: "d1", status: "draft" });
+  assert.deepEqual(plan.targets[0], { id: "d1", status: "draft", reason: "stale_over_7d" });
   assert.doesNotMatch(JSON.stringify(plan), /本文/);
 });
 
 test("2回連続実行すると2回目は対象0件（idempotent）", () => {
-  const first = cleanup.planDraftCleanup(fixture());
+  const first = cleanup.planDraftCleanup(fixture(), { now: new Date("2026-10-01T00:00:00Z") });
   const after = cleanup.applyDraftCleanup(fixture(), first);
-  const second = cleanup.planDraftCleanup(after);
+  const second = cleanup.planDraftCleanup(after, { now: new Date("2026-10-01T00:00:00Z") });
   assert.equal(second.targets.length, 0);
   assert.deepEqual(cleanup.applyDraftCleanup(after, second), after);
   assert.notEqual(first.planId, second.planId, "下書きが変われば planId も変わる");
+});
+
+test("current plan / performance / history / revenue / Knowledge / humanKeep は削除しない", () => {
+  const drafts = [
+    draft("plan", "draft"), draft("perf", "draft"), draft("history", "draft"), draft("revenue", "draft"),
+    draft("knowledge", "draft", { sourceKnowledgeIds: ["k1"] }), draft("keep", "draft", { humanKeep: true }),
+  ];
+  const plan = cleanup.planDraftCleanup(drafts, { now: new Date("2026-10-01T00:00:00Z"), references: {
+    currentPlanDraftIds: ["plan"], performanceContentIds: ["perf"], historyDraftIds: ["history"], revenueContentIds: ["revenue"],
+  }});
+  assert.equal(plan.targets.length, 0);
+  assert.equal(plan.retained.length, 6);
+});
+
+test("7日以内は候補外、明示duplicateは候補", () => {
+  const recent = draft("recent", "draft", { createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z" });
+  const duplicate = draft("duplicate", "draft", { createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z", cleanupDisposition: "duplicate" });
+  const plan = cleanup.planDraftCleanup([recent, duplicate], { now: new Date("2026-10-01T00:00:00Z") });
+  assert.deepEqual(plan.targets.map((item) => item.id), ["duplicate"]);
 });
