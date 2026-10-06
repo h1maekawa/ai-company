@@ -29,6 +29,7 @@ export type DailyXContext = {
 };
 
 export type SafetyOutcome = { draft: SocialDraft; safe: boolean; reasons: string[] };
+export type PublishEligibilityOutcome = { eligible: boolean; reasons: string[] };
 
 export type DailyXDeps = {
   now(): Date;
@@ -41,6 +42,7 @@ export type DailyXDeps = {
   /** 既存生成（investment bridge を含む）。生成できなければ draft: null */
   generateForSlot(slot: DailyXPlanSlot, cluster: TrendCluster): Promise<{ draft: SocialDraft | null; warning?: string }>;
   safetyGate(draft: SocialDraft): Promise<SafetyOutcome>;
+  publishEligibility(draft: SocialDraft, plan: DailyXPlan, slot: DailyXPlanSlot): Promise<PublishEligibilityOutcome>;
   loadDrafts(): Promise<SocialDraft[]>;
   saveDrafts(drafts: SocialDraft[]): Promise<void>;
   claimStrict(key: string): Promise<ClaimResult>;
@@ -213,6 +215,13 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
       if (!draft) {
         setSlot(slot, { status: "skipped", failureKind: "draft-missing", failureReason: "Draftが見つかりません" });
         await savePlan();
+        continue;
+      }
+      const eligibility = await deps.publishEligibility(draft, plan, slot);
+      if (!eligibility.eligible) {
+        setSlot(slot, { status: "blocked", failureKind: "publish-eligibility", failureReason: eligibility.reasons.join(" / ") });
+        await savePlan();
+        messages.push(`Publish Eligibility却下 ${slot.scheduledTime}: ${eligibility.reasons.join(" / ")}`);
         continue;
       }
       // S15: Buffer送信先はenvの単一channel。primary account以外のDraftは自動予約しない
