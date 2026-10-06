@@ -101,6 +101,16 @@ export function AutomationMonitor() {
           <span className="text-sub">{OPERATION_MODE_HINTS[mode]}</span>
         </div>
 
+        <div className={`mt-3 rounded-xl border px-3 py-2.5 text-xs ${status.queueLifecycle.backpressure ? "border-loss/30 bg-loss/10 text-loss" : "border-hairline bg-white/[0.02] text-sub"}`}>
+          <span className="font-semibold">Content Queue: {status.queueLifecycle.activeUnresolved}件 unresolved</span>
+          {status.queueLifecycle.backpressure
+            ? <span className="ml-2">新規生成停止中 — {status.queueLifecycle.reasons.join(" / ")}</span>
+            : <span className="ml-2">Lifecycle Guard正常</span>}
+          <span className="mt-1 block text-[10px] opacity-80">
+            needs_review {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("needs_review")).length} / qa_blocked {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("qa_blocked")).length} / approved_unscheduled {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("approved_unscheduled")).length} / stale {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("stale")).length} / cleanup_candidate {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("cleanup_candidate")).length} / reconciliation {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("linked_pending_reconciliation")).length}
+          </span>
+        </div>
+
         {blockers.length > 0 && (
           <div className="mt-4 min-w-0 rounded-xl border border-loss/30 bg-loss/10 p-4">
             <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-loss"><AlertTriangle className="h-4 w-4" />自動投稿を動かすために直すこと</p>

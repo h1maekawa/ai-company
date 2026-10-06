@@ -26,6 +26,7 @@ import { runXDraftQa, summarizeReport } from "@/app/lib/qa/runner";
 import type { QaReport } from "@/app/lib/qa/types";
 import type { DataFreshness } from "@/app/lib/freshness";
 import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
+import { deriveQueueLifecycle, type QueueLifecycleSnapshot } from "@/app/lib/note/automation/queueLifecycle";
 
 /**
  * 承認フィードの1件（要件2の表示単位）。
@@ -82,6 +83,7 @@ export type AutomationStatus = {
     appliedChanges: number;
     experiments: string[];
   };
+  queueLifecycle: QueueLifecycleSnapshot;
 };
 
 function tokyoDate(iso: string): string {
@@ -207,6 +209,8 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
     })
   );
   approvalQueue.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const qaPassedByDraftId = Object.fromEntries(approvalQueue.map((entry) => [entry.draftId, entry.qa?.passed]));
+  const queueLifecycle = deriveQueueLifecycle(drafts, { qaPassedByDraftId });
 
   const lastMeasuredAt =
     performance.records
@@ -254,5 +258,6 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       appliedChanges: latestGrowthReview?.appliedChanges.length ?? 0,
       experiments: latestGrowthReview?.experiments ?? [],
     },
+    queueLifecycle,
   };
 }
