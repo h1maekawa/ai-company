@@ -211,6 +211,13 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
   approvalQueue.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const qaPassedByDraftId = Object.fromEntries(approvalQueue.map((entry) => [entry.draftId, entry.qa?.passed]));
   const queueLifecycle = deriveQueueLifecycle(drafts, { qaPassedByDraftId });
+  if (queueLifecycle.backpressure) {
+    blockers.push({
+      kind: "flag",
+      label: "Content Queue backpressureで新規生成を停止しています",
+      howToFix: queueLifecycle.reasons.join(" / "),
+    });
+  }
 
   const lastMeasuredAt =
     performance.records
