@@ -6,8 +6,7 @@ import path from "node:path";
 /**
  * Navigation v3 の情報設計を固定するテスト。
  *
- * 目的は「機能が増えてもフロントの入口が増えない」こと。
- * トップレベルはHome / Investing / Assets / Settingsに保ち、UIから隠したrouteもDeep Linkとして残す。
+ * Desktop / DrawerとMobile Bottomの入口を意図的に分け、既存routeも維持する。
  */
 
 const ROOT = process.cwd();
@@ -16,14 +15,20 @@ const exists = (relative) => fs.existsSync(path.join(ROOT, relative));
 
 const NAVIGATION = "app/lib/config/navigation.ts";
 
-test("desktop navigation uses only Home/Investing/Assets plus Settings", () => {
+test("desktop navigation adds Content while mobile primary stays Home/Investing/Assets", () => {
   const source = read(NAVIGATION);
   const primary = source.slice(
     source.indexOf("export const PRIMARY_NAV"),
-    source.indexOf("export const ADMIN_NAV")
+    source.indexOf("export const CONTENT_NAV")
   );
   const ids = [...primary.matchAll(/^\s{4}id: "([a-z-]+)",$/gm)].map((match) => match[1]);
   assert.deepEqual(ids, ["home", "investing", "assets"]);
+  const content = source.slice(source.indexOf("export const CONTENT_NAV"), source.indexOf("export const DESKTOP_PRIMARY_NAV"));
+  assert.match(content, /id: "content"[\s\S]*label: "SNS \/ コンテンツ"[\s\S]*href: "\/content"/);
+  assert.match(content, /description: "投稿・確認・成果・コンテンツ運用を見る"/);
+  const desktop = source.slice(source.indexOf("export const DESKTOP_PRIMARY_NAV"), source.indexOf("export const ADMIN_NAV"));
+  assert.equal((desktop.match(/CONTENT_NAV/g) ?? []).length, 1);
+  assert.match(desktop, /PRIMARY_NAV\[0\][\s\S]*CONTENT_NAV[\s\S]*\.\.\.PRIMARY_NAV\.slice\(1\)/);
   for (const id of ["creator", "fund", "operations", "knowledge", "planning", "engineering"]) {
     assert.match(source, new RegExp(`id: "${id}"[\\s\\S]{0,180}href: "/ceo/departments/${id}"`));
   }
@@ -32,7 +37,7 @@ test("desktop navigation uses only Home/Investing/Assets plus Settings", () => {
   assert.match(source, /KNOWLEDGE_NAV[\s\S]*href: "\/knowledge"/);
 });
 
-test("primary navigation points at the four daily routes", () => {
+test("navigation points at the desktop and mobile daily routes", () => {
   const source = read(NAVIGATION);
   for (const href of ["/", "/investing", "/assets", "/admin"]) {
     assert.ok(source.includes(`href: "${href}"`), `PRIMARY_NAV should link to ${href}`);
@@ -80,9 +85,11 @@ test("admin holds the non-daily areas instead of the sidebar", () => {
   }
 });
 
-test("sidebar renders only the four shared navigation entries", () => {
+test("sidebar renders the desktop navigation SSOT", () => {
   const sidebar = read("components/app-shell/AppSidebar.tsx");
   assert.match(sidebar, /from "@\/app\/lib\/config\/navigation"/);
+  assert.match(sidebar, /DESKTOP_PRIMARY_NAV\.map/);
+  assert.doesNotMatch(sidebar, /\{PRIMARY_NAV\.map/);
   assert.doesNotMatch(sidebar, /BUSINESS_DEPARTMENT_NAV|KNOWLEDGE_NAV|WORK_NAV|OPEN_MEMO_EVENT/);
   // ナビ項目をコンポーネント側に直書きしない（増殖の原因になる）
   assert.doesNotMatch(sidebar, /href="\/(knowledge|connections|content|grill)/);
@@ -164,7 +171,7 @@ test("creator department exposes the canonical content workflow", () => {
   }
 });
 
-test("Home exposes the Content executive dashboard without adding a fifth top navigation item", () => {
+test("Content executive dashboard and canonical actions stay available", () => {
   const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
   const dashboard = read("app/content/page.tsx");
   const homeApi = read("app/api/content/home/route.ts");
@@ -176,24 +183,24 @@ test("Home exposes the Content executive dashboard without adding a fifth top na
   assert.doesNotMatch(dashboard, /competitor.*(?:text|excerpt)|textExcerpt/i);
   assert.match(homeApi, /buildContentDashboardGrowth/);
   const sidebar = read("components/app-shell/AppSidebar.tsx");
-  assert.doesNotMatch(sidebar, /href="\/content"/);
+  assert.match(sidebar, /DESKTOP_PRIMARY_NAV/);
 });
 
-test("Home makes SNS and Content discoverable without inventing missing metrics", () => {
+test("Content moves to Desktop Sidebar while Home keeps Content attention", () => {
   const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
   const navigation = read(NAVIGATION);
+  const sidebar = read("components/app-shell/AppSidebar.tsx");
+  const shell = read("components/app-shell/AppShell.tsx");
   const homeSummary = read("app/api/company/home-summary/route.ts");
   const homeAttention = read("app/lib/company/homeAttention.ts");
-  for (const label of ["SNS / コンテンツ", "投稿予定", "確認待ち", "直近7日 Impressions", "Growth Intelligence", "Automation"]) assert.match(overview, new RegExp(label));
-  assert.match(overview, /DEPARTMENT_NAV_BY_ID\.creator\.detailHref/);
-  assert.match(overview, /QUICK_ACTIONS\.find\(\(action\) => action\.id === "write"\)/);
-  assert.match(overview, /reviewCount === "number" && reviewCount > 0/);
-  assert.match(overview, /value == null\) return "—"/);
-  assert.doesNotMatch(overview, /queue\?\.scheduled\s*\?\?\s*0|queue\?\.review\s*\?\?\s*0|impressions7d\s*\?\?\s*0/);
-  assert.match(navigation, /id: "write"[\s\S]{0,120}href: "\/note\?view=create"/);
+  assert.match(navigation, /export const CONTENT_NAV[\s\S]*label: "SNS \/ コンテンツ"[\s\S]*href: "\/content"/);
+  assert.match(sidebar, /DESKTOP_PRIMARY_NAV\.map/);
+  assert.match(shell, /\.\.\.PRIMARY_NAV, ADMIN_NAV/);
+  assert.doesNotMatch(shell, /DESKTOP_PRIMARY_NAV/);
+  assert.doesNotMatch(overview, /ContentBusinessCard|fetch\("\/api\/content\/home"|contentSummary|CREATE_CONTENT_ACTION|QUICK_ACTIONS/);
   assert.match(homeSummary, /content: \{ automation: extra\.contentStatus \}/);
   assert.match(homeAttention, /contentStatus = \{ effective: content\.value\.effective, mode: content\.value\.mode \}/);
-  assert.doesNotMatch(overview, /fetch\("\/api\/note\/automation\/status"/);
+  assert.match(homeAttention, /href: "\/note\?view=review"/);
 });
 
 test("investing shows the five Investment areas and keeps every legacy route in the menu", () => {

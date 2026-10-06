@@ -2,7 +2,7 @@
  * AI Company のフロント情報設計（Navigation v3）の唯一の定義。
  *
  * 方針:
- * - ユーザーに「どの部署か」を考えさせない。日常は4入口だけで完結させる。
+ * - ユーザーに「どの部署か」を考えさせない。Mobileの日常は4入口だけで完結させる。
  * - Backend の Department 構造（app/lib/config/hub.ts）は維持し、
  *   ここでは「表に出す入口」だけを決める。
  * - 既存 route は壊さない。UI から隠す場合も Deep Link は生かす。
@@ -72,7 +72,7 @@ export const AGENT_DEPARTMENT_HREF: Record<string, string> = {
   "executive-assistant": "/chat?node=assistant",
 };
 
-/** Desktop Sidebar / Mobile Bottom Navigationで共有する日常の3入口。 */
+/** Mobile Bottom Navigationで使う日常の3入口。 */
 export const PRIMARY_NAV: AppNavItem[] = [
   {
     id: "home",
@@ -95,6 +95,22 @@ export const PRIMARY_NAV: AppNavItem[] = [
     href: "/assets",
     description: "お金全体を見る",
   },
+];
+
+/** Desktop / Drawer Sidebarだけに表示するコンテンツ事業の入口。 */
+export const CONTENT_NAV: AppNavItem = {
+  id: "content",
+  label: "SNS / コンテンツ",
+  icon: "✍️",
+  href: "/content",
+  description: "投稿・確認・成果・コンテンツ運用を見る",
+};
+
+/** Desktop / Drawer Sidebarの日常入口。Mobile Bottom Navigationとは分ける。 */
+export const DESKTOP_PRIMARY_NAV: AppNavItem[] = [
+  PRIMARY_NAV[0],
+  CONTENT_NAV,
+  ...PRIMARY_NAV.slice(1),
 ];
 
 /** 日常ではない管理系のまとめ入口。Sidebar下部に1つだけ出る。 */
@@ -232,7 +248,7 @@ export const QUICK_ACTIONS: QuickAction[] = [
  */
 export const PRESERVED_ROUTES: { href: string; reason: string }[] = [
   { href: "/note", reason: "コンテンツの既存入口" },
-  { href: "/content", reason: "Content Business OS。コンテンツ詳細分析として管理配下から到達する" },
+  { href: "/content", reason: "Content Business OS。Desktop / Drawer Sidebarと管理配下から到達する" },
   { href: "/investing", reason: "投資専用Shell" },
   { href: "/company", reason: "Simple Pixel Office・AI社員・Mission" },
   { href: "/knowledge", reason: "管理 → Knowledge" },

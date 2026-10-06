@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ADMIN_NAV, PRIMARY_NAV, isNavActive, type AppNavItem } from "@/app/lib/config/navigation";
+import { ADMIN_NAV, DESKTOP_PRIMARY_NAV, isNavActive, type AppNavItem } from "@/app/lib/config/navigation";
 
 /**
- * Desktopは日常の3入口と設定だけを表示する。
+ * Desktop / Drawerは日常の4入口と設定だけを表示する。
  * ナビ定義は app/lib/config/navigation.ts が唯一の正。
  */
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -19,7 +19,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav className="flex flex-1 flex-col overflow-y-auto">
         <div className="space-y-1">
-          {PRIMARY_NAV.map((item) => (
+          {DESKTOP_PRIMARY_NAV.map((item) => (
             <SidebarLink key={item.id} item={item} pathname={pathname} onNavigate={onNavigate} />
           ))}
         </div>

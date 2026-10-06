@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-/** MobileもDesktopと同じ4入口。 */
+/** Mobile Bottom NavigationはHome / Investing / Assets / Settingsの4入口。 */
 function MobileTabBar({ pathname }: { pathname: string }) {
   const icons = { home: Home, investing: ChartNoAxesCombined, assets: Wallet, admin: Settings };
   const items = [...PRIMARY_NAV, ADMIN_NAV].map((item) => ({ ...item, icon: icons[item.id as keyof typeof icons] }));
