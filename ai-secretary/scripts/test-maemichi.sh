@@ -47,6 +47,7 @@ npx tsc \
   app/lib/note/quickXSelection.ts \
   app/lib/note/automation/dailyXPlan.ts \
   app/lib/note/automation/queueLifecycle.ts \
+  app/lib/note/automation/publishEligibility.ts \
   app/lib/note/automation/dailyXExecution.ts \
   app/lib/integrations/slack/verify.ts \
   app/lib/integrations/slack/conversation.ts \

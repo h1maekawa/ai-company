@@ -30,6 +30,8 @@ import type { DailyXPlanSlot, SocialDraft, TrendCluster } from "@/app/lib/note/r
 import { recordPipelineSteps } from "@/app/lib/agents/recorder";
 import { startTrace } from "@/app/lib/company/trace";
 import { executeDailyXPlan, type DailyXResult } from "./dailyXExecution";
+import { evaluatePublishEligibility, hasUnresolvedResearchProviderFailure, prioritizeCanaryCandidates } from "./publishEligibility";
+import { loadExecutionState } from "@/app/lib/company/execution/store";
 
 export type { DailyXResult } from "./dailyXExecution";
 export { executeDailyXPlan } from "./dailyXExecution";
@@ -67,13 +69,14 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
     try { return await fn(...args); } finally { logPhaseDuration(phase, startedAt); }
   };
   const loadContextStartedAt = Date.now();
-  const [settings, items, experiences, brandFile, ideaFile, styleProfile] = await Promise.all([
+  const [settings, items, experiences, brandFile, ideaFile, styleProfile, researchProviderFailureUnresolved] = await Promise.all([
     loadResearchSettings(),
     loadResearchInbox(),
     loadExperiences(),
     loadBrand(),
     loadIdeas(),
     loadStyleProfile(),
+    loadExecutionState().then((state) => hasUnresolvedResearchProviderFailure(state.runtime?.researchRuns ?? [])).catch(() => true),
   ]);
   logPhaseDuration("load-context", loadContextStartedAt);
   const primaryAccount = brandFile.xAccounts[0];
@@ -97,7 +100,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       loadCandidates: timed("candidate-select", async () => {
         const eligible = (await loadClusters()).filter((candidate) => candidate.status === "candidate" && !candidate.blocked);
         // 全件Legacyなら旧スコアへfallback。新旧混在時はLegacyを紛れ込ませず、MEDIUM/HIGHだけを使う。
-        return { eligibleCount: eligible.length, candidates: filterHotConfidenceCandidates(eligible) };
+        return { eligibleCount: eligible.length, candidates: prioritizeCanaryCandidates(filterHotConfidenceCandidates(eligible)) };
       }),
       findCluster: async (id) => (await loadClusters()).find((cluster) => cluster.id === id) ?? null,
       markClustersUsed: async (ids) => {
@@ -144,6 +147,15 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
         const prepared = await prepareXDraftForPublishing({ draft, brand: brandFile.brand, experiences: usableExperiences(experiences, cluster?.matchedExperienceIds ?? []) });
         return { draft: prepared.draft, safe: prepared.safe, reasons: prepared.reasons };
       }),
+      publishEligibility: timed("publish-eligibility", (draft, plan, slot) => evaluatePublishEligibility({
+        draft,
+        currentPlanId: plan.id,
+        currentPlanSlotId: slot.id,
+        brand: brandFile.brand,
+        experiences: usableExperiences(experiences, draft.sourceExperienceIds ?? []),
+        researchItems: items,
+        researchProviderFailureUnresolved,
+      })),
       loadDrafts: loadSocialDrafts,
       saveDrafts: timed("save-drafts", async (drafts: SocialDraft[]) => { await saveSocialDrafts(drafts); }),
       claimStrict: (key) => claimStrict(key),

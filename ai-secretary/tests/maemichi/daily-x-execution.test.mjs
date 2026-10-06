@@ -48,6 +48,7 @@ function harness(options = {}) {
       return { draft: { id: `draft-${slot.slotIndex}-${state.calls.generate}`, trendClusterId: source.id, xAccountId: options.accountFor?.(slot) ?? PRIMARY, purpose: slot.purpose, genreId: "ai", text: `本文${slot.slotIndex}`, urls: [], needsDisclosure: false, status: "draft", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() } };
     },
     safetyGate: async (draft) => (options.blockSlot !== undefined && draft.planSlotId?.endsWith(`:${options.blockSlot}`) ? { draft, safe: false, reasons: ["Fact Gate"] } : { draft, safe: true, reasons: [] }),
+    publishEligibility: async (draft, plan, slot) => options.publishEligibility?.(draft, plan, slot) ?? { eligible: true, reasons: [] },
     loadDrafts: async () => structuredClone(state.drafts),
     saveDrafts: async (drafts) => {
       if (state.fail.saveDraftsWhenQueued && drafts.some((draft) => draft.status === "queued")) { state.fail.saveDraftsWhenQueued = false; throw new Error("draft save failed"); }
@@ -130,6 +131,20 @@ test("REVIEW / DRAFT: 生成まで行い、Buffer予約へ進まない", async (
   assert.equal(h.state.calls.createPost, 0);
   assert.deepEqual(statuses(h.plan()), ["generated", "generated", "generated"]);
   assert.equal(result.generated, 3);
+});
+
+test("Publish Eligibility不合格はclaim/Buffer前にblockedとなり既存draftを保持する", async () => {
+  const h = harness({
+    ctx: { maxXPostsPerDay: 1 },
+    publishEligibility: async () => ({ eligible: false, reasons: ["source/evidence未確認"] }),
+  });
+  const result = await h.run();
+  assert.equal(h.state.calls.createPost, 0);
+  assert.equal(h.state.claims.size, 0);
+  assert.equal(h.plan().slots[0].status, "blocked");
+  assert.equal(h.plan().slots[0].failureKind, "publish-eligibility");
+  assert.equal(h.state.drafts.length, 1);
+  assert.equal(result.scheduledDraftIds.length, 0);
 });
 
 test("T10 strict count: 日次カウントを確認できなければ予約しない（fail-closed）", async () => {
