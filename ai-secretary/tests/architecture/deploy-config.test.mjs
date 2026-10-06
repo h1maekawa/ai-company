@@ -125,6 +125,12 @@ test("Autopilot statusはRedis未設定をblockし、Cron timeoutは300秒", () 
   assert.match(fs.readFileSync(path.join(process.cwd(), "app\/api\/cron\/x-daily-publish\/route.ts"), "utf8"), /maxDuration = 300/);
 });
 
+test("Automation statusはQueue backpressureを稼働不可として表示する", () => {
+  const source = fs.readFileSync(path.join(ROOT, "app/lib/note/automation/status.ts"), "utf8");
+  assert.match(source, /if \(queueLifecycle\.backpressure\)/);
+  assert.match(source, /Content Queue backpressureで新規生成を停止しています/);
+});
+
 /**
  * Phase 10-B.1 Cadence Expansion（2026-09-15）
  *
