@@ -4,6 +4,7 @@ import type { ClaimResult } from "../publishing/queue";
 import type { ContentGrowthStrategy, DailyXPlan, DailyXPlanSlot, DailyXSlotStatus, SocialDraft, TrendCluster } from "../research/types";
 import { tokyoDateKey } from "../tokyoDate";
 import { buildDailyXPlan } from "./dailyXPlan";
+import { deriveQueueLifecycle, type QueueLifecycleSnapshot } from "./queueLifecycle";
 
 /**
  * Daily X 実行の中核（依存注入）。I/Oは deps だけを通す。
@@ -71,6 +72,7 @@ export type DailyXResult = {
   escalated?: boolean;
   slackDelivered?: boolean;
   slackError?: string;
+  queueLifecycle?: QueueLifecycleSnapshot;
 };
 
 const planDraftLineage = (plan: DailyXPlan, slot: DailyXPlanSlot) => ({
@@ -88,10 +90,21 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
   const now = deps.now();
   const date = tokyoDateKey(now);
   const stamp = () => deps.now().toISOString();
+  let drafts = await deps.loadDrafts();
+  const queueLifecycle = deriveQueueLifecycle(drafts, { now });
 
   /* 1. 当日Plan（あれば必ず再利用。再計算しない） */
   let plan = await deps.loadPlan(date, ctx.accountKey);
   if (!plan) {
+    if (queueLifecycle.backpressure) {
+      return {
+        skipped: true,
+        reason: `Content Queue backpressure: ${queueLifecycle.reasons.join(" / ")}`,
+        generated: 0,
+        queueLifecycle,
+        escalated: false,
+      };
+    }
     const { eligibleCount, candidates } = await deps.loadCandidates();
     const built = buildDailyXPlan({ date, accountKey: ctx.accountKey, now, strategy: ctx.strategy, maxXPostsPerDay: ctx.maxXPostsPerDay, candidates });
     if (!built) {
@@ -127,12 +140,11 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
   if (changed) await savePlan();
 
   /* 2. 生成（planned のslotだけ） */
-  let drafts = await deps.loadDrafts();
   const newlyGenerated: SocialDraft[] = [];
   const warnings: string[] = [];
   let generationFailures = 0;
   const lineageConflicts: string[] = [];
-  for (const slot of plan.slots.filter((item) => item.status === "planned")) {
+  for (const slot of queueLifecycle.backpressure ? [] : plan.slots.filter((item) => item.status === "planned")) {
     /*
      * Recovery: 前回Runで Draft保存は成功したが Plan保存だけ失敗した場合、Planは planned のまま残る。
      * planId と planSlotId が完全一致する既存Draftがあれば、再生成せずその状態からPlanを回復する。
@@ -310,5 +322,6 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
     escalated: escalate,
     slackDelivered: slack.ok,
     slackError: slack.error,
+    queueLifecycle,
   };
 }
