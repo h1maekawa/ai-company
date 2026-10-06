@@ -44,7 +44,7 @@ test("共通Sidebarはnavigation設定をSSOTにしActiveとMobile導線を備�
   const navigation = read("app/lib/config/navigation.ts");
   // Navigation v2: Knowledge/Connectionsは日常ナビから外し、管理(/admin)配下へ移した
   for (const href of ["/knowledge", "/connections"]) assert.ok(navigation.includes(`href: "${href}"`));
-  assert.match(sidebar, /PRIMARY_NAV/); assert.match(sidebar, /ADMIN_NAV/);
+  assert.match(sidebar, /DESKTOP_PRIMARY_NAV/); assert.match(sidebar, /ADMIN_NAV/);
   assert.match(sidebar, /usePathname/); assert.match(sidebar, /bg-violet-500/);
   assert.match(shell, /aria-expanded/); assert.match(shell, /lg:hidden/); assert.match(shell, /setOpen\(false\)/);
   // モバイルはドロワーを開かなくても主要領域へ行ける
