@@ -118,3 +118,29 @@ test("X API envがなくてもBuffer Metrics Providerは正常動作する", asy
   assert.equal(result.ok, true);
   assert.equal(result.providerUpdatedAt, sentPost.metricsUpdatedAt);
 });
+
+test("one-time Canaryだけ当日夜にX公開証跡を同期し、未取得Metricsはunavailableのままにする", async () => {
+  const canary = {
+    ...draft, id: "x-canary-daily-x:2026-10-08:primary:slot-1",
+    planId: "daily-x:2026-10-08:primary", planSlotId: "slot-1",
+    scheduledAt: "2026-10-07T16:56:00.000Z", status: "queued",
+  };
+  const now = new Date("2026-10-08T14:30:00.000Z");
+  assert.equal(metrics.isDailyMetricsCandidate(canary, now), true);
+  assert.equal(metrics.isDailyMetricsCandidate({ ...canary, id: "normal-draft" }, now), false);
+  assert.equal(metrics.isDailyMetricsCandidate(canary, new Date("2026-10-07T16:55:00.000Z")), false);
+  const sentWithoutMetrics = {
+    ...sentPost, id: canary.bufferPostId, dueAt: canary.scheduledAt,
+    sentAt: "2026-10-07T16:56:10.000Z", metrics: null, metricsUpdatedAt: null,
+    externalLink: "https://x.com/maemichi44/status/2107877739529170991",
+  };
+  const result = await metrics.fetchBufferMetrics(canary, now, async () => ({ ok: true, data: sentWithoutMetrics }));
+  assert.equal(result.ok, true);
+  assert.equal(result.providerUpdatedAt, sentWithoutMetrics.sentAt);
+  assert.equal(result.metrics.impressions, undefined);
+  assert.equal(result.metrics.metricAvailability.impressions, "unavailable");
+  const noXLink = await metrics.fetchBufferMetrics(canary, now, async () => ({ ok: true, data: { ...sentWithoutMetrics, externalLink: null } }));
+  assert.equal(noXLink.ok, false);
+  const normal = await metrics.fetchBufferMetrics({ ...canary, id: "normal-draft" }, now, async () => ({ ok: true, data: sentWithoutMetrics }));
+  assert.equal(normal.ok, false);
+});
