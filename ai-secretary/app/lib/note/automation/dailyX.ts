@@ -92,6 +92,7 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       autopilot: settings.flags.publishingEnabled && settings.flags.xAutoPublish,
       bufferConfigured: isBufferConfigured(),
       primaryAccountId: primaryAccount.id,
+      lateFirstRunLeadMinutes: 10,
     },
     {
       now: () => new Date(),

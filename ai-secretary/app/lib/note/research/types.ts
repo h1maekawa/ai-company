@@ -441,7 +441,7 @@ export type DailyXPlanSlot = {
   scheduledTime: string;
   scheduledAt: string;
   /** Phase 0 は default のみ */
-  timeSource: "default";
+  timeSource: "default" | "late-first-run-recovery";
   exploration: boolean;
   /** Phase 0 は cluster のみ。R&I統合時に artifact を union へ追加する */
   candidateRef?: { kind: "cluster"; id: string };
