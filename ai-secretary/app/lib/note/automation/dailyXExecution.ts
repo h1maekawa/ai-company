@@ -3,7 +3,7 @@ import { isAmbiguousBufferError } from "../publishing/buffer";
 import type { ClaimResult } from "../publishing/queue";
 import type { ContentGrowthStrategy, DailyXPlan, DailyXPlanSlot, DailyXSlotStatus, SocialDraft, TrendCluster } from "../research/types";
 import { tokyoDateKey } from "../tokyoDate";
-import { buildDailyXPlan } from "./dailyXPlan";
+import { buildDailyXPlan, dailyXPlanId, dailyXSlotId, normalizePurposeMix } from "./dailyXPlan";
 import { deriveQueueLifecycle, type QueueLifecycleSnapshot } from "./queueLifecycle";
 
 /**
@@ -28,6 +28,8 @@ export type DailyXContext = {
   primaryAccountId: string | null;
   /** 当日Planが未作成のまま最初の固定枠を過ぎた場合だけ、最初の枠を現在時刻からこの分数後へ回復する。既存Planは変更しない。 */
   lateFirstRunLeadMinutes?: number;
+  /** Dedicated, authenticated one-time transport path. Never set by normal DailyX. */
+  oneTimeTransportCanary?: boolean;
 };
 
 export type SafetyOutcome = { draft: SocialDraft; safe: boolean; reasons: string[] };
@@ -43,6 +45,8 @@ export type DailyXDeps = {
   markClustersUsed(ids: string[]): Promise<void>;
   /** 既存生成（investment bridge を含む）。生成できなければ draft: null */
   generateForSlot(slot: DailyXPlanSlot, cluster: TrendCluster): Promise<{ draft: SocialDraft | null; warning?: string }>;
+  /** Only supplied by the authenticated one-time transport endpoint. */
+  generateCanaryForSlot?(slot: DailyXPlanSlot): Promise<{ draft: SocialDraft | null; warning?: string }>;
   safetyGate(draft: SocialDraft): Promise<SafetyOutcome>;
   publishEligibility(draft: SocialDraft, plan: DailyXPlan, slot: DailyXPlanSlot): Promise<PublishEligibilityOutcome>;
   loadDrafts(): Promise<SocialDraft[]>;
@@ -91,6 +95,28 @@ const planDraftLineage = (plan: DailyXPlan, slot: DailyXPlanSlot) => ({
   },
 });
 
+function buildOneTimeTransportPlan(date: string, accountKey: string, now: Date, strategy: DailyXContext["strategy"]): DailyXPlan | null {
+  const dueAt = new Date(now.getTime() + 10 * 60_000);
+  if (tokyoDateKey(dueAt) !== date) return null;
+  const stamp = now.toISOString();
+  return {
+    id: dailyXPlanId(date, accountKey), date, accountKey, origin: "one-time-transport-canary",
+    strategySnapshot: {
+      purposeMix: normalizePurposeMix(strategy.purposeMix), explorationRate: strategy.explorationRate,
+      topicPriority: [...strategy.topicPriority], genrePriority: [...strategy.genrePriority],
+      patternPriority: [...strategy.patternPriority], maxXPostsPerDay: 1,
+      ...(strategy.updatedAt ? { strategyUpdatedAt: strategy.updatedAt } : {}),
+    },
+    slots: [{
+      id: dailyXSlotId(date, accountKey, 0), slotIndex: 0, purpose: "reach", bucket: "reach",
+      scheduledTime: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false }).format(dueAt),
+      scheduledAt: dueAt.toISOString(), timeSource: "one-time-transport-canary", exploration: false,
+      status: "planned", updatedAt: stamp,
+    }],
+    generatedAt: stamp, updatedAt: stamp,
+  };
+}
+
 export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): Promise<DailyXResult> {
   const now = deps.now();
   const date = tokyoDateKey(now);
@@ -112,10 +138,15 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
 
   /* 1. 当日Plan（あれば必ず再利用。再計算しない） */
   let plan = await deps.loadPlan(date, ctx.accountKey);
+  if (plan && Boolean(plan.origin === "one-time-transport-canary") !== Boolean(ctx.oneTimeTransportCanary)) {
+    return { skipped: true, reason: "既存DailyX Planと実行モードが一致しません", generated: 0, queueLifecycle, escalated: false };
+  }
   if (!plan) {
-    const { eligibleCount, candidates } = await deps.loadCandidates();
+    const { eligibleCount, candidates } = ctx.oneTimeTransportCanary ? { eligibleCount: 0, candidates: [] as TrendCluster[] } : await deps.loadCandidates();
     const nonSaturatedCandidates = candidates.filter((candidate) => !saturatedTopics.has(candidate.id));
-    const built = buildDailyXPlan({ date, accountKey: ctx.accountKey, now, strategy: ctx.strategy, maxXPostsPerDay: ctx.maxXPostsPerDay, candidates: nonSaturatedCandidates });
+    const built = ctx.oneTimeTransportCanary
+      ? buildOneTimeTransportPlan(date, ctx.accountKey, now, ctx.strategy)
+      : buildDailyXPlan({ date, accountKey: ctx.accountKey, now, strategy: ctx.strategy, maxXPostsPerDay: ctx.maxXPostsPerDay, candidates: nonSaturatedCandidates });
     if (!built) {
       const allCandidatesSaturated = candidates.length > 0 && nonSaturatedCandidates.length === 0;
       return {
@@ -129,7 +160,7 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
         escalated: false,
       };
     }
-    const leadMinutes = Math.floor(ctx.lateFirstRunLeadMinutes ?? 0);
+    const leadMinutes = ctx.oneTimeTransportCanary ? 0 : Math.floor(ctx.lateFirstRunLeadMinutes ?? 0);
     const firstSlot = built.slots[0];
     if (leadMinutes >= 5 && leadMinutes <= 15 && firstSlot && Date.parse(firstSlot.scheduledAt) <= now.getTime() + MISSED_MARGIN_MS) {
       const recoveredAt = new Date(now.getTime() + leadMinutes * 60_000);
@@ -195,17 +226,19 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
       continue;
     }
     const cluster = slot.candidateRef ? await deps.findCluster(slot.candidateRef.id) : null;
-    if (!cluster) {
+    if (!cluster && !ctx.oneTimeTransportCanary) {
       setSlot(slot, { status: "skipped", failureKind: "candidate-missing", failureReason: "Planの候補clusterが見つかりません" });
       await savePlan();
       continue;
     }
-    if (saturatedTopics.has(cluster.id)) {
+    if (cluster && saturatedTopics.has(cluster.id)) {
       setSlot(slot, { status: "skipped", failureKind: "topic-backpressure", failureReason: `trendCluster/topic ${cluster.id} はsaturatedのため新規生成しません` });
       await savePlan();
       continue;
     }
-    const generated = await deps.generateForSlot(slot, cluster);
+    const generated = ctx.oneTimeTransportCanary
+      ? await deps.generateCanaryForSlot?.(slot) ?? { draft: null, warning: "one-time canary generator unavailable" }
+      : await deps.generateForSlot(slot, cluster!);
     if (generated.warning) warnings.push(generated.warning);
     if (!generated.draft) {
       // 生成できなかった slot は planned のまま（次回実行で再生成できる）

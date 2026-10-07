@@ -10,7 +10,7 @@ function area(event: NotificationEvent): MorningBriefArea {
   if (event.sourceType === "content") return "CONTENT";
   return "AI COMPANY";
 }
-export function buildMorningBrief(input: { notifications: NotificationEvent[]; homeAttention: HomeAttention[]; opportunities: RevenueOpportunity[]; insights?: MorningBriefInsight[]; notifiedFingerprints?: string[]; unavailable?: string[]; now?: Date }): MorningBrief {
+export function buildMorningBrief(input: { notifications: NotificationEvent[]; homeAttention: HomeAttention[]; opportunities: RevenueOpportunity[]; insights?: MorningBriefInsight[]; notifiedFingerprints?: string[]; unavailable?: string[]; xPublishedYesterday?: number; now?: Date }): MorningBrief {
   const now = input.now ?? new Date();
   const items: MorningBriefItem[] = input.notifications.filter((event) => event.actionRequired && event.priority !== "INFO").map((event) => ({
     id: event.id, fingerprint: event.fingerprint, area: area(event), title: event.title, summary: event.summary,
@@ -31,5 +31,5 @@ export function buildMorningBrief(input: { notifications: NotificationEvent[]; h
   }
   const deduped = items.filter((item, index, all) => all.findIndex((other) => other.fingerprint === item.fingerprint) === index)
     .sort((a, b) => Number(b.priority === "CRITICAL") - Number(a.priority === "CRITICAL")).slice(0, 15);
-  return { day: day(now), generatedAt: now.toISOString(), items: deduped, insights: (input.insights ?? []).slice(0, 5), unavailable: [...new Set(input.unavailable ?? [])] };
+  return { day: day(now), generatedAt: now.toISOString(), items: deduped, insights: (input.insights ?? []).slice(0, 5), unavailable: [...new Set(input.unavailable ?? [])], ...(input.xPublishedYesterday === undefined ? {} : { xPublishedYesterday: input.xPublishedYesterday }) };
 }

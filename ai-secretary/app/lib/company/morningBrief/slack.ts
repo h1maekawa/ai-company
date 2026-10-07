@@ -12,6 +12,7 @@ const plain = (value: string, limit: number) => value.slice(0, limit).replace(/&
 export function morningBriefBlocks(brief: MorningBrief): SlackBlock[] {
   const blocks: SlackBlock[] = [{ type: "header", text: { type: "plain_text", text: `🌅 AI Company Morning Brief — ${brief.day}`, emoji: true } },
     { type: "section", text: { type: "mrkdwn", text: `*CEO判断が必要: ${brief.items.length}件*${brief.unavailable.length ? `\n取得できなかった領域: ${brief.unavailable.join("、")}` : ""}` } }];
+  if (brief.xPublishedYesterday !== undefined) blocks.push({ type: "section", text: { type: "mrkdwn", text: `*昨日のX投稿（実績同期済み）: ${brief.xPublishedYesterday}件*` } });
   for (const area of Object.keys(icon) as MorningBriefArea[]) {
     const items = brief.items.filter((item) => item.area === area); if (!items.length) continue;
     blocks.push({ type: "divider" }, { type: "section", text: { type: "mrkdwn", text: `*${icon[area]} ${area}*` } });
