@@ -47,6 +47,10 @@ function harness(options = {}) {
       state.calls.generate++;
       return { draft: { id: `draft-${slot.slotIndex}-${state.calls.generate}`, trendClusterId: source.id, xAccountId: options.accountFor?.(slot) ?? PRIMARY, purpose: slot.purpose, genreId: "ai", text: `本文${slot.slotIndex}`, urls: [], needsDisclosure: false, status: "draft", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() } };
     },
+    generateCanaryForSlot: async (slot) => {
+      state.calls.generate++;
+      return { draft: { id: `canary-${slot.id}`, xAccountId: PRIMARY, purpose: slot.purpose, genreId: "daily-thoughts", text: "考え方を少し広げる時間を大切にしたい。", urls: [], needsDisclosure: false, similarityScore: 0, status: "draft", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() } };
+    },
     safetyGate: async (draft) => (options.blockSlot !== undefined && draft.planSlotId?.endsWith(`:${options.blockSlot}`) ? { draft, safe: false, reasons: ["Fact Gate"] } : { draft, safe: true, reasons: [] }),
     publishEligibility: async (draft, plan, slot) => options.publishEligibility?.(draft, plan, slot) ?? { eligible: true, reasons: [] },
     loadDrafts: async () => structuredClone(state.drafts),
@@ -82,6 +86,41 @@ function harness(options = {}) {
 }
 
 const statuses = (plan) => plan.slots.map((slot) => slot.status);
+
+test("one-time transport: 当日Plan/slotから10分後に最大1件だけ予約し、通常DailyXは専用Planを再実行しない", async () => {
+  const existing = unresolvedDrafts(2);
+  const h = harness({ drafts: existing, ctx: { maxXPostsPerDay: 1, oneTimeTransportCanary: true } });
+  const result = await h.run();
+  assert.equal(result.generated, 1);
+  assert.equal(result.scheduledDraftIds.length, 1);
+  assert.equal(h.plan().origin, "one-time-transport-canary");
+  assert.equal(h.plan().slots.length, 1);
+  assert.equal(h.plan().slots[0].timeSource, "one-time-transport-canary");
+  assert.equal(Date.parse(h.plan().slots[0].scheduledAt) - NOW.getTime(), 10 * 60_000);
+  assert.equal(h.state.drafts[0].planId, h.plan().id);
+  assert.equal(h.state.drafts[0].planSlotId, h.plan().slots[0].id);
+  assert.equal(h.state.drafts[0].bufferPostId, "buf-1");
+  assert.deepEqual(h.state.drafts.slice(1), existing);
+  await h.run();
+  assert.equal(h.state.calls.createPost, 1);
+  h.ctx.oneTimeTransportCanary = false;
+  const normal = await h.run();
+  assert.equal(normal.skipped, true);
+  assert.equal(h.state.calls.createPost, 1);
+});
+
+test("one-time transport: Buffer ambiguousはclaim保持・自動再送なし", async () => {
+  const h = harness({
+    ctx: { maxXPostsPerDay: 1, oneTimeTransportCanary: true },
+    createPost: () => ({ ok: false, error: { kind: "ambiguous", message: "timeout" } }),
+  });
+  const first = await h.run();
+  assert.equal(first.haltedReason, "buffer-ambiguous");
+  assert.equal(h.plan().slots[0].status, "ambiguous");
+  assert.equal(h.state.calls.release, 0);
+  await h.run();
+  assert.equal(h.state.calls.createPost, 1);
+});
 
 const unresolvedDrafts = (count, saturatedTopic = "saturated") => Array.from({ length: count }, (_, index) => ({
   id: `existing-${index}`,

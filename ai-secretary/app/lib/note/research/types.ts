@@ -441,7 +441,7 @@ export type DailyXPlanSlot = {
   scheduledTime: string;
   scheduledAt: string;
   /** Phase 0 は default のみ */
-  timeSource: "default" | "late-first-run-recovery";
+  timeSource: "default" | "late-first-run-recovery" | "one-time-transport-canary";
   exploration: boolean;
   /** Phase 0 は cluster のみ。R&I統合時に artifact を union へ追加する */
   candidateRef?: { kind: "cluster"; id: string };
@@ -460,6 +460,9 @@ export type DailyXPlan = {
   date: string;
   /** Phase 0 は "primary" 固定（Buffer channel が env の単一channelのため） */
   accountKey: string;
+  /** One-time transport verification; never a normal Hot candidate. */
+  origin?: "one-time-transport-canary";
+  canaryResult?: "1/3 successful";
   strategySnapshot: DailyXStrategySnapshot;
   slots: DailyXPlanSlot[];
   generatedAt: string;

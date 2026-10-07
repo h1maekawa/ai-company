@@ -14,6 +14,12 @@ test("Morning Brief includes only actionable events and deduplicates fingerprint
   const brief = buildMorningBrief({ now: new Date("2026-10-02T00:00:00Z"), notifications: [notification(), notification({ id: "duplicate" }), notification({ id: "info", fingerprint: "info", priority: "INFO", actionRequired: false })], homeAttention: [], opportunities: [] });
   assert.equal(brief.day, "2026-10-02"); assert.equal(brief.items.length, 1); assert.equal(brief.items[0].sourceAlreadyNotified, false);
 });
+test("Morning Briefは実績同期済みX投稿数をCEO判断件数と分けて表示する", () => {
+  const brief = buildMorningBrief({ notifications: [], homeAttention: [], opportunities: [], xPublishedYesterday: 1 });
+  assert.equal(brief.items.length, 0);
+  assert.equal(brief.xPublishedYesterday, 1);
+  assert.match(JSON.stringify(morningBriefBlocks(brief)), /昨日のX投稿（実績同期済み）: 1件/);
+});
 test("Morning Brief maps business, investment, content, finance and engineering deep links", () => {
   const opportunity = { id: "opp1", fingerprint: "affiliate:test", status: "RECOMMENDED", title: "AI Affiliate", summary: "Evidence-backed", score: 80, rankingScore: 82, coveragePct: 75, updatedAt: new Date().toISOString(), expectedRevenue: { known: false, reason: "UNKNOWN" } };
   const brief = buildMorningBrief({ notifications: [notification({ id: "eng", fingerprint: "eng", kind: "ENGINEERING_PR_READY", departmentId: "engineering", title: "PR Ready" })], homeAttention: [

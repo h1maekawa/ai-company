@@ -69,6 +69,14 @@ export async function claimStrict(key: string, ttlSec = CLAIM_TTL_SEC): Promise<
   }
 }
 
+/** Read-only status for one-time controls; unavailable is not equivalent to unclaimed. */
+export async function strictClaimStatus(key: string): Promise<"claimed" | "unclaimed" | "unavailable"> {
+  const redis = getRedisClient();
+  if (!redis) return "unavailable";
+  try { return (await redis.get(`${KEY_PREFIX}:claim:${key}`)) === null ? "unclaimed" : "claimed"; }
+  catch { return "unavailable"; }
+}
+
 /** Bufferが明示的に拒否した（未送信が確定した）ときだけ呼ぶ。結果不明のときは呼ばない */
 export async function releaseClaim(key: string): Promise<void> {
   const redis = getRedisClient();

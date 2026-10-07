@@ -27,6 +27,7 @@ import {
 } from "@/app/lib/note/research/store";
 import { DEFAULT_GENRES } from "@/app/lib/note/types";
 import type { SocialDraft } from "@/app/lib/note/research/types";
+import { parseXPostUrl } from "@/app/lib/note/x/urls";
 
 export type PerformanceSyncResult = {
   checked: number;
@@ -80,6 +81,7 @@ export async function syncPerformance(
       status: "published",
       bufferMetricsUpdatedAt: result.providerUpdatedAt,
       bufferExternalLink: result.externalLink ?? nextDrafts[index].bufferExternalLink,
+      xPostId: result.externalLink ? (parseXPostUrl(result.externalLink)?.postId ?? nextDrafts[index].xPostId) : nextDrafts[index].xPostId,
       metricsLastSyncedAt: now.toISOString(),
       metricsSyncError: undefined,
     };

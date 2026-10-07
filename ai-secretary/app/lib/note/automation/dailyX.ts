@@ -32,6 +32,10 @@ import { startTrace } from "@/app/lib/company/trace";
 import { executeDailyXPlan, type DailyXResult } from "./dailyXExecution";
 import { evaluatePublishEligibility, hasUnresolvedResearchProviderFailure, prioritizeCanaryCandidates } from "./publishEligibility";
 import { loadExecutionState } from "@/app/lib/company/execution/store";
+import { hotEvidenceDiagnostics } from "./hotEvidenceDiagnostics";
+import { createOneTimeTransportDraft } from "./oneTimeTransportCanary";
+import { deriveQueueLifecycle } from "./queueLifecycle";
+import { tokyoDateKey } from "../tokyoDate";
 
 export type { DailyXResult } from "./dailyXExecution";
 export { executeDailyXPlan } from "./dailyXExecution";
@@ -46,7 +50,7 @@ const ACCOUNT_KEY = "primary";
  * 毎日のX自動化。依存を束ねて executeDailyXPlan（Plan駆動・retry安全）を呼ぶだけにする。
  * Safety Gate / Fact Gate / Buffer final safety / 運用モードの意味は変更しない。
  */
-export async function runDailyXAutomation(): Promise<DailyXResult> {
+export async function runDailyXAutomation(options: { oneTimeTransportCanary?: boolean } = {}): Promise<DailyXResult> {
   if (process.env.X_DAILY_AUTOMATION_ENABLED !== "true") {
     return {
       skipped: true,
@@ -93,18 +97,25 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
       bufferConfigured: isBufferConfigured(),
       primaryAccountId: primaryAccount.id,
       lateFirstRunLeadMinutes: 10,
+      oneTimeTransportCanary: options.oneTimeTransportCanary === true,
     },
     {
       now: () => new Date(),
       loadPlan: async (date, accountKey) => (await loadDailyXPlans()).find((plan) => plan.date === date && plan.accountKey === accountKey) ?? null,
       savePlan: async (plan) => { await upsertDailyXPlan(plan); },
       loadCandidates: timed("candidate-select", async () => {
+        if (options.oneTimeTransportCanary) return { eligibleCount: 0, candidates: [] };
         const eligible = (await loadClusters()).filter((candidate) => candidate.status === "candidate" && !candidate.blocked);
         // 全件Legacyなら旧スコアへfallback。新旧混在時はLegacyを紛れ込ませず、MEDIUM/HIGHだけを使う。
-        return { eligibleCount: eligible.length, candidates: prioritizeCanaryCandidates(filterHotConfidenceCandidates(eligible)) };
+        const hotCandidates = filterHotConfidenceCandidates(eligible);
+        if (eligible.length > 0 && hotCandidates.length === 0) {
+          console.info("[daily-x][hot-evidence]", hotEvidenceDiagnostics(eligible, items));
+        }
+        return { eligibleCount: eligible.length, candidates: prioritizeCanaryCandidates(hotCandidates) };
       }),
       findCluster: async (id) => (await loadClusters()).find((cluster) => cluster.id === id) ?? null,
       markClustersUsed: async (ids) => {
+        if (options.oneTimeTransportCanary) return;
         const clusters = await loadClusters();
         if (!clusters.some((cluster) => ids.includes(cluster.id) && cluster.status !== "used")) return;
         await saveClusters(clusters.map((cluster) => (ids.includes(cluster.id) ? { ...cluster, status: "used" as const } : cluster)));
@@ -143,6 +154,10 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
         if (draft) generatedThisRun.push(draft);
         return { draft, warning: generated.warning };
       }),
+      generateCanaryForSlot: options.oneTimeTransportCanary ? timed("canary-generate", async (slot: DailyXPlanSlot) => ({
+        draft: createOneTimeTransportDraft({ slot, brand: brandFile.brand, primaryAccountId: primaryAccount.id, existingDrafts: await loadSocialDrafts(), now: new Date() }),
+        warning: "承認済みBrand内部文脈のみのone-time transport candidate",
+      })) : undefined,
       safetyGate: timed("safety-gate", async (draft: SocialDraft) => {
         const cluster = (await loadClusters()).find((item) => item.id === draft.trendClusterId);
         const prepared = await prepareXDraftForPublishing({ draft, brand: brandFile.brand, experiences: usableExperiences(experiences, cluster?.matchedExperienceIds ?? []) });
@@ -194,4 +209,23 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
   ).catch((error) => console.error("[daily-x] pipeline記録に失敗（非致命）:", error));
 
   return result;
+}
+
+/** Manual, authenticated, fail-closed one-time trigger. No normal DailyX fallback is installed. */
+export async function runOneTimeCanaryTransport(): Promise<DailyXResult> {
+  const now = new Date();
+  const date = tokyoDateKey(now);
+  const skip = (reason: string): DailyXResult => ({ skipped: true, reason, generated: 0 });
+  if (tokyoDateKey(new Date(now.getTime() + 10 * 60_000)) !== date) return skip("JST日付境界のため予約しません");
+  const [settings, plans, drafts] = await Promise.all([loadResearchSettings(), loadDailyXPlans(), loadSocialDrafts()]);
+  if (!settings.flags.publishingEnabled || !settings.flags.xAutoPublish || settings.flags.socialOperationMode !== "autopilot" || settings.flags.noteAutoPublish) return skip("X Autopilot / note停止設定が揃っていません");
+  if (settings.flags.maxXPostsPerDay !== 1 || !isBufferConfigured()) return skip("Canary上限またはBuffer設定を確認できません");
+  if (plans.some((plan) => plan.date === date && plan.accountKey === ACCOUNT_KEY)) return skip("当日のDailyX Planが既に存在します");
+  if (deriveQueueLifecycle(drafts, { now }).backpressure) return skip("Content Queue backpressure");
+  if (drafts.some((draft) => draft.scheduledAt && tokyoDateKey(new Date(draft.scheduledAt)) === date && (draft.status === "queued" || draft.status === "scheduled" || draft.status === "published"))) return skip("今日のX予約または投稿が既にあります");
+  const count = await countForTokyoDate("x", date, { strict: true });
+  if (count !== 0) return skip("今日の投稿枠が空いていることを確認できません");
+  const once = await claimStrict("one-time-x-canary-transport-v1", 10 * 365 * 24 * 60 * 60);
+  if (once !== "claimed") return skip(once === "duplicate" ? "One-time Canaryは既に起動済みです" : "One-time claimが利用できません");
+  return runDailyXAutomation({ oneTimeTransportCanary: true });
 }
