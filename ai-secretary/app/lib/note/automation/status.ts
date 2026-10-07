@@ -21,7 +21,7 @@ import {
 } from "@/app/lib/note/research/store";
 import { loadBrand } from "@/app/lib/note/store";
 import { isBufferConfigured } from "@/app/lib/note/publishing/buffer";
-import { countToday } from "@/app/lib/note/publishing/queue";
+import { countToday, strictClaimStatus } from "@/app/lib/note/publishing/queue";
 import { runXDraftQa, summarizeReport } from "@/app/lib/qa/runner";
 import type { QaReport } from "@/app/lib/qa/types";
 import type { DataFreshness } from "@/app/lib/freshness";
@@ -53,6 +53,7 @@ export type AutomationBlocker = {
 };
 
 export type AutomationStatus = {
+  oneTimeCanary: "claimed" | "unclaimed" | "unavailable";
   mode: SocialOperationMode;
   /** モードが autopilot でも、これが false なら実際には予約されない */
   effective: boolean;
@@ -145,7 +146,7 @@ function approvalReason(draft: SocialDraft, mode: SocialOperationMode): string |
 }
 
 export async function getAutomationStatus(): Promise<AutomationStatus> {
-  const [settings, drafts, performance, publishedToday, brandFile, experiences, researchItems, growthReviews] =
+  const [settings, drafts, performance, publishedToday, brandFile, experiences, researchItems, growthReviews, oneTimeCanary] =
     await Promise.all([
       loadResearchSettings(),
       loadSocialDrafts(),
@@ -155,6 +156,7 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       loadExperiences(),
       loadResearchInbox(),
       loadGrowthReviews(),
+      strictClaimStatus("one-time-x-canary-transport-v1"),
     ]);
 
   const mode =
@@ -236,6 +238,7 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
     .sort((a, b) => b.measuredThrough.localeCompare(a.measuredThrough))[0];
 
   return {
+    oneTimeCanary,
     mode,
     effective: blockers.length === 0,
     blockers,

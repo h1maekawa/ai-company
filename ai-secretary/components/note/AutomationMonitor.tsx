@@ -49,6 +49,26 @@ export function AutomationMonitor() {
   const [status, setStatus] = useState<AutomationStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [canaryBusy, setCanaryBusy] = useState(false);
+  const [canaryOutcome, setCanaryOutcome] = useState("");
+
+  async function runOneTimeCanary() {
+    if (!window.confirm("新規のBrand-only X投稿を約10分後にBuffer予約し、実際に公開します。単発Canaryを実行しますか？")) return;
+    setCanaryBusy(true);
+    setCanaryOutcome("");
+    try {
+      const response = await fetch("/api/note/automation/one-time-canary", { method: "POST" });
+      const result = await response.json() as { ok?: boolean; error?: string; reason?: string; haltedReason?: string; scheduledDraftIds?: string[] };
+      setCanaryOutcome(result.ok && result.scheduledDraftIds?.length === 1
+        ? "単発CanaryをBufferへ予約しました。実投稿・実績同期の確認待ちです。"
+        : `予約していません: ${result.error ?? result.haltedReason ?? result.reason ?? "結果を確認できません"}`);
+      if (result.ok) {
+        const latest = await fetch("/api/note/automation/status").then((res) => res.json()) as AutomationStatus;
+        setStatus(latest);
+      }
+    } catch { setCanaryOutcome("結果を確認できません。再実行せず、PlanとBufferを確認してください。"); }
+    finally { setCanaryBusy(false); }
+  }
 
   useEffect(() => {
     fetch("/api/note/automation/status")
@@ -109,6 +129,16 @@ export function AutomationMonitor() {
           <span className="mt-1 block text-[10px] opacity-80">
             needs_review {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("needs_review")).length} / qa_blocked {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("qa_blocked")).length} / approved_unscheduled {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("approved_unscheduled")).length} / stale {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("stale")).length} / cleanup_candidate {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("cleanup_candidate")).length} / reconciliation {status.queueLifecycle.entries.filter((entry) => entry.derivedStates.includes("linked_pending_reconciliation")).length}
           </span>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-hairline bg-white/[0.02] px-3 py-2.5 text-xs text-sub">
+          <p>ONE-TIME CANARY TRANSPORT TEST — 通常のHot判定は変更しません。新規のBrand-only投稿を1件だけXへ公開します。</p>
+          <button type="button" onClick={runOneTimeCanary} disabled={canaryBusy || status.oneTimeCanary !== "unclaimed" || !effective || today.scheduled > 0 || today.published > 0 || status.queueLifecycle.backpressure}
+            className="mt-2 rounded-lg border border-brand/40 px-3 py-1.5 font-semibold text-brand disabled:cursor-not-allowed disabled:opacity-40">
+            {canaryBusy ? "実行中…" : "単発Canaryを実行"}
+          </button>
+          {status.oneTimeCanary === "claimed" && <p className="mt-1">単発Canaryは起動済みです。自動再実行しません。</p>}
+          {canaryOutcome && <p role="status" className="mt-2 break-words">{canaryOutcome}</p>}
         </div>
 
         {blockers.length > 0 && (
