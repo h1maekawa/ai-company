@@ -131,6 +131,12 @@ test("Automation statusはQueue backpressureを稼働不可として表示する
   assert.match(source, /Content Queue backpressureで新規生成を停止しています/);
 });
 
+test("DailyXの正常SKIPはFAILEDではなくskippedとして記録する", () => {
+  const source = fs.readFileSync(path.join(ROOT, "app/lib/note/automation/dailyX.ts"), "utf8");
+  assert.match(source, /result\.skipped \? "skipped" : "failed"/);
+  assert.match(source, /status: "skipped", result: result\.skipCode/);
+});
+
 /**
  * Phase 10-B.1 Cadence Expansion（2026-09-15）
  *

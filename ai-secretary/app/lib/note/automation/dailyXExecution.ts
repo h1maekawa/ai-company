@@ -59,6 +59,7 @@ export type PersistenceAfterPublishFailure = { planSlotId: string; draftId: stri
 
 export type DailyXResult = {
   skipped?: boolean;
+  skipCode?: "BLOCKED_BY_BACKPRESSURE" | "SKIPPED_NO_NON_SATURATED_CANDIDATE";
   reason?: string;
   planId?: string;
   slots?: Array<{ id: string; status: DailyXSlotStatus; failureKind?: string }>;
@@ -95,25 +96,34 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
   let drafts = await deps.loadDrafts();
   const queueLifecycle = deriveQueueLifecycle(drafts, { now });
 
+  if (queueLifecycle.backpressure) {
+    return {
+      skipped: true,
+      skipCode: "BLOCKED_BY_BACKPRESSURE",
+      reason: `Content Queue backpressure: ${queueLifecycle.reasons.join(" / ")}`,
+      generated: 0,
+      queueLifecycle,
+      escalated: false,
+    };
+  }
+  const saturatedTopics = new Set(queueLifecycle.saturatedTopics);
+
   /* 1. 当日Plan（あれば必ず再利用。再計算しない） */
   let plan = await deps.loadPlan(date, ctx.accountKey);
   if (!plan) {
-    if (queueLifecycle.backpressure) {
+    const { eligibleCount, candidates } = await deps.loadCandidates();
+    const nonSaturatedCandidates = candidates.filter((candidate) => !saturatedTopics.has(candidate.id));
+    const built = buildDailyXPlan({ date, accountKey: ctx.accountKey, now, strategy: ctx.strategy, maxXPostsPerDay: ctx.maxXPostsPerDay, candidates: nonSaturatedCandidates });
+    if (!built) {
+      const allCandidatesSaturated = candidates.length > 0 && nonSaturatedCandidates.length === 0;
       return {
         skipped: true,
-        reason: `Content Queue backpressure: ${queueLifecycle.reasons.join(" / ")}`,
+        ...(allCandidatesSaturated ? { skipCode: "SKIPPED_NO_NON_SATURATED_CANDIDATE" as const } : {}),
+        reason: allCandidatesSaturated
+          ? "SKIPPED_NO_NON_SATURATED_CANDIDATE"
+          : eligibleCount > 0 ? "Hot判定の信頼度がLOWのみのため、本日の自動投稿を見送りました" : "利用可能な候補がありません",
         generated: 0,
         queueLifecycle,
-        escalated: false,
-      };
-    }
-    const { eligibleCount, candidates } = await deps.loadCandidates();
-    const built = buildDailyXPlan({ date, accountKey: ctx.accountKey, now, strategy: ctx.strategy, maxXPostsPerDay: ctx.maxXPostsPerDay, candidates });
-    if (!built) {
-      return {
-        skipped: true,
-        reason: eligibleCount > 0 ? "Hot判定の信頼度がLOWのみのため、本日の自動投稿を見送りました" : "利用可能な候補がありません",
-        generated: 0,
         escalated: false,
       };
     }
@@ -146,7 +156,7 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
   const warnings: string[] = [];
   let generationFailures = 0;
   const lineageConflicts: string[] = [];
-  for (const slot of queueLifecycle.backpressure ? [] : plan.slots.filter((item) => item.status === "planned")) {
+  for (const slot of plan.slots.filter((item) => item.status === "planned")) {
     /*
      * Recovery: 前回Runで Draft保存は成功したが Plan保存だけ失敗した場合、Planは planned のまま残る。
      * planId と planSlotId が完全一致する既存Draftがあれば、再生成せずその状態からPlanを回復する。
@@ -170,6 +180,11 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
     const cluster = slot.candidateRef ? await deps.findCluster(slot.candidateRef.id) : null;
     if (!cluster) {
       setSlot(slot, { status: "skipped", failureKind: "candidate-missing", failureReason: "Planの候補clusterが見つかりません" });
+      await savePlan();
+      continue;
+    }
+    if (saturatedTopics.has(cluster.id)) {
+      setSlot(slot, { status: "skipped", failureKind: "topic-backpressure", failureReason: `trendCluster/topic ${cluster.id} はsaturatedのため新規生成しません` });
       await savePlan();
       continue;
     }
@@ -214,6 +229,11 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
       const draft = drafts.find((item) => item.id === slot.draftId);
       if (!draft) {
         setSlot(slot, { status: "skipped", failureKind: "draft-missing", failureReason: "Draftが見つかりません" });
+        await savePlan();
+        continue;
+      }
+      if (draft.trendClusterId && saturatedTopics.has(draft.trendClusterId)) {
+        setSlot(slot, { status: "skipped", failureKind: "topic-backpressure", failureReason: `trendCluster/topic ${draft.trendClusterId} はsaturatedのため自動予約しません` });
         await savePlan();
         continue;
       }

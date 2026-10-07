@@ -18,7 +18,7 @@ import type { ExecutionContext } from "@/app/lib/company/trace";
 export type RecordStepInput = {
   /** PIPELINE_STEPS のID */
   stepId: string;
-  status: Extract<AgentTaskStatus, "done" | "failed">;
+  status: Extract<AgentTaskStatus, "done" | "failed" | "skipped">;
   /** 何をしたかの短い要約。一覧にそのまま出る */
   result?: string;
   failureReason?: string;
@@ -104,7 +104,7 @@ export async function recordPipelineSteps(
       department: "note",
       actor: step.role,
       action: step.label,
-      outcome: input.status === "done" ? "success" : "failure",
+      outcome: input.status === "done" ? "success" : input.status === "skipped" ? "skipped" : "failure",
       // ステップIDを signature にする。実行のたびに揺れない
       signature: `pipeline:${step.id}`,
       detail: input.failureReason ?? input.result,

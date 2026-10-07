@@ -62,7 +62,7 @@ export function requiresApprovalBeforeRun(role: AgentRole): boolean {
   return role === "publisher";
 }
 
-export type AgentTaskStatus = "queued" | "running" | "done" | "failed" | "cancelled";
+export type AgentTaskStatus = "queued" | "running" | "done" | "failed" | "skipped" | "cancelled";
 
 /**
  * このタスクがどこから生まれたか。

@@ -19,6 +19,7 @@ const STATUS_STYLE: Record<string, string> = {
   running: "border-brand/30 bg-brand/10 text-brand",
   done: "border-gain/25 bg-gain/10 text-gain",
   failed: "border-loss/25 bg-loss/10 text-loss",
+  skipped: "border-hairline bg-white/5 text-sub",
   cancelled: "border-hairline bg-white/5 text-sub",
 };
 
@@ -27,6 +28,7 @@ const STATUS_LABELS: Record<string, string> = {
   running: "実行中",
   done: "完了",
   failed: "失敗",
+  skipped: "スキップ",
   cancelled: "取消",
 };
 
