@@ -80,7 +80,8 @@ function toResearchItem(
     id: hashId("r", url),
     platform: "note",
     sourceType,
-    sourceAccountId,
+    // Tag検索でも公開著者名義を保持し、同一note.com hostを1ソースに潰さない。
+    sourceAccountId: note.user?.urlname ?? sourceAccountId,
     sourceUrl: url,
     title,
     textExcerpt: excerpt(body || title),

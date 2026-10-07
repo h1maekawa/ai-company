@@ -25,6 +25,7 @@ import {
 import { ResearchItem, TrendCluster } from "./types";
 import { captureKnowledgeCandidate } from "../../knowledge/captureService";
 import { learningSignals } from "./performance";
+import { reconcileFetchedResearchItems } from "./evidenceRefresh";
 
 export type ResearchRunResult = {
   fetched: number;
@@ -90,9 +91,8 @@ export async function runResearch(options?: {
 
   const fetched = [...noteResult.items, ...xResult.items];
 
-  // 既に取り込み済みのURLは再登録しない
-  const knownUrls = new Set(existingItems.map((i) => i.sourceUrl));
-  const fresh = fetched.filter((i) => !knownUrls.has(i.sourceUrl));
+  // 同一URLの再取得は新規本文として扱わず、providerが実際に返した公開evidenceだけを更新する。
+  const { fresh, refreshed } = reconcileFetchedResearchItems(existingItems, fetched);
 
   // 新しいものだけAIで型へ抽象化する（コストと時間の節約）
   // Slackの会話リサーチはVercelの制限時間内に必ず完了通知を返す。
@@ -102,7 +102,7 @@ export async function runResearch(options?: {
       ? await abstractItems(fresh, { useAI: !options?.focusTopic })
       : [];
 
-  const allItems: ResearchItem[] = [...abstracted, ...existingItems];
+  const allItems: ResearchItem[] = [...abstracted, ...refreshed];
   const savedItems = await saveResearchInbox(allItems);
 
   // 採点に使う「過去に扱ったテーマ」
