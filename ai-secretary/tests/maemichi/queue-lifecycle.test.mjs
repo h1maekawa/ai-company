@@ -10,14 +10,23 @@ const draft = (id, overrides = {}) => ({
   status: "draft", createdAt: "2026-09-29T00:00:00.000Z", updatedAt: "2026-09-29T00:00:00.000Z", ...overrides,
 });
 
-test("Queue Lifecycleは未解決20件と同一topic 3件でbackpressureを返す", () => {
+test("Queue Lifecycleは未解決20件でglobal backpressure、同一topic 3件でtopic saturationを返す", () => {
   const drafts = Array.from({ length: 20 }, (_, i) => draft(`d${i}`, { trendClusterId: i < 3 ? "topic-a" : `topic-${i}` }));
   const result = lifecycle.deriveQueueLifecycle(drafts, { now: NOW });
   assert.equal(result.backpressure, true);
   assert.equal(result.activeUnresolved, 20);
   assert.equal(result.unresolvedByTopic["topic-a"], 3);
   assert.match(result.reasons.join(" "), /active unresolved/);
-  assert.match(result.reasons.join(" "), /topic-a/);
+  assert.deepEqual(result.saturatedTopics, ["topic-a"]);
+  assert.doesNotMatch(result.reasons.join(" "), /topic-a/);
+});
+
+test("未解決19件でtopic 3件はglobal backpressureにしない", () => {
+  const drafts = Array.from({ length: 19 }, (_, i) => draft(`d${i}`, { trendClusterId: i < 3 ? "topic-a" : `topic-${i}` }));
+  const result = lifecycle.deriveQueueLifecycle(drafts, { now: NOW });
+  assert.equal(result.backpressure, false);
+  assert.equal(result.activeUnresolved, 19);
+  assert.deepEqual(result.saturatedTopics, ["topic-a"]);
 });
 
 test("外部link付きとold scheduledはcleanup候補にせずreconciliation表示だけにする", () => {

@@ -180,12 +180,14 @@ export async function runDailyXAutomation(): Promise<DailyXResult> {
 
   await recordPipelineSteps(
     [
-      { stepId: "research.select", status: result.planId ? "done" : "failed", ...(result.planId ? { result: `Plan ${result.planId}` } : { failureReason: result.reason ?? "Planを作成できませんでした" }) },
-      { stepId: "writer.generate", status: "done", result: `投稿案を${result.generated}件生成` },
-      { stepId: "fact_check.gate", status: "done", result: `Safety/Fact Gate却下 ${result.safetyBlocked ?? 0}件` },
+      { stepId: "research.select", status: result.planId ? "done" : result.skipped ? "skipped" : "failed", ...(result.planId ? { result: `Plan ${result.planId}` } : result.skipped ? { result: result.skipCode ?? result.reason ?? "SKIPPED" } : { failureReason: result.reason ?? "Planを作成できませんでした" }) },
+      { stepId: "writer.generate", status: result.skipped ? "skipped" : "done", result: result.skipped ? result.skipCode ?? result.reason ?? "SKIPPED" : `投稿案を${result.generated}件生成` },
+      { stepId: "fact_check.gate", status: result.skipped ? "skipped" : "done", result: result.skipped ? result.skipCode ?? result.reason ?? "SKIPPED" : `Safety/Fact Gate却下 ${result.safetyBlocked ?? 0}件` },
       (result.scheduledDraftIds?.length ?? 0) > 0
         ? { stepId: "publisher.schedule", status: "done", result: `${result.scheduledDraftIds!.length}件をBufferへ予約` }
-        : { stepId: "publisher.schedule", status: "failed", failureReason: result.haltedReason ?? result.reason ?? "予約しませんでした" },
+        : result.skipped
+          ? { stepId: "publisher.schedule", status: "skipped", result: result.skipCode ?? result.reason ?? "SKIPPED" }
+          : { stepId: "publisher.schedule", status: "failed", failureReason: result.haltedReason ?? result.reason ?? "予約しませんでした" },
     ],
     trace
   ).catch((error) => console.error("[daily-x] pipeline記録に失敗（非致命）:", error));

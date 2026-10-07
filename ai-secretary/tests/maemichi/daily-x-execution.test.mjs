@@ -83,6 +83,74 @@ function harness(options = {}) {
 
 const statuses = (plan) => plan.slots.map((slot) => slot.status);
 
+const unresolvedDrafts = (count, saturatedTopic = "saturated") => Array.from({ length: count }, (_, index) => ({
+  id: `existing-${index}`,
+  trendClusterId: index < 3 ? saturatedTopic : `existing-topic-${index}`,
+  xAccountId: PRIMARY,
+  purpose: "reach",
+  genreId: "ai",
+  text: `existing ${index}`,
+  urls: [],
+  needsDisclosure: false,
+  status: "approved",
+  createdAt: NOW.toISOString(),
+  updatedAt: NOW.toISOString(),
+}));
+
+test("topic saturation: total 19 + topic 3で非saturated candidateは生成・予約でき、既存Queueは不変", async () => {
+  const existing = unresolvedDrafts(19);
+  const h = harness({ drafts: existing, clusters: [cluster("saturated", 100), cluster("available", 90)], ctx: { maxXPostsPerDay: 1 } });
+  const before = structuredClone(h.state.drafts);
+  const result = await h.run();
+  assert.equal(result.queueLifecycle.backpressure, false);
+  assert.deepEqual(result.queueLifecycle.saturatedTopics, ["saturated"]);
+  assert.equal(result.clusterId, "available");
+  assert.equal(result.generated, 1);
+  assert.equal(result.scheduledDraftIds.length, 1);
+  assert.deepEqual(h.state.drafts.filter((item) => item.id.startsWith("existing-")), before);
+});
+
+test("global backpressure: total 20はBLOCKED_BY_BACKPRESSUREで正常SKIP", async () => {
+  const h = harness({ drafts: unresolvedDrafts(20), ctx: { maxXPostsPerDay: 1 } });
+  const before = structuredClone(h.state.drafts);
+  const result = await h.run();
+  assert.equal(result.skipped, true);
+  assert.equal(result.skipCode, "BLOCKED_BY_BACKPRESSURE");
+  assert.equal(h.state.calls.generate, 0);
+  assert.equal(h.state.calls.createPost, 0);
+  assert.equal(h.state.plans.size, 0);
+  assert.deepEqual(h.state.drafts, before);
+});
+
+test("全candidateがsaturatedならSKIPPED_NO_NON_SATURATED_CANDIDATE", async () => {
+  const existing = unresolvedDrafts(3);
+  const h = harness({ drafts: existing, clusters: [cluster("saturated", 100)], ctx: { maxXPostsPerDay: 1 } });
+  const result = await h.run();
+  assert.equal(result.skipped, true);
+  assert.equal(result.skipCode, "SKIPPED_NO_NON_SATURATED_CANDIDATE");
+  assert.equal(h.state.calls.generate, 0);
+  assert.equal(h.state.calls.createPost, 0);
+  assert.equal(h.state.plans.size, 0);
+  assert.deepEqual(h.state.drafts, existing);
+});
+
+test("saturated topicの既存generated draftはauto publishしない", async () => {
+  const prepared = harness({ clusters: [cluster("saturated", 100)], ctx: { maxXPostsPerDay: 1, autopilot: false } });
+  await prepared.run();
+  const plan = structuredClone(prepared.plan());
+  const generatedDraft = structuredClone(prepared.state.drafts[0]);
+  const extras = unresolvedDrafts(2).map((item, index) => ({ ...item, id: `saturated-extra-${index}`, trendClusterId: "saturated" }));
+  const h = harness({ plans: [plan], drafts: [generatedDraft, ...extras], clusters: [cluster("saturated", 100)], ctx: { maxXPostsPerDay: 1 } });
+  const result = await h.run();
+  assert.equal(result.queueLifecycle.backpressure, false);
+  assert.deepEqual(result.queueLifecycle.saturatedTopics, ["saturated"]);
+  assert.equal(h.state.calls.generate, 0);
+  assert.equal(h.state.calls.createPost, 0);
+  assert.equal(h.plan().slots[0].status, "skipped");
+  assert.equal(h.plan().slots[0].failureKind, "topic-backpressure");
+  assert.equal(h.state.drafts.find((item) => item.id === generatedDraft.id).status, "draft");
+});
+
 test("T1 same day retry: 全slot予約後の2回目は生成・createPost 0回、Draft件数不変", async () => {
   const h = harness();
   const first = await h.run();

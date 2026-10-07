@@ -25,6 +25,7 @@ export type QueueLifecycleSnapshot = {
   entries: QueueLifecycleEntry[];
   activeUnresolved: number;
   unresolvedByTopic: Record<string, number>;
+  saturatedTopics: string[];
   backpressure: boolean;
   reasons: string[];
 };
@@ -65,8 +66,9 @@ export function deriveQueueLifecycle(
   const activeUnresolved = entries.filter((entry) => entry.activeUnresolved).length;
   const reasons: string[] = [];
   if (activeUnresolved >= ACTIVE_UNRESOLVED_LIMIT) reasons.push(`active unresolvedが上限（${ACTIVE_UNRESOLVED_LIMIT}件）に達しています`);
-  for (const [topic, count] of Object.entries(unresolvedByTopic)) {
-    if (count >= TOPIC_UNRESOLVED_LIMIT) reasons.push(`同一trendCluster/topic ${topic} の未解決variantが上限（${TOPIC_UNRESOLVED_LIMIT}件）に達しています`);
-  }
-  return { entries, activeUnresolved, unresolvedByTopic, backpressure: reasons.length > 0, reasons };
+  const saturatedTopics = Object.entries(unresolvedByTopic)
+    .filter(([, count]) => count >= TOPIC_UNRESOLVED_LIMIT)
+    .map(([topic]) => topic)
+    .sort();
+  return { entries, activeUnresolved, unresolvedByTopic, saturatedTopics, backpressure: reasons.length > 0, reasons };
 }
