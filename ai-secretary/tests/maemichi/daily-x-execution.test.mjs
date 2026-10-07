@@ -237,6 +237,34 @@ test("T11 past slot: 予定時刻-5分を過ぎたslotは missed。scheduledAt�
   assert.deepEqual([...h.state.claims], ["daily-x:2026-09-24:primary:2"], "翌日キーを先取りしない");
 });
 
+test("late first run: 当日Plan未作成かつ固定枠後なら最初の1枠だけ+10分へ回復する", async () => {
+  const lateNow = new Date("2026-09-24T01:40:00Z"); // 10:40 JST
+  const h = harness({ now: lateNow, ctx: { maxXPostsPerDay: 1, lateFirstRunLeadMinutes: 10 } });
+  const result = await h.run();
+  assert.equal(result.generated, 1);
+  assert.equal(result.scheduledDraftIds.length, 1);
+  assert.equal(h.plan().slots[0].scheduledAt, "2026-09-24T01:50:00.000Z");
+  assert.equal(h.plan().slots[0].scheduledTime, "10:50");
+  assert.equal(h.plan().slots[0].timeSource, "late-first-run-recovery");
+});
+
+test("late first run: 既存Planの時刻は回復処理で変更しない", async () => {
+  const prepared = harness({ ctx: { maxXPostsPerDay: 1, autopilot: false } });
+  await prepared.run();
+  const plan = structuredClone(prepared.plan());
+  const scheduledAt = plan.slots[0].scheduledAt;
+  const h = harness({
+    plans: [plan],
+    drafts: prepared.state.drafts,
+    now: new Date("2026-09-24T01:40:00Z"),
+    ctx: { maxXPostsPerDay: 1, lateFirstRunLeadMinutes: 10 },
+  });
+  await h.run();
+  assert.equal(h.plan().slots[0].scheduledAt, scheduledAt);
+  assert.equal(h.plan().slots[0].timeSource, "default");
+  assert.equal(h.state.calls.createPost, 0);
+});
+
 for (const kind of ["slot-limit", "validation", "auth", "mutation"]) {
   test(`T12 Buffer known failure（${kind}）: claimを解放し slot failed、次回実行で再予約`, async () => {
     const h = harness({ ctx: { maxXPostsPerDay: 1 }, createPost: (_draft, call) => (call === 1 ? { ok: false, error: { kind, message: `${kind} error` } } : null) });

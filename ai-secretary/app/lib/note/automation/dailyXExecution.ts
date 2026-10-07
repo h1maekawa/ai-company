@@ -26,6 +26,8 @@ export type DailyXContext = {
   bufferConfigured: boolean;
   /** brand.xAccounts[0]。自動予約するのはこのaccountのDraftだけ */
   primaryAccountId: string | null;
+  /** 当日Planが未作成のまま最初の固定枠を過ぎた場合だけ、最初の枠を現在時刻からこの分数後へ回復する。既存Planは変更しない。 */
+  lateFirstRunLeadMinutes?: number;
 };
 
 export type SafetyOutcome = { draft: SocialDraft; safe: boolean; reasons: string[] };
@@ -126,6 +128,21 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
         queueLifecycle,
         escalated: false,
       };
+    }
+    const leadMinutes = Math.floor(ctx.lateFirstRunLeadMinutes ?? 0);
+    const firstSlot = built.slots[0];
+    if (leadMinutes >= 5 && leadMinutes <= 15 && firstSlot && Date.parse(firstSlot.scheduledAt) <= now.getTime() + MISSED_MARGIN_MS) {
+      const recoveredAt = new Date(now.getTime() + leadMinutes * 60_000);
+      firstSlot.scheduledAt = recoveredAt.toISOString();
+      firstSlot.scheduledTime = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Tokyo",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(recoveredAt);
+      firstSlot.timeSource = "late-first-run-recovery";
+      firstSlot.updatedAt = now.toISOString();
+      built.updatedAt = now.toISOString();
     }
     await deps.savePlan(built);
     plan = built;
