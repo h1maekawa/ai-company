@@ -67,11 +67,13 @@ async function searchViaSerpApi(query: string): Promise<XResearchResult> {
   for (const row of organic) {
     if (!row.link || !row.title) continue;
     if (!/(^|\.)x\.com|twitter\.com/.test(new URL(row.link).hostname)) continue;
+    const handle = new URL(row.link).pathname.split("/").filter(Boolean)[0];
     const text = `${row.title} ${row.snippet ?? ""}`;
     items.push({
       id: hashId("r", row.link),
       platform: "x",
       sourceType: "keyword",
+      ...(handle && /^[A-Za-z0-9_]{1,15}$/.test(handle) && handle !== "i" ? { sourceAccountId: handle.toLowerCase() } : {}),
       sourceUrl: row.link,
       title: row.title,
       textExcerpt: stripTags(row.snippet ?? row.title).slice(0, 220),
@@ -200,7 +202,7 @@ function tweetToItem(
     id: hashId("r", url),
     platform: "x",
     sourceType: account ? "reference-account" : "keyword",
-    sourceAccountId: account?.id,
+    sourceAccountId: tweet.author_id ?? account?.handle.toLowerCase(),
     sourceUrl: url,
     textExcerpt: tweet.text.slice(0, 220),
     authorName: account?.displayName ?? account?.handle,
@@ -255,7 +257,7 @@ async function researchViaOfficialApi(
       `https://api.x.com/2/users/${lookup.id}/tweets?max_results=${Math.max(
         5,
         settings.maxPostsPerAccount
-      )}&start_time=${startTime}&tweet.fields=created_at,public_metrics`
+      )}&start_time=${startTime}&tweet.fields=created_at,public_metrics,author_id`
     );
     cost += COST_PER_REQUEST_USD;
     if (timeline.error) {
@@ -280,7 +282,7 @@ async function researchViaOfficialApi(
     const search = await callXApi(
       `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(
         query
-      )}&max_results=10&start_time=${startTime}&tweet.fields=created_at,public_metrics`
+      )}&max_results=10&start_time=${startTime}&tweet.fields=created_at,public_metrics,author_id`
     );
     cost += COST_PER_REQUEST_USD;
     if (search.error) {
