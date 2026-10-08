@@ -13,17 +13,20 @@ export type DailyCheckpoint = {
 
 const PREFIX = "note:daily-research:v1";
 const TTL_SECONDS = 8 * 24 * 60 * 60;
-export const dailyOperationId = () => `${PREFIX}:${tokyoDateKey()}`;
+export const dailyOperationId = (now = new Date()) => `${PREFIX}:${tokyoDateKey(now)}`;
 
-export async function resolveDailyOperationId(): Promise<string> {
+export async function resolveDailyOperationId(now = new Date()): Promise<string> {
   const redis = getRedisClient();
   if (!redis) throw new Error("Daily research requires durable Redis");
+  const current = dailyOperationId(now);
   const active = await redis.get<string>(`${PREFIX}:active`);
-  if (active?.startsWith(`${PREFIX}:`)) {
+  // An unresolved notification or interrupted run may be resumed only on the
+  // same JST day. A stale checkpoint must never suppress a new day's research.
+  if (active === current) {
     const saved = await loadDailyCheckpoint(active);
     if (saved && saved.phase !== "completed") return active;
   }
-  return dailyOperationId();
+  return current;
 }
 
 export function dailyResearchPolicy(env: NodeJS.ProcessEnv = process.env) {

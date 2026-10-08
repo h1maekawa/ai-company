@@ -403,7 +403,7 @@ export async function deletePost(postId: string): Promise<BufferResult<boolean>>
 
 export async function getPost(postId: string): Promise<BufferResult<BufferPostNode | null>> {
   const result = await graphql<{ post?: BufferPostNode }>(
-    `query Post($id: String!) {
+    `query Post($id: PostId!) {
       post(input: { id: $id }) {
         id
         status

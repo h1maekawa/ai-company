@@ -16,6 +16,9 @@ import { ReferenceXAccount, ResearchItem, XResearchSettings } from "../types";
 import { detectGenres } from "./note";
 import { buildXQueries } from "../x-query";
 import { isSerpApiConfigured } from "../serpapi";
+import { normalizeSerpPublishedAt } from "../serpDate";
+
+export { normalizeSerpPublishedAt } from "../serpDate";
 
 export type XResearchResult = {
   items: ResearchItem[];
@@ -64,6 +67,7 @@ async function searchViaSerpApi(query: string): Promise<XResearchResult> {
   }
 
   const items: ResearchItem[] = [];
+  const observedAt = new Date();
   for (const row of organic) {
     if (!row.link || !row.title) continue;
     if (!/(^|\.)x\.com|twitter\.com/.test(new URL(row.link).hostname)) continue;
@@ -77,9 +81,9 @@ async function searchViaSerpApi(query: string): Promise<XResearchResult> {
       sourceUrl: row.link,
       title: row.title,
       textExcerpt: stripTags(row.snippet ?? row.title).slice(0, 220),
-      publishedAt: row.date,
+      publishedAt: normalizeSerpPublishedAt(row.date, observedAt),
       detectedGenreIds: detectGenres(text),
-      fetchedAt: new Date().toISOString(),
+      fetchedAt: observedAt.toISOString(),
     });
   }
   return { items, failures: [], estimatedCostUsd: 0 };

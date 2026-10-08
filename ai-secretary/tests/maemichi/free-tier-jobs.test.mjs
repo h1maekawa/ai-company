@@ -79,4 +79,11 @@ test("Daily job lock rejects simultaneous tick and resumes from a persisted chec
   assert.equal(await module.withDailyJobLock(id, async () => "duplicate"), null);
   unblock(); await first;
   assert.equal((await module.loadDailyCheckpoint(id)).phase, "collected");
+
+  values.set("note:daily-research:v1:active", "note:daily-research:v1:2026-09-29");
+  values.set("note:daily-research:v1:2026-09-29:checkpoint", module.checkpoint("note:daily-research:v1:2026-09-29", "needs_review"));
+  assert.equal(await module.resolveDailyOperationId(new Date("2026-09-30T12:00:00Z")), id);
+
+  values.set("note:daily-research:v1:active", id);
+  assert.equal(await module.resolveDailyOperationId(new Date("2026-09-30T12:00:00Z")), id);
 });

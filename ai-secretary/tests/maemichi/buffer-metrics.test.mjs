@@ -34,6 +34,7 @@ test("Buffer sent postからMetrics・更新時刻・externalLinkを取得する
   const original = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
     const request = JSON.parse(init.body);
+    assert.match(request.query, /query Post\(\$id: PostId!\)/);
     assert.match(request.query, /externalLink/);
     assert.match(request.query, /metricsUpdatedAt/);
     return new Response(JSON.stringify({ data: { post: sentPost } }), { status: 200 });
