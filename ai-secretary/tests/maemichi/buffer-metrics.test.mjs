@@ -166,7 +166,12 @@ test("Canary Publication Evidence queryはMetrics failureから独立して公�
     queries.push(request.query);
     if (request.query.includes("PostPublicationEvidence")) {
       assert.doesNotMatch(request.query, /metrics/i);
-      return new Response(JSON.stringify({ data: { post: evidence } }), { status: 200 });
+      assert.match(request.query, /posts\(/);
+      assert.match(request.query, /status: \[sent\]/);
+      return new Response(JSON.stringify({ data: { posts: { edges: [
+        { node: { ...evidence, id: "another-buffer-post" } },
+        { node: evidence },
+      ] } } }), { status: 200 });
     }
     return new Response(JSON.stringify({ errors: [{ message: "metrics unavailable" }] }), { status: 200 });
   };

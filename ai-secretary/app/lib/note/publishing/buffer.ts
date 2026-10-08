@@ -428,34 +428,48 @@ export async function getPost(postId: string): Promise<BufferResult<BufferPostNo
 export async function getPostPublicationEvidence(
   postId: string
 ): Promise<BufferResult<BufferPostPublicationEvidence | null>> {
-  const result = await graphql<{ post?: BufferPostPublicationEvidence }>(
-    `query PostPublicationEvidence($id: String!) {
-      post(input: { id: $id }) {
-        id
-        status
-        dueAt
-        sentAt
-        externalLink
+  const cfg = config();
+  if (!cfg) return { ok: false, error: { kind: "config", message: "Bufferの環境変数が未設定です" } };
+  const result = await graphql<{ posts?: { edges?: { node: BufferPostPublicationEvidence }[] } }>(
+    `query PostPublicationEvidence($organizationId: OrganizationId!, $channelIds: [ChannelId!]) {
+      posts(
+        first: 100
+        input: {
+          organizationId: $organizationId
+          filter: { channelIds: $channelIds, status: [sent] }
+          sort: [{ field: createdAt, direction: desc }]
+        }
+      ) {
+        edges { node { id status dueAt sentAt externalLink } }
       }
     }`,
-    { id: postId }
+    { organizationId: cfg.org, channelIds: [cfg.channel] }
   );
   if (result.ok === false) return result;
-  return { ok: true, data: result.data.post ?? null };
+  const post = result.data.posts?.edges?.map((edge) => edge.node).find((node) => node.id === postId) ?? null;
+  return { ok: true, data: post };
 }
 
 /** Metrics are intentionally queried separately from publication evidence. */
 export async function getPostMetrics(postId: string): Promise<BufferResult<BufferPostMetrics | null>> {
-  const result = await graphql<{ post?: BufferPostMetrics }>(
-    `query PostMetrics($id: String!) {
-      post(input: { id: $id }) {
-        id
-        metrics { type name value unit }
-        metricsUpdatedAt
+  const cfg = config();
+  if (!cfg) return { ok: false, error: { kind: "config", message: "Bufferの環境変数が未設定です" } };
+  const result = await graphql<{ posts?: { edges?: { node: BufferPostMetrics }[] } }>(
+    `query PostMetrics($organizationId: OrganizationId!, $channelIds: [ChannelId!]) {
+      posts(
+        first: 100
+        input: {
+          organizationId: $organizationId
+          filter: { channelIds: $channelIds, status: [sent] }
+          sort: [{ field: createdAt, direction: desc }]
+        }
+      ) {
+        edges { node { id metrics { type name value unit } metricsUpdatedAt } }
       }
     }`,
-    { id: postId }
+    { organizationId: cfg.org, channelIds: [cfg.channel] }
   );
   if (result.ok === false) return result;
-  return { ok: true, data: result.data.post ?? null };
+  const post = result.data.posts?.edges?.map((edge) => edge.node).find((node) => node.id === postId) ?? null;
+  return { ok: true, data: post };
 }
