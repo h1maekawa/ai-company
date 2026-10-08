@@ -14,6 +14,19 @@ test("Morning Brief includes only actionable events and deduplicates fingerprint
   const brief = buildMorningBrief({ now: new Date("2026-10-02T00:00:00Z"), notifications: [notification(), notification({ id: "duplicate" }), notification({ id: "info", fingerprint: "info", priority: "INFO", actionRequired: false })], homeAttention: [], opportunities: [] });
   assert.equal(brief.day, "2026-10-02"); assert.equal(brief.items.length, 1); assert.equal(brief.items[0].sourceAlreadyNotified, false);
 });
+test("Morning Briefは同じfactual dimensionの改善候補をfingerprintが異なっても1件にまとめる", () => {
+  const improvement = (id, fingerprint, summary) => notification({
+    id, fingerprint, kind: "COMPANY_IMPROVEMENT_REVIEW", sourceType: "company-improvement",
+    title: "AI会社の改善候補があります", summary,
+  });
+  const brief = buildMorningBrief({ notifications: [
+    improvement("a", "research:a", "RESEARCH_PROVIDER_FAILURE occurred 3 times for the same factual dimension."),
+    improvement("b", "research:b", "RESEARCH_PROVIDER_FAILURE occurred 3 times for the same factual dimension."),
+    improvement("c", "mission:c", "MISSION_REPLAN_REQUIRED needs review."),
+  ], homeAttention: [], opportunities: [] });
+  assert.equal(brief.items.length, 2);
+  assert.equal(brief.items.filter((item) => item.summary.startsWith("RESEARCH_PROVIDER_FAILURE")).length, 1);
+});
 test("Morning Briefは実績同期済みX投稿数をCEO判断件数と分けて表示する", () => {
   const brief = buildMorningBrief({ notifications: [], homeAttention: [], opportunities: [], xPublishedYesterday: 1 });
   assert.equal(brief.items.length, 0);

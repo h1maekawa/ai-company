@@ -29,7 +29,10 @@ export function buildMorningBrief(input: { notifications: NotificationEvent[]; h
       summary: `${opportunity.summary}\nScore ${opportunity.score} / Evidence coverage ${opportunity.coveragePct}% / Revenue ${opportunity.expectedRevenue.known ? "confirmed estimate available" : "UNKNOWN"}`,
       deepLink: `/company?opportunityId=${encodeURIComponent(opportunity.id)}`, priority: "ACTION_REQUIRED", sourceAlreadyNotified: false });
   }
-  const deduped = items.filter((item, index, all) => all.findIndex((other) => other.fingerprint === item.fingerprint) === index)
+  const factualDimension = (item: MorningBriefItem) => item.title === "AI会社の改善候補があります"
+    ? `${item.area}:${item.title}:${item.summary}`
+    : item.fingerprint;
+  const deduped = items.filter((item, index, all) => all.findIndex((other) => factualDimension(other) === factualDimension(item)) === index)
     .sort((a, b) => Number(b.priority === "CRITICAL") - Number(a.priority === "CRITICAL")).slice(0, 15);
   return { day: day(now), generatedAt: now.toISOString(), items: deduped, insights: (input.insights ?? []).slice(0, 5), unavailable: [...new Set(input.unavailable ?? [])], ...(input.xPublishedYesterday === undefined ? {} : { xPublishedYesterday: input.xPublishedYesterday }) };
 }
