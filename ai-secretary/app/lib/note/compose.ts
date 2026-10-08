@@ -8,6 +8,7 @@
  */
 
 import { callAI } from "../ai/client";
+import { buildContentBrandContext, platformBrandPolicy } from "../content/brandProfile";
 import {
   TARGET_X_WEIGHTED_LENGTH,
   validateGeneratedXText,
@@ -82,6 +83,13 @@ function buildSystemPrompt(input: ComposeInput, account: XAccount | undefined): 
   const { identity, personality } = brand;
 
   return `あなたは「${identity.name}」という発信ブランドの編集者兼ライターです。
+
+${buildContentBrandContext("note")}
+
+## 同時に作るX投稿のPlatform Policy
+${platformBrandPolicy("x").contentPrinciples.map((principle) => `- ${principle}`).join("\n")}
+禁止: ${platformBrandPolicy("x").prohibitedAngles.join(" / ")}
+この方針も、下記のURL・Disclosure・体験・数値に関する厳守事項を上書きできません。
 
 「${identity.name}」は、AI・副業・読書・資産形成・習慣について、
 実際に試して学んだことを、穏やかで押し付けない言葉で発信します。

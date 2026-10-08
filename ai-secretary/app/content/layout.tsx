@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   BookOpen,
+  Camera,
   ChevronLeft,
   Database,
   Gauge,
@@ -19,26 +20,26 @@ import {
 } from "lucide-react";
 
 /**
- * コンテンツの詳細分析・素材管理。日常の作成と確認は /note に集約したので、
- * ここはトップレベルNavigationから外して「必要なときだけ開く場所」にしている。
- * 既存routeはすべて維持する（Deep Linkとブックマークを壊さない）。
+ * SNS事業のPrimary Navigationと既存Advanced routeを同じ枠で提供する。
+ * 既存routeはすべて維持し、Deep Linkとブックマークを壊さない。
  */
 const NAV_GROUPS = [
   {
-    label: "成果",
+    label: "SNSコンテンツ",
     items: [
-      { href: "/content", label: "サマリー", icon: Home },
+      { href: "/content", label: "概要", icon: Home },
+      { href: "/content/x", label: "X", icon: Megaphone },
+      { href: "/content/instagram", label: "Instagram", icon: Camera },
+      { href: "/content/note", label: "Note", icon: BookOpen },
+    ],
+  },
+  {
+    label: "詳細・Advanced",
+    items: [
       { href: "/content/performance", label: "投稿結果", icon: Gauge },
       { href: "/content/revenue", label: "売上", icon: Wallet },
       { href: "/content/learnings", label: "学び", icon: GraduationCap },
       { href: "/content/published", label: "公開済み", icon: BarChart3 },
-    ],
-  },
-  {
-    label: "素材・案件",
-    items: [
-      { href: "/content/note", label: "note記事", icon: BookOpen },
-      { href: "/content/x", label: "X投稿", icon: Megaphone },
       { href: "/content/materials", label: "素材", icon: Database },
       { href: "/content/research", label: "リサーチ", icon: Rss },
       { href: "/content/offers", label: "販売するもの", icon: Tag },
@@ -56,12 +57,12 @@ export default function ContentLayout({ children }: { children: React.ReactNode 
         <div className="mx-auto max-w-6xl">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-semibold tracking-[0.2em] text-gain">コンテンツ 詳細分析</p>
-              <h1 className="mt-1 text-lg font-bold sm:text-xl">結果を記録して、次の投稿につなげる</h1>
+              <p className="text-[10px] font-semibold tracking-[0.2em] text-gain">SNS BUSINESS OS</p>
+              <h1 className="mt-1 text-lg font-bold sm:text-xl">SNSコンテンツ</h1>
             </div>
-            <Link href="/note" className="flex shrink-0 items-center gap-1 text-xs text-sub hover:text-white">
+            <Link href="/" className="flex shrink-0 items-center gap-1 text-xs text-sub hover:text-white">
               <ChevronLeft className="h-3.5 w-3.5" />
-              コンテンツへ戻る
+              Homeへ戻る
             </Link>
           </div>
 

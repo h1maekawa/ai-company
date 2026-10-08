@@ -14,6 +14,7 @@
  */
 
 import { callAI } from "../../ai/client";
+import { buildContentBrandContext } from "../../content/brandProfile";
 import {
   suggestedPriceBand,
   TARGET_X_WEIGHTED_LENGTH,
@@ -41,7 +42,9 @@ import { styleProfileBlock, type StyleProfile } from "../styleProfile";
 
 function brandBlock(brand: Brand, channel: "x" | "note" = "x"): string {
   const { identity, personality } = brand;
-  return `## ブランド
+  return `${buildContentBrandContext(channel)}
+
+## 運用中の編集可能Brand
 ${identity.name} — ${identity.primaryTagline}
 コンセプト: ${brand.concept}
 
