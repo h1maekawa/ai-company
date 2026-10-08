@@ -192,6 +192,13 @@ export type BufferPostNode = {
   metricsUpdatedAt?: string | null;
 };
 
+export type BufferPostPublicationEvidence = Pick<
+  BufferPostNode,
+  "id" | "status" | "dueAt" | "sentAt" | "externalLink"
+>;
+
+export type BufferPostMetrics = Pick<BufferPostNode, "id" | "metrics" | "metricsUpdatedAt">;
+
 /** 現在予約中（未投稿）の件数を数える。無料プランの枠を超えないため */
 export async function countScheduled(): Promise<BufferResult<number>> {
   const cfg = config();
@@ -404,6 +411,45 @@ export async function getPost(postId: string): Promise<BufferResult<BufferPostNo
         dueAt
         sentAt
         externalLink
+        metrics { type name value unit }
+        metricsUpdatedAt
+      }
+    }`,
+    { id: postId }
+  );
+  if (result.ok === false) return result;
+  return { ok: true, data: result.data.post ?? null };
+}
+
+/**
+ * Publication truth must remain readable even when Buffer's metrics fields are unavailable.
+ * Keep this query deliberately free of metrics / metricsUpdatedAt.
+ */
+export async function getPostPublicationEvidence(
+  postId: string
+): Promise<BufferResult<BufferPostPublicationEvidence | null>> {
+  const result = await graphql<{ post?: BufferPostPublicationEvidence }>(
+    `query PostPublicationEvidence($id: String!) {
+      post(input: { id: $id }) {
+        id
+        status
+        dueAt
+        sentAt
+        externalLink
+      }
+    }`,
+    { id: postId }
+  );
+  if (result.ok === false) return result;
+  return { ok: true, data: result.data.post ?? null };
+}
+
+/** Metrics are intentionally queried separately from publication evidence. */
+export async function getPostMetrics(postId: string): Promise<BufferResult<BufferPostMetrics | null>> {
+  const result = await graphql<{ post?: BufferPostMetrics }>(
+    `query PostMetrics($id: String!) {
+      post(input: { id: $id }) {
+        id
         metrics { type name value unit }
         metricsUpdatedAt
       }

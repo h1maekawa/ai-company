@@ -6,6 +6,7 @@ import fs from "node:fs";
 const DIST = process.env.MAEMICHI_DIST;
 const buffer = await import(path.join(DIST, "note/publishing/buffer.js"));
 const metrics = await import(path.join(DIST, "note/publishing/bufferMetrics.js"));
+const canaryReconciliation = await import(path.join(DIST, "note/publishing/canaryReconciliation.js"));
 
 const draft = {
   id: "d1", trendClusterId: "topic-a", xAccountId: "x", purpose: "reach", genreId: "ai",
@@ -143,4 +144,99 @@ test("one-time Canaryだけ当日夜にX公開証跡を同期し、未取得Metr
   assert.equal(noXLink.ok, false);
   const normal = await metrics.fetchBufferMetrics({ ...canary, id: "normal-draft" }, now, async () => ({ ok: true, data: sentWithoutMetrics }));
   assert.equal(normal.ok, false);
+});
+
+test("Canary Publication Evidence queryはMetrics failureから独立して公開を確定する", async () => {
+  process.env.BUFFER_API_KEY = "test";
+  process.env.BUFFER_ORGANIZATION_ID = "org";
+  process.env.BUFFER_X_CHANNEL_ID = "channel";
+  const canary = {
+    ...draft, id: "x-canary-plan:slot-1", planId: "plan", planSlotId: "slot-1",
+    status: "queued", publishedAt: undefined, xPostId: undefined, bufferExternalLink: undefined,
+  };
+  const evidence = {
+    id: canary.bufferPostId, status: "sent", dueAt: canary.scheduledAt,
+    sentAt: "2026-10-08T00:00:00.000Z",
+    externalLink: "https://x.com/maemichi44/status/2107877739529170991",
+  };
+  const queries = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    queries.push(request.query);
+    if (request.query.includes("PostPublicationEvidence")) {
+      assert.doesNotMatch(request.query, /metrics/i);
+      return new Response(JSON.stringify({ data: { post: evidence } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ errors: [{ message: "metrics unavailable" }] }), { status: 200 });
+  };
+  try {
+    const publication = await buffer.getPostPublicationEvidence(canary.bufferPostId);
+    assert.equal(publication.ok, true);
+    const confirmed = canaryReconciliation.confirmCanaryPublication(canary, publication.data);
+    assert.equal(confirmed.ok, true);
+    assert.equal(confirmed.draft.status, "published");
+    assert.equal(confirmed.draft.xPostId, "2107877739529170991");
+    assert.equal(confirmed.draft.bufferExternalLink, evidence.externalLink);
+    assert.equal(confirmed.draft.publishedAt, evidence.sentAt);
+    const metricResult = await buffer.getPostMetrics(canary.bufferPostId);
+    assert.equal(metricResult.ok, false);
+    assert.equal(confirmed.draft.status, "published");
+    assert.equal(queries.length, 2);
+  } finally {
+    globalThis.fetch = original;
+    delete process.env.BUFFER_API_KEY;
+    delete process.env.BUFFER_ORGANIZATION_ID;
+    delete process.env.BUFFER_X_CHANNEL_ID;
+  }
+});
+
+test("Canary Publicationは未送信・link欠損・非X URLをfail closedにする", () => {
+  const canary = {
+    ...draft, id: "x-canary-plan:slot-1", planId: "plan", planSlotId: "slot-1", status: "queued",
+  };
+  const base = {
+    id: canary.bufferPostId, status: "sent", sentAt: "2026-10-08T00:00:00.000Z",
+    externalLink: "https://x.com/maemichi44/status/2107877739529170991",
+  };
+  assert.deepEqual(
+    canaryReconciliation.confirmCanaryPublication(canary, { ...base, status: "scheduled" }),
+    { ok: false, reason: "BUFFER_POST_NOT_SENT" }
+  );
+  assert.deepEqual(
+    canaryReconciliation.confirmCanaryPublication(canary, { ...base, externalLink: undefined }),
+    { ok: false, reason: "BUFFER_EXTERNAL_LINK_MISSING" }
+  );
+  assert.deepEqual(
+    canaryReconciliation.confirmCanaryPublication(canary, { ...base, externalLink: "https://example.com/post/1" }),
+    { ok: false, reason: "INVALID_X_EXTERNAL_LINK" }
+  );
+});
+
+test("Canary Publication query timeoutはambiguousで、自動retryや状態昇格を行わない", async () => {
+  process.env.BUFFER_API_KEY = "test";
+  process.env.BUFFER_ORGANIZATION_ID = "org";
+  process.env.BUFFER_X_CHANNEL_ID = "channel";
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("timeout"); };
+  try {
+    const result = await buffer.getPostPublicationEvidence("buffer-1");
+    assert.equal(result.ok, false);
+    assert.equal(result.error.kind, "ambiguous");
+  } finally {
+    globalThis.fetch = original;
+    delete process.env.BUFFER_API_KEY;
+    delete process.env.BUFFER_ORGANIZATION_ID;
+    delete process.env.BUFFER_X_CHANNEL_ID;
+  }
+});
+
+test("同一planId + planSlotIdの複数Canaryは全件をambiguous duplicateにする", () => {
+  const base = {
+    ...draft, id: "x-canary-a", planId: "plan", planSlotId: "slot-1", status: "queued",
+  };
+  const duplicates = canaryReconciliation.duplicateCanaryLineageIds([
+    base, { ...base, id: "x-canary-b" }, { ...base, id: "normal-draft", planSlotId: "slot-2" },
+  ]);
+  assert.deepEqual([...duplicates].sort(), ["x-canary-a", "x-canary-b"]);
 });
