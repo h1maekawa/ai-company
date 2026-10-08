@@ -84,7 +84,7 @@ test("stored news status never calls AI or GitHub PUT on a cache miss", async ()
   assert.equal(put, 0);
 });
 
-test("Home summary reads execution state once and leaves unevidenced cards unknown", async () => {
+test("Home summary reads execution state once and treats an empty successful result as idle", async () => {
   let reads = 0;
   const mod = load("app/api/company/home-summary/route.ts", {
     "@/app/lib/company/homeAttention": { loadHomeAttention: async () => ({ attention: [], unavailable: [] }) },
@@ -100,7 +100,7 @@ test("Home summary reads execution state once and leaves unevidenced cards unkno
   assert.equal(reads, 1);
   assert.equal(result.body.approvals.pendingCount, 1);
   assert.equal(result.body.departments.find((card) => card.id === "creator").status, "active");
-  assert.equal(result.body.departments.find((card) => card.id === "fund").status, "unknown");
+  assert.equal(result.body.departments.find((card) => card.id === "fund").status, "idle");
 });
 
 test("Home summary degrades only AI Company when execution storage is unavailable", async () => {
@@ -123,6 +123,7 @@ test("Home summary degrades only AI Company when execution storage is unavailabl
     const result = await mod.GET();
     assert.equal(result.options?.status, undefined);
     assert.equal(Array.from(result.body.unavailable).join(","), "AI Company");
+    assert.ok(result.body.departments.every((card) => card.status === "unavailable"));
     assert.equal(result.body.attention[0].id, "finance-review");
   } finally {
     console.error = originalError;
