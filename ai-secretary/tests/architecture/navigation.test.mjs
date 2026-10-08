@@ -65,16 +65,16 @@ test("mobile shell uses the same four destinations and keeps the floating AI", (
   for (const label of ["AIに聞く", "調べる", "メモする", "実行依頼", "昨日の活動"]) assert.ok(overlay.includes(label));
 });
 
-test("Home shows action cards and factual yesterday activity without generating content", () => {
+test("Home shows action cards and the selected department team without duplicate sections", () => {
   const home = read("components/mobile-ceo/DepartmentOverview.tsx");
   const summary = read("app/api/company/home-summary/route.ts");
   assert.match(home, /overflow-x-auto/);
   assert.match(home, /aria-pressed=\{selected === id\}/);
-  assert.match(home, /yesterday-summary/);
-  assert.match(home, /AIエージェント稼働状況/);
+  assert.match(home, /チーム/);
+  assert.match(home, /部署の詳細/);
+  assert.doesNotMatch(home, /yesterday-summary/);
+  assert.doesNotMatch(home, /AIエージェント稼働状況/);
   assert.match(summary, /loadExecutionState\(\)/);
-  assert.match(summary, /completedAt/);
-  assert.match(summary, /decidedAt/);
   assert.doesNotMatch(summary, /callAI|generateText|method:\s*"POST"/);
 });
 

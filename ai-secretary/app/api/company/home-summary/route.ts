@@ -5,7 +5,8 @@ import { applyExpiry } from "@/app/lib/company/execution/approval";
 import { BUSINESS_DEPARTMENT_IDS, type NavigationDepartmentId } from "@/app/lib/config/navigation";
 
 export const dynamic = "force-dynamic";
-type Card = { id: NavigationDepartmentId; status: "active" | "attention" | "unknown"; currentWork: string[]; problems: string[] };
+type DepartmentStatus = "active" | "attention" | "idle" | "unavailable";
+type Card = { id: NavigationDepartmentId; status: DepartmentStatus; currentWork: string[]; problems: string[] };
 type Attention = { id: string; title: string; href: string; source: string; priority: "critical" | "high" | "normal"; order?: number };
 const jstDay = (date: Date) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 const agentDepartment = (agent?: string): NavigationDepartmentId | null => {
@@ -18,7 +19,7 @@ const agentDepartment = (agent?: string): NavigationDepartmentId | null => {
   return null;
 };
 
-/** One bounded state read for Home. Missing department evidence stays unknown. */
+/** One bounded state read for Home. A successful empty read is idle, not unavailable. */
 export async function GET(): Promise<NextResponse> {
   try {
     const [execution, extra] = await Promise.all([
@@ -43,7 +44,14 @@ export async function GET(): Promise<NextResponse> {
       const missions = state.missions.filter((mission) => agentDepartment(mission.routingContext?.requiredAgentId ?? mission.assignedAgentId) === id);
       const problems = missions.filter((mission) => ["FAILED", "BLOCKED", "REPLAN_REQUIRED"].includes(mission.status)).slice(0, 2).map((mission) => mission.title);
       const currentWork = missions.filter((mission) => ["ACTIVE", "EXECUTING", "REVIEWING", "WAITING_APPROVAL"].includes(mission.status)).slice(0, 2).map((mission) => mission.title);
-      return { id, status: problems.length ? "attention" : currentWork.length ? "active" : "unknown", currentWork, problems };
+      const status: DepartmentStatus = execution.unavailable
+        ? "unavailable"
+        : problems.length > 0
+          ? "attention"
+          : currentWork.length > 0
+            ? "active"
+            : "idle";
+      return { id, status, currentWork, problems };
     });
     const attention: Attention[] = [];
     const failedMemory = state.slackMemory?.jobs.filter((job) => job.status === "failed" && job.attempts >= 3).length ?? 0;
