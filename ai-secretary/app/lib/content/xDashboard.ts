@@ -1,9 +1,12 @@
 import { deriveMetrics } from "./monetization/metrics";
 import type { PublishedContent, RevenueEvent } from "./monetization/types";
-import { summarizeX, type DailyGrowthReview, type MetricSummary } from "../note/growthLoop";
+import type { DailyGrowthReview, MetricSummary } from "../note/growthLoop";
 import { buildContentDashboardGrowth } from "../note/contentDashboardGrowth";
 import { tokyoDateKey } from "../note/tokyoDate";
 import type { ContentPerformance, DailyXPlan, SocialDraft, SocialOperationMode } from "../note/research/types";
+import type { PerformanceSnapshot } from "./monetization/types";
+import { adaptPlatformPerformance } from "./platform-intelligence/adapters";
+import type { PlatformPerformanceRecord } from "./platform-intelligence/types";
 
 export type XDashboardRange = "today" | "sevenDays" | "thirtyDays";
 
@@ -40,20 +43,20 @@ export type XDashboardData = {
 
 const DAY = 86_400_000;
 
-function recordsInRange(records: ContentPerformance[], range: XDashboardRange, now: Date): ContentPerformance[] {
-  // metricsStale is retained as historical evidence, but never presented as the current KPI truth.
-  const x = records.filter((record) => record.platform === "x" && record.metricsStale !== true);
-  if (range === "today") return x.filter((record) => tokyoDateKey(new Date(record.publishedAt)) === tokyoDateKey(now));
+function recordsInRange(records: PlatformPerformanceRecord[], range: XDashboardRange, now: Date): PlatformPerformanceRecord[] {
+  // Stale evidence remains in the projection, but never becomes current KPI truth.
+  const fresh = records.filter((record) => record.freshness === "fresh");
+  if (range === "today") return fresh.filter((record) => tokyoDateKey(new Date(record.publishedAt)) === tokyoDateKey(now));
   const days = range === "sevenDays" ? 7 : 30;
   const cutoff = now.getTime() - days * DAY;
-  return x.filter((record) => {
+  return fresh.filter((record) => {
     const time = new Date(record.publishedAt).getTime();
     return Number.isFinite(time) && time >= cutoff && time <= now.getTime();
   });
 }
 
-function sumObserved(records: ContentPerformance[], getter: (record: ContentPerformance) => number | undefined): number | null {
-  const values = records.map(getter).filter((value): value is number => value !== undefined);
+function sumObserved(records: PlatformPerformanceRecord[], getter: (record: PlatformPerformanceRecord) => number | null): number | null {
+  const values = records.map(getter).filter((value): value is number => value !== null);
   return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
 }
 
@@ -62,26 +65,27 @@ function xRevenueEvents(published: PublishedContent[], revenueEvents: RevenueEve
   return revenueEvents.filter((event) => ids.has(event.publishedContentId));
 }
 
-function revenueForRecords(
-  records: ContentPerformance[],
-  published: PublishedContent[],
-  revenueEvents: RevenueEvent[],
-): number | null {
-  const contentIds = new Set(records.map((record) => record.contentId));
-  const publishedIds = new Set(published.filter((item) => item.channel === "x" && (
-    contentIds.has(item.contentId) || (item.draftId ? contentIds.has(item.draftId) : false)
-  )).map((item) => item.id));
-  const matching = revenueEvents.filter((event) => publishedIds.has(event.publishedContentId));
-  return matching.length ? matching.reduce((sum, event) => sum + event.amount, 0) : null;
+function summarizeCanonicalX(records: PlatformPerformanceRecord[]): MetricSummary {
+  const sum = (metric: keyof PlatformPerformanceRecord["metrics"]) => sumObserved(records, (record) => record.metrics[metric]);
+  const engagement = records.map((record) => [record.metrics.likes, record.metrics.replies, record.metrics.reposts] as (number | null)[])
+    .filter((values) => values.some((value) => value !== null));
+  return {
+    postCount: records.length,
+    impressions: sum("impressions") ?? undefined,
+    engagements: engagement.length ? engagement.reduce<number>((total, values) => total + values.reduce<number>((row, value) => row + (value ?? 0), 0), 0) : undefined,
+    linkClicks: sum("linkClicks") ?? undefined,
+    profileVisits: sum("profileVisits") ?? undefined,
+    followersGained: sum("followersGained") ?? undefined,
+    likes: sum("likes") ?? undefined,
+    replies: sum("replies") ?? undefined,
+    reposts: sum("reposts") ?? undefined,
+    bookmarks: sum("saves") ?? undefined,
+  };
 }
 
-function metricSet(
-  records: ContentPerformance[],
-  published: PublishedContent[],
-  revenueEvents: RevenueEvent[],
-): XDashboardMetricSet {
-  const summary = summarizeX(records);
-  const revenue = revenueForRecords(records, published, revenueEvents);
+function metricSet(records: PlatformPerformanceRecord[]): XDashboardMetricSet {
+  const summary = summarizeCanonicalX(records);
+  const revenue = sumObserved(records, (record) => record.metrics.revenue);
   const derived = deriveMetrics({
     impressions: summary.impressions,
     linkClicks: summary.linkClicks,
@@ -98,8 +102,8 @@ function metricSet(
   };
 }
 
-function dailyTrend(records: ContentPerformance[]): XDashboardData["trend"] {
-  const byDate = new Map<string, ContentPerformance[]>();
+function dailyTrend(records: PlatformPerformanceRecord[]): XDashboardData["trend"] {
+  const byDate = new Map<string, PlatformPerformanceRecord[]>();
   for (const record of records) {
     const date = tokyoDateKey(new Date(record.publishedAt));
     byDate.set(date, [...(byDate.get(date) ?? []), record]);
@@ -107,7 +111,7 @@ function dailyTrend(records: ContentPerformance[]): XDashboardData["trend"] {
   return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, items]) => ({
     date,
     posts: items.length,
-    impressions: sumObserved(items, (item) => item.impressions),
+    impressions: sumObserved(items, (item) => item.metrics.impressions),
   }));
 }
 
@@ -130,6 +134,7 @@ export function buildXDashboard(input: {
   now?: Date;
   mode: SocialOperationMode;
   records: ContentPerformance[];
+  snapshots?: PerformanceSnapshot[];
   reviews: DailyGrowthReview[];
   plans: DailyXPlan[];
   drafts: SocialDraft[];
@@ -140,10 +145,9 @@ export function buildXDashboard(input: {
   const today = tokyoDateKey(now);
   const currentPlan = input.plans.find((plan) => plan.date === today) ?? null;
   const draftById = new Map(input.drafts.map((draft) => [draft.id, draft]));
-  const thirtyDays = recordsInRange(input.records, "thirtyDays", now);
+  const projection = adaptPlatformPerformance({ platform: "x", performance: input.records, snapshots: input.snapshots, published: input.published, revenueEvents: input.revenueEvents });
+  const thirtyDays = recordsInRange(projection.records, "thirtyDays", now);
   const revenueEvents = xRevenueEvents(input.published, input.revenueEvents);
-  const revenueByPublished = new Map<string, number>();
-  for (const event of revenueEvents) revenueByPublished.set(event.publishedContentId, (revenueByPublished.get(event.publishedContentId) ?? 0) + event.amount);
   const publishedByContent = new Map<string, PublishedContent>();
   for (const item of input.published.filter((item) => item.channel === "x")) {
     publishedByContent.set(item.contentId, item);
@@ -151,22 +155,22 @@ export function buildXDashboard(input: {
   }
 
   const topContent = [...thirtyDays]
-    .sort((a, b) => (b.impressions ?? -1) - (a.impressions ?? -1))
+    .sort((a, b) => (b.metrics.impressions ?? -1) - (a.metrics.impressions ?? -1))
     .slice(0, 5)
     .map((record) => {
       const draft = draftById.get(record.contentId);
       const pub = publishedByContent.get(record.contentId);
-      const engagementValues = [record.likes, record.replies, record.reposts].filter((value): value is number => value !== undefined);
+      const engagementValues = [record.metrics.likes, record.metrics.replies, record.metrics.reposts].filter((value): value is number => value !== null);
       return {
         id: record.contentId,
         excerpt: (draft?.text ?? pub?.bodySummary ?? pub?.title ?? record.contentId).slice(0, 90),
         publishedAt: record.publishedAt,
-        impressions: record.impressions ?? null,
+        impressions: record.metrics.impressions,
         engagement: engagementValues.length ? engagementValues.reduce((sum, value) => sum + value, 0) : null,
-        replies: record.replies ?? null,
-        profileVisits: record.profileVisits ?? null,
-        linkClicks: record.linkClicks ?? record.urlClicks ?? record.noteClicks ?? null,
-        revenue: pub ? revenueByPublished.get(pub.id) ?? null : null,
+        replies: record.metrics.replies,
+        profileVisits: record.metrics.profileVisits,
+        linkClicks: record.metrics.linkClicks,
+        revenue: record.metrics.revenue,
       };
     });
 
@@ -177,15 +181,15 @@ export function buildXDashboard(input: {
   if (topContent.some((item) => item.revenue !== null)) availableRankings.push("revenue");
 
   const latestReview = [...input.reviews].sort((a, b) => b.date.localeCompare(a.date))[0];
-  const measuredTimes = input.records.filter((record) => record.platform === "x" && record.metricsStale !== true).map((record) => record.measuredAt).filter(Boolean).sort();
+  const measuredTimes = projection.records.filter((record) => record.freshness === "fresh").map((record) => record.observedAt).filter((value): value is string => Boolean(value)).sort();
 
   return {
     generatedAt: now.toISOString(),
     mode: input.mode,
     metrics: {
-      today: metricSet(recordsInRange(input.records, "today", now), input.published, input.revenueEvents),
-      sevenDays: metricSet(recordsInRange(input.records, "sevenDays", now), input.published, input.revenueEvents),
-      thirtyDays: metricSet(thirtyDays, input.published, input.revenueEvents),
+      today: metricSet(recordsInRange(projection.records, "today", now)),
+      sevenDays: metricSet(recordsInRange(projection.records, "sevenDays", now)),
+      thirtyDays: metricSet(thirtyDays),
     },
     trend: dailyTrend(thirtyDays),
     todayContent: (currentPlan?.slots ?? []).map((slot) => {

@@ -23,11 +23,13 @@ test("existing X Studio remains available through Content view", () => {
 
 test("missing X metrics remain null and render as an em dash", () => {
   const model = read("app/lib/content/xDashboard.ts");
+  const adapter = read("app/lib/content/platform-intelligence/adapters.ts");
   const page = read("app/content/x/page.tsx");
   assert.match(model, /averageImpressionsPerPost: number \| null/);
   assert.match(model, /revenuePer1000Impressions: number \| null/);
   assert.match(model, /impressions: sumObserved/);
-  assert.match(model, /record\.metricsStale !== true/);
+  assert.match(model, /record\.freshness === "fresh"/);
+  assert.match(adapter, /record\.metricsStale === true \? "stale"/);
   assert.match(page, /value === null \|\| value === undefined \? "—"/);
   assert.doesNotMatch(model, /impressions:\s*[^\n]*\|\|\s*0/);
 });
