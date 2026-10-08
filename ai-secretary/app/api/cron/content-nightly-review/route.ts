@@ -12,6 +12,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const result = await withLock("content-nightly-review", () => runNightlyGrowthReview());
     if (!result) return NextResponse.json({ skipped: true, reason: "すでに実行中です" });
+    console.info("[cron/content-nightly-review] safe result", {
+      reviewDate: result.reviewDate,
+      performanceSync: result.performanceSync,
+      performanceSyncError: result.performanceSyncError ? "PERFORMANCE_SYNC_ERROR" : undefined,
+    });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     console.error("[cron/content-nightly-review] 失敗:", error);
