@@ -26,3 +26,16 @@ test("Canary本文は内部Brandテンプレートのみで外部Researchや投�
   assert.match(canary, /runXSafetyGate\(/);
   assert.doesNotMatch(canary, /tryGenerateInvestmentDraft|generateXPosts|fetch\(/);
 });
+
+test("Canary reconciliationはPublication EvidenceとMetricsを分離し再送経路を持たない", () => {
+  const buffer = read("app/lib/note/publishing/buffer.ts");
+  const sync = read("app/lib/note/automation/performanceSync.ts");
+  const publicationQuery = buffer.match(/query PostPublicationEvidence[\s\S]*?\n\s*}`,[\s\S]*?postId/);
+  assert.ok(publicationQuery);
+  assert.doesNotMatch(publicationQuery[0], /metrics(?:UpdatedAt)?/);
+  assert.match(sync, /getPostPublicationEvidence/);
+  assert.match(sync, /getPostMetrics/);
+  assert.ok(sync.indexOf("publicationEvidenceFetcher") < sync.indexOf("postMetricsFetcher(draft.bufferPostId)"));
+  assert.match(sync, /AMBIGUOUS_DUPLICATE_LINEAGE/);
+  assert.doesNotMatch(sync, /createPost|runOneTimeCanaryTransport|addToQueue|customScheduled/);
+});

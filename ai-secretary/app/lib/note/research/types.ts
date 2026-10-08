@@ -532,6 +532,8 @@ export type SocialDraft = {
   /** 保持期限前でも安全に整理できることを示す明示的な分類。 */
   cleanupDisposition?: "duplicate" | "superseded" | "testArtifact" | "legacy_review_only";
   scheduledAt?: string;
+  /** Provider-confirmed publication timestamp. Never inferred from the schedule. */
+  publishedAt?: string;
   bufferPostId?: string;
   /** Buffer公開後にX APIの本文・時刻照合で解決する */
   xPostId?: string;
