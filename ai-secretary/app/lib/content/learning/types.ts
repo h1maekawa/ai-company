@@ -4,6 +4,8 @@
  */
 
 import type { ContentGoal } from "../../note/research/types";
+import type { ContentPlatform } from "../brandProfile";
+import type { PlatformMetricKey } from "../platform-intelligence/types";
 
 export type ApprovalStatus = "candidate" | "approved" | "rejected";
 
@@ -21,6 +23,12 @@ export type Learning = {
 
   confidence?: "low" | "medium" | "high";
   actionCandidate?: string;
+  /** Cross-platform analysis metadata. Optional for full legacy compatibility. */
+  platform?: ContentPlatform;
+  metricKeys?: PlatformMetricKey[];
+  evidenceCount?: number;
+  hypothesisKey?: string;
+  experimentId?: string;
 
   status: ApprovalStatus;
   approvedAt?: string;

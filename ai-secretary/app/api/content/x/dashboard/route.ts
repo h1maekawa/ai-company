@@ -27,6 +27,7 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json(buildXDashboard({
       mode: settings.flags.socialOperationMode,
       records: performance.records,
+      snapshots: performance.snapshots,
       reviews,
       plans,
       drafts,
