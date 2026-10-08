@@ -4,6 +4,7 @@ import { classifyStyle } from "../styleSignals";
 import { getPost, type BufferPostMetric, type BufferPostNode } from "./buffer";
 import { tokyoDateKey, tokyoDayStartMs } from "../tokyoDate";
 import type { PerformanceProvider, PerformanceProviderResult } from "./performanceProvider";
+import { parseXPostUrl } from "../x/urls";
 
 type BufferPostFetcher = typeof getPost;
 
@@ -12,6 +13,12 @@ const METRICS_SYNC_WINDOW_MS = 7 * 86_400_000;
 export function isDailyMetricsCandidate(draft: SocialDraft, now = new Date()): boolean {
   if (!draft.scheduledAt || !draft.bufferPostId) return false;
   const scheduledAt = new Date(draft.scheduledAt).getTime();
+  if (!Number.isFinite(scheduledAt) || scheduledAt >= now.getTime()) return false;
+  // The one-time transport Canary must reconcile before the following morning's Brief.
+  // Normal DailyX posts retain the previous-day-only metrics cadence.
+  if (draft.id.startsWith("x-canary-") && draft.planId && draft.planSlotId) {
+    return now.getTime() - scheduledAt <= METRICS_SYNC_WINDOW_MS;
+  }
   // 当日投稿は対象外。公開後7日を超えた投稿は毎晩再取得しない（既存Recordは削除・変更しない）
   return scheduledAt < tokyoDayStartMs(tokyoDateKey(now)) && now.getTime() - scheduledAt <= METRICS_SYNC_WINDOW_MS;
 }
@@ -55,10 +62,11 @@ function availability(value: number | undefined): "available" | "unavailable" {
 export function normalizeBufferMetrics(
   draft: SocialDraft,
   post: BufferPostNode,
-  measuredAt = new Date()
+  measuredAt = new Date(),
+  allowUnavailableMetrics = false
 ): ContentPerformance | null {
-  if (!Array.isArray(post.metrics) || !post.metricsUpdatedAt) return null;
-  const values = metricMap(post.metrics);
+  if ((!Array.isArray(post.metrics) || !post.metricsUpdatedAt) && !allowUnavailableMetrics) return null;
+  const values = metricMap(Array.isArray(post.metrics) ? post.metrics : []);
   const impressions = values.get("impressions");
   const likes = values.get("reactions");
   const replies = values.get("comments");
@@ -120,17 +128,20 @@ export async function fetchBufferMetrics(
   const post = result.data;
   if (!post) return { ok: false, retryable: true, error: "Buffer post was not found" };
   if (post.status !== "sent") return { ok: false, retryable: true, error: `Buffer post is not sent (${post.status ?? "unknown"})` };
-  const metrics = normalizeBufferMetrics(draft, post, now);
-  if (!metrics || !post.metricsUpdatedAt) {
+  const canaryPublicationEvidence = draft.id.startsWith("x-canary-") && Boolean(draft.planId && draft.planSlotId) &&
+    Boolean(post.sentAt && parseXPostUrl(post.externalLink ?? ""));
+  const metrics = normalizeBufferMetrics(draft, post, now, canaryPublicationEvidence);
+  const providerUpdatedAt = post.metricsUpdatedAt ?? (canaryPublicationEvidence ? post.sentAt : null);
+  if (!metrics || !providerUpdatedAt) {
     return { ok: false, retryable: true, error: "Buffer metrics are not available yet" };
   }
-  if (!Object.values(metrics.metricAvailability ?? {}).includes("available")) {
+  if (!canaryPublicationEvidence && !Object.values(metrics.metricAvailability ?? {}).includes("available")) {
     return { ok: false, retryable: true, error: "Buffer returned no supported metrics" };
   }
   return {
     ok: true,
     metrics,
-    providerUpdatedAt: post.metricsUpdatedAt,
+    providerUpdatedAt,
     externalLink: post.externalLink,
   };
 }
