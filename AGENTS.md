@@ -1,5 +1,9 @@
 # AI Company OS - Developer Guide & Slash Commands
 
+## Required architecture context
+
+Before planning or implementing any change, read `ai-secretary/docs/AI_COMPANY_MASTER.md` in full. It is the active SSOT for priority, canonical architecture, shared stores, artifacts, human gates, current implementation status, and protected boundaries. Do not create a department-specific duplicate of a shared Research, Performance, Revenue, Learning, or Execution system.
+
 This guide outlines common development commands and the available slash commands for the AI Secretary modes.
 
 ## Development Commands
