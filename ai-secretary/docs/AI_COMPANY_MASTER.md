@@ -242,8 +242,8 @@ This section reports repository capability. It does not claim a live provider, C
 ### Phase A — Product Foundation
 
 - [x] A1: establish this Master SSOT and require agents to read it
-- [ ] A2: audit canonical architecture against every active domain path; record duplicates and owners
-- [ ] A3: audit Research, Knowledge, Execution, Content, Performance, Revenue, and Learning stores; publish migration/deprecation plan only where needed
+- [x] A2: audit canonical architecture against every active domain path; record duplicates and owners
+- [x] A3: define canonical store identities, writer authorities, Revenue linkage, and Learning approval contracts without Production migration
 - [ ] A4: define missing provider contracts and migration boundaries without changing live provider behavior
 - [ ] A5: define canonical cost events, availability semantics, and CEO observability projections
 
@@ -305,4 +305,3 @@ The following are non-negotiable unless a dedicated, human-approved policy chang
 - no logging of secrets, content bodies, PII, or private asset data in diagnostics.
 
 When safety and automation conflict, fail closed, preserve evidence, avoid a second external action, and surface a concise reason for human review.
-
