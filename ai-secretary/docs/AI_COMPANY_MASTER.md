@@ -250,6 +250,7 @@ This section reports repository capability. It does not claim a live provider, C
 ### Phase B — SNS Business
 
 - [x] B1: stabilize the Normal DailyX code path without lowering Hot Confidence thresholds; current Production runtime health remains evidence-driven and may be `UNKNOWN`
+- [x] B1.5: add a bounded Daily Research Agenda, fixed reach/trust/depth three-slot policy, and read-only three-post readiness while reusing existing Hot Score and publication gates
 - [ ] B2: define Instagram `CreativeSpec` from user-provided planning, assets, templates, and NG rules
 - [ ] B3: implement carousel structure, copy, asset selection, layout, render, and preview
 - [ ] B4: add provider-neutral background/illustration generation; real products remain real images
@@ -293,6 +294,7 @@ This section reports repository capability. It does not claim a live provider, C
 | 2026-10-09 | Missing data is not zero and runtime health is not inferred from code presence | prevent false operational or business claims |
 | 2026-10-09 | Real products use real images; AI imagery is limited to background, illustration, decoration, and motifs | prevent product fabrication |
 | 2026-10-10 | Continue with B1–B9; defer A4/A5 until concrete provider or cost/observability boundaries exist | A1–A3 supply the ownership contracts required for current SNS delivery without speculative foundations |
+| 2026-10-10 | Reuse canonical Research and existing Hot Score for an X Daily Research Agenda and fixed three-slot operation | expand autonomy without a parallel engine, LOW promotion, policy self-mutation, or publication-gate bypass |
 
 ## Protected Boundaries
 

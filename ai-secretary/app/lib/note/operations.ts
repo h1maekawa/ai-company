@@ -12,14 +12,15 @@ import type {
 export type XScheduleSlot = {
   time: string;
   purpose: Extract<ContentPurpose, "reach" | "trust" | "note-bridge">;
+  operationRole: "reach" | "trust" | "depth";
   role: string;
 };
 
 /** 初期固定値。呼び出し側から差し替えられるため、将来の時間最適化に対応できる。 */
 export const DEFAULT_X_SCHEDULE: readonly XScheduleSlot[] = [
-  { time: "07:30", purpose: "reach", role: "認知・インプレッション獲得" },
-  { time: "12:15", purpose: "trust", role: "ノウハウ・信頼獲得" },
-  { time: "20:30", purpose: "note-bridge", role: "深掘り・note導線" },
+  { time: "07:30", purpose: "reach", operationRole: "reach", role: "認知・インプレッション獲得" },
+  { time: "12:15", purpose: "trust", operationRole: "trust", role: "ノウハウ・信頼獲得" },
+  { time: "20:30", purpose: "note-bridge", operationRole: "depth", role: "深掘り・本人解釈・安全な導線" },
 ];
 
 export function scheduledAtInTokyo(

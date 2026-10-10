@@ -12,6 +12,8 @@ import {
   type SocialDraft,
 } from "@/app/lib/note/research/types";
 import {
+  loadClusters,
+  loadDailyXPlans,
   loadExperiences,
   loadGrowthReviews,
   loadPerformance,
@@ -27,6 +29,7 @@ import type { QaReport } from "@/app/lib/qa/types";
 import type { DataFreshness } from "@/app/lib/freshness";
 import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
 import { deriveQueueLifecycle, type QueueLifecycleSnapshot } from "@/app/lib/note/automation/queueLifecycle";
+import { deriveThreePostReadiness, type ThreePostReadiness } from "@/app/lib/note/automation/threePostReadiness";
 
 /**
  * 承認フィードの1件（要件2の表示単位）。
@@ -85,6 +88,16 @@ export type AutomationStatus = {
     experiments: string[];
   };
   queueLifecycle: QueueLifecycleSnapshot;
+  productionReadiness: {
+    maxXPostsPerDay: number;
+    publishingEnabled: boolean;
+    xAutoPublish: boolean;
+    socialOperationMode: SocialOperationMode;
+    bufferStatus: "CONFIGURED" | "NOT_CONFIGURED";
+    threePostOperationEnabled: boolean;
+    message: "3-post operation enabled" | "3-post operation not enabled";
+  };
+  threePostReadiness: ThreePostReadiness;
 };
 
 function tokyoDate(iso: string): string {
@@ -146,7 +159,7 @@ function approvalReason(draft: SocialDraft, mode: SocialOperationMode): string |
 }
 
 export async function getAutomationStatus(): Promise<AutomationStatus> {
-  const [settings, drafts, performance, publishedToday, brandFile, experiences, researchItems, growthReviews, oneTimeCanary] =
+  const [settings, drafts, performance, publishedToday, brandFile, experiences, researchItems, growthReviews, oneTimeCanary, clusters, plans] =
     await Promise.all([
       loadResearchSettings(),
       loadSocialDrafts(),
@@ -157,6 +170,8 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       loadResearchInbox(),
       loadGrowthReviews(),
       strictClaimStatus("one-time-x-canary-transport-v1"),
+      loadClusters(),
+      loadDailyXPlans(),
     ]);
 
   const mode =
@@ -169,6 +184,7 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
   const blockers = collectBlockers({ mode, automationEnabled, bufferConfigured, redisConfigured });
 
   const today = todayTokyo();
+  const todayPlan = plans.find((plan) => plan.date === today && plan.accountKey === "primary") ?? null;
   const slots = drafts
     .filter((draft) => draft.scheduledAt && tokyoDate(draft.scheduledAt) === today)
     .sort((a, b) => (a.scheduledAt ?? "").localeCompare(b.scheduledAt ?? ""))
@@ -269,5 +285,15 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       experiments: latestGrowthReview?.experiments ?? [],
     },
     queueLifecycle,
+    productionReadiness: {
+      maxXPostsPerDay: settings.flags.maxXPostsPerDay,
+      publishingEnabled: settings.flags.publishingEnabled,
+      xAutoPublish: settings.flags.xAutoPublish,
+      socialOperationMode: mode,
+      bufferStatus: bufferConfigured ? "CONFIGURED" : "NOT_CONFIGURED",
+      threePostOperationEnabled: settings.flags.maxXPostsPerDay === 3,
+      message: settings.flags.maxXPostsPerDay === 3 ? "3-post operation enabled" : "3-post operation not enabled",
+    },
+    threePostReadiness: deriveThreePostReadiness({ maxXPostsPerDay: settings.flags.maxXPostsPerDay, candidates: clusters, plan: todayPlan }),
   };
 }
