@@ -116,7 +116,7 @@ Departments exchange typed artifacts rather than unstructured copied prose.
 | `PublishedContent` | plan/slot lineage, provider ID, external URL, publication time | Implemented in X domain; cross-platform contract partial |
 | `PlatformPerformance` | platform identity, measured metrics, availability, observed time | Implemented foundation; provider coverage partial |
 | `Learning` | observation, hypothesis, evidence, confidence, decision/effectiveness | Implemented foundation; operational feedback loops partial |
-| `CreativeSpec` | brand, platform, pillar, topic, products, slides, assets, visual rules, caption, CTA, commercial relation | Planned for Instagram |
+| `CreativeSpec` | brand, platform, pillar, topic, products, slides, assets, visual rules, caption, CTA, commercial relation | Implemented as the typed Instagram domain artifact; persistence and rendering remain planned |
 
 New artifacts must state their canonical owner, source IDs, timestamps, availability semantics, and downstream consumers.
 
@@ -250,7 +250,7 @@ This section reports repository capability. It does not claim a live provider, C
 ### Phase B — SNS Business
 
 - [x] B1: stabilize the Normal DailyX code path without lowering Hot Confidence thresholds; current Production runtime health remains evidence-driven and may be `UNKNOWN`
-- [ ] B2: define Instagram `CreativeSpec` from user-provided planning, assets, templates, and NG rules
+- [x] B2: define Instagram `CreativeSpec` from user-provided planning, assets, templates, and NG rules
 - [ ] B3: implement carousel structure, copy, asset selection, layout, render, and preview
 - [ ] B4: add provider-neutral background/illustration generation; real products remain real images
 - [ ] B5: add low-cost static-image reel rendering before optional image-to-video
@@ -269,15 +269,13 @@ This section reports repository capability. It does not claim a live provider, C
 
 ## Next PRs
 
-1. **B1 X Production Stabilization** — complete human review of the audited Normal DailyX safety and reconciliation fixes; validate Production only through read-only evidence after merge/deploy.
-2. **B2 Instagram CreativeSpec** — define the typed creative contract from user planning, real assets, templates, and NG rules.
-3. **B3 Carousel** — implement structure, copy, asset selection, layout, render, and preview from the approved `CreativeSpec`.
-4. **B4 Image Generation** — add provider-neutral background/illustration generation while keeping real products as real images.
-5. **B5 Reel** — add low-cost static-image reel rendering before optional image-to-video.
-6. **B6 Instagram Publish** — connect approved, eligible content to a publish provider.
-7. **B7 Metrics** — map Instagram metrics into canonical Performance with missing distinct from zero.
-8. **B8 Learning** — connect Instagram observations through the shared learning foundation without automatic strategy mutation.
-9. **B9 Monetization** — connect attributable SNS Revenue and confirmed Cost.
+1. **B3 Carousel** — implement structure, copy, asset selection, layout, render, and preview from the approved `CreativeSpec`.
+2. **B4 Image Generation** — add provider-neutral background/illustration generation while keeping real products as real images.
+3. **B5 Reel** — add low-cost static-image reel rendering before optional image-to-video.
+4. **B6 Instagram Publish** — connect approved, eligible content to a publish provider.
+5. **B7 Metrics** — map Instagram metrics into canonical Performance with missing distinct from zero.
+6. **B8 Learning** — connect Instagram observations through the shared learning foundation without automatic strategy mutation.
+7. **B9 Monetization** — connect attributable SNS Revenue and confirmed Cost.
 
 **A4** is deferred until a concrete provider boundary requires a contract. **A5** is deferred until a concrete cost or observability boundary requires it. Neither is a blocker for the current SNS sequence.
 
@@ -293,6 +291,7 @@ This section reports repository capability. It does not claim a live provider, C
 | 2026-10-09 | Missing data is not zero and runtime health is not inferred from code presence | prevent false operational or business claims |
 | 2026-10-09 | Real products use real images; AI imagery is limited to background, illustration, decoration, and motifs | prevent product fabrication |
 | 2026-10-10 | Continue with B1–B9; defer A4/A5 until concrete provider or cost/observability boundaries exist | A1–A3 supply the ownership contracts required for current SNS delivery without speculative foundations |
+| 2026-10-10 | Define Instagram CreativeSpec as a contract-only domain artifact with no new persistence or provider | establish product-image, evidence, rights, disclosure, and human-review boundaries before B3 rendering |
 
 ## Protected Boundaries
 
