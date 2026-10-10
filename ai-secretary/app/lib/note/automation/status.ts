@@ -294,6 +294,8 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       threePostOperationEnabled: settings.flags.maxXPostsPerDay === 3,
       message: settings.flags.maxXPostsPerDay === 3 ? "3-post operation enabled" : "3-post operation not enabled",
     },
-    threePostReadiness: deriveThreePostReadiness({ maxXPostsPerDay: settings.flags.maxXPostsPerDay, candidates: clusters, plan: todayPlan }),
+    threePostReadiness: deriveThreePostReadiness({ maxXPostsPerDay: settings.flags.maxXPostsPerDay, candidates: clusters, plan: todayPlan,
+      publishingEnabled: settings.flags.publishingEnabled, xAutoPublish: settings.flags.xAutoPublish,
+      autopilot: mode === "autopilot", bufferConfigured, backpressure: queueLifecycle.backpressure }),
   };
 }

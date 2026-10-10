@@ -13,6 +13,7 @@ npx tsc \
   app/lib/note/research/genres.ts \
   app/lib/note/research/similarity.ts \
   app/lib/note/research/evidenceRefresh.ts \
+  app/lib/note/research/sharedEvidence.ts \
   app/lib/note/research/types.ts \
   app/lib/note/operations.ts \
   app/lib/knowledge/indexRecord.ts \

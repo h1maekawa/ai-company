@@ -16,6 +16,10 @@ DailyResearchAgenda (planning only)
 
 No second Research Store, Hot Score, publisher, Performance store, or Learning engine exists in this change.
 
+Department Research persists canonical evidence in Execution runtime. Normal `runResearch` reads its recent Creator public evidence through `projectCreatorEvidence`, then uses the existing URL reconciliation, Inbox, abstraction and cluster/Hot pipeline. This is a domain projection retaining canonical IDs and source URLs; no additional provider call occurs. Missing engagement and publication dates stay missing. Department Research must have completed before a normal run can consume its new evidence; otherwise the next normal run consumes it. A shared-store read failure is reported as `SHARED_RESEARCH_UNAVAILABLE` while existing source collection can continue.
+
+Feedback topic IDs are resolved through cluster titles before searching. Recently published or queued topics are excluded from feedback queries. Inputs are sorted by observation dates before taking recent windows.
+
 ## Daily Research Agenda
 
 `DailyResearchAgenda` is a department-neutral Planning Artifact owned by the Research execution boundary. It records date, department, goals, questions, query intents, target pillars and slots, reasons, evidence references, unknowns, and creation time. It is attached to the corresponding `ResearchRun`; it is not a new Research Store or factual artifact.
@@ -71,6 +75,8 @@ Automation status reports only safe configuration facts:
 No secret or credential value is returned. If the limit is not three, status reports `3-post operation not enabled`; it never changes the setting.
 
 Three-post readiness reports slot count, eligible Hot candidate count, scheduled count, blocked count, and safe skip reason codes. Fewer than three eligible candidates is a valid fail-closed state. Quality, evidence, and duplicate prevention take priority over volume.
+
+`readyForThree` additionally requires enabled publishing/autopilot, configured Buffer, no backpressure, a current plan and three confirmed scheduled slots. It is a conservative scheduling projection, not evidence of actual X publication or a substitute for runtime gates. Raw failure messages are not exposed by this projection.
 
 ## AI authority
 

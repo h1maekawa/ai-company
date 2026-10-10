@@ -7,7 +7,7 @@ import { availableResearchProviders } from "@/app/lib/company/research/providers
 import { retainResearchArtifacts, runDepartmentResearch } from "@/app/lib/company/research/platform";
 import { researchEligible } from "@/app/lib/company/research/scheduler";
 import { appendOperationalEvent, discoverCompanyImprovementCandidates, operationalEvent } from "@/app/lib/company/evolution/operationalObservability";
-import { loadExperiences, loadGrowthReviews, loadNoteQueue, loadPerformance, loadSocialDrafts } from "@/app/lib/note/research/store";
+import { loadClusters, loadExperiences, loadGrowthReviews, loadNoteQueue, loadPerformance, loadSocialDrafts } from "@/app/lib/note/research/store";
 import { buildCreatorDailyResearchAgenda } from "@/app/lib/note/automation/dailyResearchAgenda";
 import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
 
@@ -18,8 +18,8 @@ export async function GET(req: NextRequest) {
   const auth = verifyCronSecret(req);
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: 401 });
   const now = new Date();
-  const [performance, drafts, experiences, growthReviews, noteQueue] = await Promise.all([
-    loadPerformance(), loadSocialDrafts(), loadExperiences(), loadGrowthReviews(), loadNoteQueue(),
+  const [performance, drafts, experiences, growthReviews, noteQueue, clusters] = await Promise.all([
+    loadPerformance(), loadSocialDrafts(), loadExperiences(), loadGrowthReviews(), loadNoteQueue(), loadClusters(),
   ]);
   const summaries: unknown[] = [];
   await executionTransaction(async () => {
@@ -37,12 +37,13 @@ export async function GET(req: NextRequest) {
             date: tokyoDateKey(now), now, policy,
             recentResearch: items.filter((item) => item.departmentIds.includes("creator")),
             researchArtifacts: artifacts.filter((artifact) => artifact.departmentContexts.creator),
-            recentPosts: drafts.slice(-30),
-            performance: performance.records.slice(-100),
-            nightlyReviewRefs: growthReviews.slice(-3).map((review) => `growth-review:${review.date}`),
-            winningTopicRefs: growthReviews.slice(-3).flatMap((review) => review.winningTopics.map((topic) => topic.topicId)),
-            weakTopicRefs: growthReviews.slice(-3).flatMap((review) => review.decliningTopics.map((topic) => topic.topicId)),
-            recentlyUsedTopics: drafts.slice(-30).flatMap((draft) => draft.trendClusterId ? [draft.trendClusterId] : []),
+            topicTitles: Object.fromEntries(clusters.map((cluster) => [cluster.id, cluster.title])),
+            recentPosts: [...drafts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30),
+            performance: [...performance.records].sort((a, b) => b.measuredAt.localeCompare(a.measuredAt)).slice(0, 100),
+            nightlyReviewRefs: [...growthReviews].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3).map((review) => `growth-review:${review.date}`),
+            winningTopicRefs: [...growthReviews].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3).flatMap((review) => review.winningTopics.map((topic) => topic.topicId)),
+            weakTopicRefs: [...growthReviews].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3).flatMap((review) => review.decliningTopics.map((topic) => topic.topicId)),
+            recentlyUsedTopics: [...drafts].filter((draft) => ["published", "queued", "scheduled"].includes(draft.status)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30).flatMap((draft) => draft.trendClusterId ? [draft.trendClusterId] : []),
             experiences,
             noteCandidateRefs: noteQueue.articles.filter((article) => article.status !== "published").slice(0, 5).map((article) => article.id),
           })
