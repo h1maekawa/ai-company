@@ -18,20 +18,27 @@ export async function GET(req: NextRequest) {
   const auth = verifyCronSecret(req);
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: 401 });
   const now = new Date();
+  const deadline = Date.now() + 45_000; // reserve 15 seconds for persistence and response
   const [performance, drafts, experiences, growthReviews, noteQueue, clusters] = await Promise.all([
     loadPerformance(), loadSocialDrafts(), loadExperiences(), loadGrowthReviews(), loadNoteQueue(), loadClusters(),
   ]);
   const summaries: unknown[] = [];
+  const deferredDepartments: string[] = [];
   await executionTransaction(async () => {
-    const state = await loadExecutionState();
+    let state = await loadExecutionState();
     const runtime = state.runtime ?? { runs: {}, executions: [], artifacts: [], learning: [] };
     let items = runtime.researchItems ?? [];
     let artifacts = runtime.researchArtifacts ?? [];
     let runs = runtime.researchRuns ?? [];
     let events = runtime.operationalEvents ?? [];
     const providers = await availableResearchProviders(state);
-    for (const policy of DEPARTMENT_RESEARCH_POLICIES) {
-      if (!researchEligible(policy, runs)) continue;
+    const eligible = DEPARTMENT_RESEARCH_POLICIES.filter((policy) => researchEligible(policy, runs, now));
+    for (const [index, policy] of eligible.entries()) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        deferredDepartments.push(...eligible.slice(index).map((entry) => entry.departmentId));
+        break;
+      }
       const agenda = policy.departmentId === "creator"
         ? buildCreatorDailyResearchAgenda({
             date: tokyoDateKey(now), now, policy,
@@ -48,7 +55,8 @@ export async function GET(req: NextRequest) {
             noteCandidateRefs: noteQueue.articles.filter((article) => article.status !== "published").slice(0, 5).map((article) => article.id),
           })
         : undefined;
-      const result = await runDepartmentResearch({ policy, providers, existingItems: items, agenda });
+      const runtimeBudget = Math.min(policy.maxRuntimeMs, Math.floor(remaining / (eligible.length - index)));
+      const result = await runDepartmentResearch({ policy: { ...policy, maxRuntimeMs: runtimeBudget }, providers, existingItems: items, agenda });
       items = result.items;
       artifacts = retainResearchArtifacts([...artifacts, ...result.artifacts]);
       runs = [...runs, result.run].slice(-500);
@@ -59,9 +67,10 @@ export async function GET(req: NextRequest) {
         }));
       }
       summaries.push(result.run);
+      // Save each completed department; later timeouts cannot discard Creator evidence.
+      const candidates = discoverCompanyImprovementCandidates(events, runtime.companyImprovementCandidates ?? []);
+      state = await saveExecutionState({ ...state, runtime: { ...runtime, researchItems: items, researchArtifacts: artifacts, researchRuns: runs, operationalEvents: events, companyImprovementCandidates: candidates } });
     }
-    const candidates = discoverCompanyImprovementCandidates(events, runtime.companyImprovementCandidates ?? []);
-    await saveExecutionState({ ...state, runtime: { ...runtime, researchItems: items, researchArtifacts: artifacts, researchRuns: runs, operationalEvents: events, companyImprovementCandidates: candidates } });
   });
-  return NextResponse.json({ runs: summaries });
+  return NextResponse.json({ runs: summaries, deferredDepartments });
 }
