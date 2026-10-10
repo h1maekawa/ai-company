@@ -7,6 +7,7 @@ const DIST = process.env.MAEMICHI_DIST;
 const buffer = await import(path.join(DIST, "note/publishing/buffer.js"));
 const metrics = await import(path.join(DIST, "note/publishing/bufferMetrics.js"));
 const canaryReconciliation = await import(path.join(DIST, "note/publishing/canaryReconciliation.js"));
+const publicationPerformance = await import(path.join(DIST, "note/publishing/publicationPerformance.js"));
 
 const draft = {
   id: "d1", trendClusterId: "topic-a", xAccountId: "x", purpose: "reach", genreId: "ai",
@@ -245,4 +246,62 @@ test("同一planId + planSlotIdの複数Canaryは全件をambiguous duplicateに
     base, { ...base, id: "x-canary-b" }, { ...base, id: "normal-draft", planSlotId: "slot-2" },
   ]);
   assert.deepEqual([...duplicates].sort(), ["x-canary-a", "x-canary-b"]);
+});
+
+test("Normal DailyXもPublication EvidenceをMetricsから分離し、metrics障害時に公開を保持する", async () => {
+  const queued = {
+    ...draft,
+    id: "normal-daily-x",
+    status: "queued",
+    planId: "daily-x:2026-08-20:primary",
+    planSlotId: "daily-x:2026-08-20:primary:0",
+    xPostId: undefined,
+    bufferExternalLink: undefined,
+  };
+  const evidence = {
+    id: queued.bufferPostId,
+    status: "sent",
+    dueAt: queued.scheduledAt,
+    sentAt: "2026-08-20T11:31:00.000Z",
+    externalLink: "https://x.com/maemichi44/status/1234567890",
+  };
+  const result = publicationPerformance.reconcilePublicationPerformance({
+    draft: queued,
+    evidence,
+    metricsPost: null,
+    measuredAt: new Date("2026-08-21T03:00:00.000Z"),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.metricsAvailable, false);
+  assert.equal(result.draft.status, "published");
+  assert.equal(result.draft.xPostId, "1234567890");
+  assert.equal(result.draft.bufferExternalLink, evidence.externalLink);
+  assert.equal(result.record.impressions, undefined);
+  assert.equal(result.record.metricAvailability.impressions, "unavailable");
+});
+
+test("後続Metrics障害は既存の観測済みPerformanceをunavailableで上書きしない", async () => {
+  const queued = { ...draft, id: "normal-with-metrics", status: "published" };
+  const existing = metrics.normalizeBufferMetrics(
+    queued,
+    { ...sentPost, id: queued.bufferPostId },
+    new Date("2026-08-21T02:30:00.000Z")
+  );
+  const result = publicationPerformance.reconcilePublicationPerformance({
+    draft: queued,
+    existingRecord: existing,
+    evidence: {
+      id: queued.bufferPostId,
+      status: "sent",
+      sentAt: sentPost.sentAt,
+      externalLink: "https://x.com/example/status/1234567890",
+    },
+    metricsPost: null,
+    measuredAt: new Date("2026-08-21T03:00:00.000Z"),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.metricsAvailable, false);
+  assert.equal(result.preservedExistingMetrics, true);
+  assert.equal(result.record.impressions, 1200);
+  assert.equal(result.record.metricAvailability.impressions, "available");
 });
