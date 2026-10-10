@@ -244,12 +244,12 @@ This section reports repository capability. It does not claim a live provider, C
 - [x] A1: establish this Master SSOT and require agents to read it
 - [x] A2: audit canonical architecture against every active domain path; record duplicates and owners
 - [x] A3: define canonical store identities, writer authorities, Revenue linkage, and Learning approval contracts without Production migration
-- [ ] A4: define missing provider contracts and migration boundaries without changing live provider behavior
-- [ ] A5: define canonical cost events, availability semantics, and CEO observability projections
+- [ ] A4: define missing provider contracts when a concrete provider boundary requires them; deferred during current SNS delivery
+- [ ] A5: define canonical cost events and CEO observability when a concrete cost/availability boundary requires them; deferred during current SNS delivery
 
 ### Phase B — SNS Business
 
-- [ ] B1: stabilize normal X Production operation without lowering Hot Confidence thresholds
+- [x] B1: stabilize the Normal DailyX code path without lowering Hot Confidence thresholds; current Production runtime health remains evidence-driven and may be `UNKNOWN`
 - [ ] B2: define Instagram `CreativeSpec` from user-provided planning, assets, templates, and NG rules
 - [ ] B3: implement carousel structure, copy, asset selection, layout, render, and preview
 - [ ] B4: add provider-neutral background/illustration generation; real products remain real images
@@ -269,11 +269,17 @@ This section reports repository capability. It does not claim a live provider, C
 
 ## Next PRs
 
-1. **A2 Canonical Architecture Audit** — inventory every active data flow and name its canonical owner, duplicates, consumers, and migration risk. Documentation and tests only unless a safety defect requires a minimal fix.
-2. **A3 SSOT / Store Audit** — map paths, schemas, retention, mutation authorities, versioning, and lifecycle. Do not migrate Production data in the audit PR.
-3. **A4 Provider Contract Boundaries** — introduce missing interfaces incrementally with parity tests; do not change provider selection, credentials, or live behavior in the abstraction PR.
-4. **A5 Observability / Cost Foundation** — canonical availability/status model and cost event contract, then read-only projections.
-5. Resume **B1 X Production Stabilization** only after the Foundation contracts needed by that work are fixed.
+1. **B1 X Production Stabilization** — complete human review of the audited Normal DailyX safety and reconciliation fixes; validate Production only through read-only evidence after merge/deploy.
+2. **B2 Instagram CreativeSpec** — define the typed creative contract from user planning, real assets, templates, and NG rules.
+3. **B3 Carousel** — implement structure, copy, asset selection, layout, render, and preview from the approved `CreativeSpec`.
+4. **B4 Image Generation** — add provider-neutral background/illustration generation while keeping real products as real images.
+5. **B5 Reel** — add low-cost static-image reel rendering before optional image-to-video.
+6. **B6 Instagram Publish** — connect approved, eligible content to a publish provider.
+7. **B7 Metrics** — map Instagram metrics into canonical Performance with missing distinct from zero.
+8. **B8 Learning** — connect Instagram observations through the shared learning foundation without automatic strategy mutation.
+9. **B9 Monetization** — connect attributable SNS Revenue and confirmed Cost.
+
+**A4** is deferred until a concrete provider boundary requires a contract. **A5** is deferred until a concrete cost or observability boundary requires it. Neither is a blocker for the current SNS sequence.
 
 ## Decision Log
 
@@ -286,6 +292,7 @@ This section reports repository capability. It does not claim a live provider, C
 | 2026-10-09 | Human gates and R4 prohibitions cannot be bypassed by autonomy | external impact and irreversible risk remain human-controlled |
 | 2026-10-09 | Missing data is not zero and runtime health is not inferred from code presence | prevent false operational or business claims |
 | 2026-10-09 | Real products use real images; AI imagery is limited to background, illustration, decoration, and motifs | prevent product fabrication |
+| 2026-10-10 | Continue with B1–B9; defer A4/A5 until concrete provider or cost/observability boundaries exist | A1–A3 supply the ownership contracts required for current SNS delivery without speculative foundations |
 
 ## Protected Boundaries
 

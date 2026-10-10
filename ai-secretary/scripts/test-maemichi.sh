@@ -26,6 +26,7 @@ npx tsc \
   app/lib/note/publishing/buffer.ts \
   app/lib/note/publishing/bufferMetrics.ts \
   app/lib/note/publishing/canaryReconciliation.ts \
+  app/lib/note/publishing/publicationPerformance.ts \
   app/lib/note/publishing/xMetrics.ts \
   app/lib/note/publishing/noteMetricsProvider.ts \
   app/lib/note/research/x-query.ts \

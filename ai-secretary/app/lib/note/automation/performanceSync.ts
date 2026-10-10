@@ -8,7 +8,6 @@ import {
   bufferMetricsProvider,
   hasNewerBufferMetrics,
   isDailyMetricsCandidate,
-  normalizeBufferMetrics,
   samePerformanceValues,
 } from "@/app/lib/note/publishing/bufferMetrics";
 import type { PerformanceProviderResult } from "@/app/lib/note/publishing/performanceProvider";
@@ -35,12 +34,11 @@ import {
 } from "@/app/lib/note/research/store";
 import { DEFAULT_GENRES } from "@/app/lib/note/types";
 import type { SocialDraft } from "@/app/lib/note/research/types";
-import { parseXPostUrl } from "@/app/lib/note/x/urls";
 import {
   canaryCandidateReason,
-  confirmCanaryPublication,
   duplicateCanaryLineageIds,
 } from "@/app/lib/note/publishing/canaryReconciliation";
+import { reconcilePublicationPerformance } from "@/app/lib/note/publishing/publicationPerformance";
 
 export type PerformanceSyncResult = {
   checked: number;
@@ -93,19 +91,6 @@ function isCanaryDraft(draft: SocialDraft): boolean {
   return draft.id.startsWith("x-canary-");
 }
 
-function unavailableCanaryRecord(
-  draft: SocialDraft,
-  evidence: BufferPostPublicationEvidence,
-  now: Date
-) {
-  return normalizeBufferMetrics(
-    draft,
-    { ...evidence, metrics: null, metricsUpdatedAt: null },
-    now,
-    true
-  );
-}
-
 function publicationQueryReason(result: BufferResult<unknown>): PerformanceSyncReason {
   if (result.ok) return "BUFFER_POST_NOT_FOUND";
   return "BUFFER_QUERY_AMBIGUOUS";
@@ -118,7 +103,7 @@ export function shouldSyncDraft(draft: SocialDraft, now = new Date()): boolean {
 export async function syncPerformance(
   drafts: SocialDraft[],
   records: Awaited<ReturnType<typeof loadPerformance>>["records"],
-  fetcher: MetricsFetcher = bufferMetricsProvider.fetch,
+  _fetcher: MetricsFetcher = bufferMetricsProvider.fetch,
   now = new Date(),
   dependencies: SyncDependencies = {}
 ) {
@@ -154,106 +139,66 @@ export async function syncPerformance(
     .filter((draft) => shouldSyncDraft(draft, now) && !invalidCanaryIds.has(draft.id))
     .sort((a, b) => Number(Boolean(a.bufferMetricsUpdatedAt)) - Number(Boolean(b.bufferMetricsUpdatedAt)));
   for (const draft of targets) {
-    if (isCanaryDraft(draft)) {
-      // Required fields were validated above; keep runtime checks fail-closed.
-      if (!draft.bufferPostId || !draft.scheduledAt || !draft.planId || !draft.planSlotId) continue;
-      const publication = await publicationEvidenceFetcher(draft.bufferPostId);
-      if (!publication.ok || !publication.data) {
-        failures.push({
-          draftId: draft.id,
-          stage: "publication-evidence",
-          reason: publicationQueryReason(publication),
-        });
-        continue;
-      }
-      const evidence = publication.data;
-      const confirmed = confirmCanaryPublication(draft, evidence);
-      if (!confirmed.ok) {
-        failures.push({ draftId: draft.id, stage: "publication-evidence", reason: confirmed.reason });
-        continue;
-      }
-
-      const index = nextDrafts.findIndex((item) => item.id === draft.id);
-      nextDrafts[index] = {
-        ...confirmed.draft,
-        metricsLastSyncedAt: now.toISOString(),
-      };
-      metadataUpdated++;
-      publicationConfirmed++;
-
-      const metricsResult = await postMetricsFetcher(draft.bufferPostId);
-      const metricsPost = metricsResult.ok ? metricsResult.data : null;
-      const metricsRecord = metricsPost?.metricsUpdatedAt && Array.isArray(metricsPost.metrics)
-        ? normalizeBufferMetrics(
-            nextDrafts[index],
-            { ...evidence, ...metricsPost },
-            now
-          )
-        : null;
-      const existingRecord = nextRecords.find(
-        (record) => record.platform === "x" && record.contentId === draft.id
-      );
-      const record = metricsRecord ?? unavailableCanaryRecord(nextDrafts[index], evidence, now);
-      if (!record) {
-        failures.push({ draftId: draft.id, stage: "metrics", reason: "METRICS_PROVIDER_ERROR" });
-        continue;
-      }
-
-      if (metricsRecord) {
-        metricsAvailable++;
-        nextDrafts[index] = {
-          ...nextDrafts[index],
-          bufferMetricsUpdatedAt: metricsPost?.metricsUpdatedAt ?? evidence.sentAt,
-        };
-      } else {
-        metricsUnavailable++;
-        diagnostics.push({ draftId: draft.id, stage: "metrics", reason: "METRICS_UNAVAILABLE" });
-      }
-      if (existingRecord && samePerformanceValues(existingRecord, record)) {
-        unchanged++;
-      } else {
-        synced++;
-        const recordIndex = nextRecords.findIndex(
-          (item) => item.platform === "x" && item.contentId === draft.id
-        );
-        if (recordIndex >= 0) nextRecords[recordIndex] = record;
-        else nextRecords.unshift(record);
-      }
+    // Publication truth is always queried independently from metrics. A metrics
+    // provider failure must never hide a confirmed X publication.
+    if (!draft.bufferPostId) continue;
+    const publication = await publicationEvidenceFetcher(draft.bufferPostId);
+    if (!publication.ok || !publication.data) {
+      failures.push({
+        draftId: draft.id,
+        stage: "publication-evidence",
+        reason: publicationQueryReason(publication),
+      });
       continue;
     }
-
-    const result = await fetcher(draft, now);
+    const evidence = publication.data;
     const index = nextDrafts.findIndex((item) => item.id === draft.id);
-    if (!result.ok) {
-      failures.push({ draftId: draft.id, stage: "metrics", reason: "METRICS_PROVIDER_ERROR" });
-      nextDrafts[index] = { ...nextDrafts[index], metricsSyncError: result.error };
-      continue;
-    }
+    const metricsResult = await postMetricsFetcher(draft.bufferPostId);
+    const metricsPost = metricsResult.ok ? metricsResult.data : null;
     const existingRecord = nextRecords.find(
       (record) => record.platform === "x" && record.contentId === draft.id
     );
-    if (!hasNewerBufferMetrics(draft, result.providerUpdatedAt, Boolean(existingRecord))) {
+    const reconciled = reconcilePublicationPerformance({
+      draft,
+      existingRecord,
+      evidence,
+      metricsPost,
+      measuredAt: now,
+    });
+    if (!reconciled.ok) {
+      failures.push({ draftId: draft.id, stage: "publication-evidence", reason: reconciled.reason });
+      continue;
+    }
+    nextDrafts[index] = { ...reconciled.draft, metricsLastSyncedAt: now.toISOString() };
+    metadataUpdated++;
+    publicationConfirmed++;
+
+    if (!reconciled.metricsAvailable) {
+      metricsUnavailable++;
+      diagnostics.push({ draftId: draft.id, stage: "metrics", reason: "METRICS_UNAVAILABLE" });
+      if (reconciled.preservedExistingMetrics) {
+        unchanged++;
+      } else {
+        nextRecords.unshift(reconciled.record);
+        synced++;
+      }
+      continue;
+    }
+
+    metricsAvailable++;
+    const providerUpdatedAt = reconciled.draft.bufferMetricsUpdatedAt!;
+    if (!hasNewerBufferMetrics(draft, providerUpdatedAt, Boolean(existingRecord))) {
       unchanged++;
       continue;
     }
-    nextDrafts[index] = {
-      ...nextDrafts[index],
-      status: "published",
-      bufferMetricsUpdatedAt: result.providerUpdatedAt,
-      bufferExternalLink: result.externalLink ?? nextDrafts[index].bufferExternalLink,
-      xPostId: result.externalLink ? (parseXPostUrl(result.externalLink)?.postId ?? nextDrafts[index].xPostId) : nextDrafts[index].xPostId,
-      metricsLastSyncedAt: now.toISOString(),
-      metricsSyncError: undefined,
-    };
-    metadataUpdated++;
-    if (existingRecord && samePerformanceValues(existingRecord, result.metrics)) {
+    if (existingRecord && samePerformanceValues(existingRecord, reconciled.record)) {
       unchanged++;
       continue;
     }
     synced++;
     const recordIndex = nextRecords.findIndex((record) => record.platform === "x" && record.contentId === draft.id);
-    if (recordIndex >= 0) nextRecords[recordIndex] = result.metrics;
-    else nextRecords.unshift(result.metrics);
+    if (recordIndex >= 0) nextRecords[recordIndex] = reconciled.record;
+    else nextRecords.unshift(reconciled.record);
   }
   return {
     checked: targets.length,

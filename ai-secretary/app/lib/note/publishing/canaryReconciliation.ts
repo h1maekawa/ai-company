@@ -35,7 +35,8 @@ export function duplicateCanaryLineageIds(drafts: SocialDraft[]): Set<string> {
   );
 }
 
-export function confirmCanaryPublication(
+/** Shared read-only publication proof. It never schedules, retries, or mutates a provider. */
+export function confirmXPublication(
   draft: SocialDraft,
   evidence: BufferPostPublicationEvidence
 ): { ok: true; draft: SocialDraft; postId: string } | { ok: false; reason: CanaryPublicationReason } {
@@ -58,4 +59,12 @@ export function confirmCanaryPublication(
       metricsSyncError: undefined,
     },
   };
+}
+
+/** Canary compatibility wrapper; candidate lineage is validated before this call. */
+export function confirmCanaryPublication(
+  draft: SocialDraft,
+  evidence: BufferPostPublicationEvidence
+) {
+  return confirmXPublication(draft, evidence);
 }
