@@ -137,6 +137,7 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     competitorDifferences: comparison?.observations, competitorEvidenceCount: comparison?.evidenceCount,
   });
   // 日付単位でidempotent。過去日は保持し、同日のretryは最新計測で置換する。
+  review.strategyApplied = false;
   await saveGrowthReviews([review, ...existingReviews.filter((item) => item.date !== review.date)]);
 
   // 要件19: 繰り返し勝ったPatternだけをKnowledgeへ蓄積する（全件は保存しない。失敗しても致命的にしない）
