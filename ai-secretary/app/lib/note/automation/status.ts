@@ -85,6 +85,7 @@ export type AutomationStatus = {
     lastNightlyGrowthReviewAt: string | null;
     growthConfidence: "low" | "medium" | "high" | null;
     appliedChanges: number;
+    candidateChanges: number;
     experiments: string[];
   };
   queueLifecycle: QueueLifecycleSnapshot;
@@ -281,7 +282,8 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       lastPerformanceSyncAt: lastSyncedAt,
       lastNightlyGrowthReviewAt: latestGrowthReview?.measuredThrough ?? null,
       growthConfidence: latestGrowthReview?.confidence ?? null,
-      appliedChanges: latestGrowthReview?.appliedChanges.length ?? 0,
+      appliedChanges: latestGrowthReview?.strategyApplied === true ? latestGrowthReview.appliedChanges.length : 0,
+      candidateChanges: latestGrowthReview?.strategyApplied !== true ? latestGrowthReview?.appliedChanges.length ?? 0 : 0,
       experiments: latestGrowthReview?.experiments ?? [],
     },
     queueLifecycle,

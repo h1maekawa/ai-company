@@ -34,4 +34,8 @@ test("B1.5 Learning produces candidates without mutating Strategy Policy", () =>
   assert.match(nightly, /strategyCandidateAvailable/);
   assert.match(nightly, /const strategyChanged = false/);
   assert.doesNotMatch(nightly, /saveResearchSettings/);
+  assert.match(nightly, /review.strategyApplied = false/);
+  const report = read("app/lib/note/automation/weeklyReport.ts");
+  assert.match(report, /filter\(\(r\) => r.strategyApplied === true\)/);
+  assert.match(report, /Strategy変更候補/);
 });
