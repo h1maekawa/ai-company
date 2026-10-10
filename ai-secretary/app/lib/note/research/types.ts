@@ -436,6 +436,8 @@ export type DailyXPlanSlot = {
   id: string;
   slotIndex: number;
   purpose: ContentPurpose;
+  /** 固定Schedule Policyの役割。purposeは安全な候補に応じて別途決まる。 */
+  operationRole: "reach" | "trust" | "depth";
   bucket: PurposeBucket;
   /** "HH:MM" JST */
   scheduledTime: string;

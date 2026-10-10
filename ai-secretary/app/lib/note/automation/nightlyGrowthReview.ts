@@ -4,7 +4,7 @@ import { runPerformanceSync, type PerformanceSyncResult } from "./performanceSyn
 import { runAutoApproval, type AutoApprovalResult } from "../../review/autoApprove";
 import {
   loadGrowthReviews, loadNoteQueue, loadPerformance, loadResearchSettings, loadResearchInbox,
-  loadSocialDrafts, saveGrowthReviews, saveNoteQueue, saveResearchSettings,
+  loadSocialDrafts, saveGrowthReviews, saveNoteQueue,
 } from "../research/store";
 import type { PublishJob } from "../research/types";
 import { captureKnowledgeCandidate } from "../../knowledge/captureService";
@@ -24,6 +24,9 @@ export type NightlyGrowthResult = {
   autoApproval?: AutoApprovalResult;
   autoApprovalError?: string;
   noteMetricsJobsQueued: number;
+  /** Strategy candidate exists, but Human review is required before policy mutation. */
+  strategyCandidateAvailable: boolean;
+  /** Kept for API compatibility. Nightly Learning never mutates Strategy Policy. */
   strategyChanged: boolean;
   styleProfileUpdated: boolean;
   weeklyReportGenerated: boolean;
@@ -134,6 +137,7 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     competitorDifferences: comparison?.observations, competitorEvidenceCount: comparison?.evidenceCount,
   });
   // 日付単位でidempotent。過去日は保持し、同日のretryは最新計測で置換する。
+  review.strategyApplied = false;
   await saveGrowthReviews([review, ...existingReviews.filter((item) => item.date !== review.date)]);
 
   // 要件19: 繰り返し勝ったPatternだけをKnowledgeへ蓄積する（全件は保存しない。失敗しても致命的にしない）
@@ -149,10 +153,10 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     }).catch((error) => console.error("[nightly-growth] Knowledge Captureに失敗（非致命）:", error));
   }
 
-  const strategyChanged = review.appliedChanges.length > 0;
-  if (strategyChanged) {
-    await saveResearchSettings({ ...settings, purposeMix: review.strategyAfter.purposeMix, growthStrategy: review.strategyAfter });
-  }
+  // Learning may propose a strategy candidate, but it cannot mutate Strategy Policy.
+  // `strategyAfter` / `appliedChanges` are retained as review artifacts for Human evaluation.
+  const strategyCandidateAvailable = review.appliedChanges.length > 0;
+  const strategyChanged = false;
 
   // 要件P0.1/P0.2: Performance → Style自己改善。source:manualのフィールドは上書きしない。
   // Brand自体（人格）はここでは一切変更しない（StyleProfileはBrand/Safetyより下位の参照情報）。
@@ -212,6 +216,7 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     autoApproval,
     autoApprovalError,
     noteMetricsJobsQueued: metricJobs.length,
+    strategyCandidateAvailable,
     strategyChanged,
     styleProfileUpdated,
     weeklyReportGenerated,
