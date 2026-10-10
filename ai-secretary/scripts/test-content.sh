@@ -42,6 +42,10 @@ npx tsc \
   app/lib/content/monetization/types.ts \
   app/lib/content/monetization/store.ts \
   app/lib/content/monetization/metrics.ts \
+  app/lib/content/brandProfile.ts \
+  app/lib/content/instagram/creativeSpec.ts \
+  app/lib/content/instagram/templates.ts \
+  app/lib/content/instagram/fixtures.ts \
   app/lib/content/evidence/types.ts \
   app/lib/content/evidence/engine.ts \
   app/lib/content/evidence/store.ts \
