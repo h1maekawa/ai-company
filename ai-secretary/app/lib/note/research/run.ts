@@ -26,6 +26,8 @@ import { ResearchItem, TrendCluster } from "./types";
 import { captureKnowledgeCandidate } from "../../knowledge/captureService";
 import { learningSignals } from "./performance";
 import { reconcileFetchedResearchItems } from "./evidenceRefresh";
+import { projectCreatorEvidence } from "./sharedEvidence";
+import { loadExecutionState } from "../../company/execution/store";
 
 export type ResearchRunResult = {
   fetched: number;
@@ -89,7 +91,12 @@ export async function runResearch(options?: {
 
   failures.push(...noteResult.failures, ...xResult.failures);
 
-  const fetched = [...noteResult.items, ...xResult.items];
+  // Reuse already-collected canonical evidence, without a second provider run.
+  // Failure is explicit; legacy source collection can still complete.
+  const sharedItems = platform === "note" ? [] : await loadExecutionState()
+    .then((state) => projectCreatorEvidence(state.runtime?.researchItems ?? [], new Date(ranAt)))
+    .catch(() => { failures.push({ source: "shared-research", error: "SHARED_RESEARCH_UNAVAILABLE" }); return []; });
+  const fetched = [...noteResult.items, ...xResult.items, ...sharedItems];
 
   // 同一URLの再取得は新規本文として扱わず、providerが実際に返した公開evidenceだけを更新する。
   const { fresh, refreshed } = reconcileFetchedResearchItems(existingItems, fetched);

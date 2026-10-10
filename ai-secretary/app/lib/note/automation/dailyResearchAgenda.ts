@@ -20,6 +20,7 @@ export type CreatorAgendaInput = {
   winningTopicRefs?: string[];
   weakTopicRefs?: string[];
   recentlyUsedTopics?: string[];
+  topicTitles?: Record<string, string>;
   experiences?: ExperienceEntry[];
   noteCandidateRefs?: string[];
 };
@@ -54,16 +55,18 @@ export function buildCreatorDailyResearchAgenda(input: CreatorAgendaInput): Dail
   add("strategic-brand", `${brand.pillars[1] ?? brand.pillars[0]} 20代男性 選び方`, "X Brand pillarの継続調査");
 
   const observed = (input.performance ?? []).filter((record) => record.platform === "x" && record.impressions !== undefined);
-  const best = [...observed].sort((a, b) => (b.impressions ?? -1) - (a.impressions ?? -1))[0];
-  if (best?.trendClusterId) add("performance-follow-up", `${best.trendClusterId} follow-up why it matters`, "観測済みPerformanceのfollow-up", [best.contentId]);
+  const recentTopics = new Set(input.recentlyUsedTopics ?? []);
+  const titleFor = (id?: string) => id && !recentTopics.has(id) ? input.topicTitles?.[id]?.trim() : undefined;
+  const best = [...observed].filter((record) => titleFor(record.trendClusterId)).sort((a, b) => (b.impressions ?? -1) - (a.impressions ?? -1))[0];
+  if (best?.trendClusterId) add("performance-follow-up", `${titleFor(best.trendClusterId)} follow-up why it matters`, "観測済みPerformanceのfollow-up", [best.contentId]);
   else unknowns.push("X ContentPerformance is UNKNOWN; no zero-performance assumption was made");
 
-  const winningTopic = input.winningTopicRefs?.[0];
-  if (winningTopic) add("performance-follow-up", `${winningTopic} latest evidence follow-up`, "Nightly Reviewの勝ち筋を追加検証", [winningTopic]);
+  const winningTopic = input.winningTopicRefs?.find((id) => titleFor(id));
+  if (winningTopic) add("performance-follow-up", `${titleFor(winningTopic)} latest evidence follow-up`, "Nightly Reviewの勝ち筋を追加検証", [winningTopic]);
   else unknowns.push("Nightly winning topics are UNKNOWN");
 
-  const weakTopic = input.weakTopicRefs?.[0];
-  if (weakTopic) add("knowledge-gap", `${weakTopic} audience need evidence gap`, "弱いTopicを昇格せずResearch gapとして再検証", [weakTopic]);
+  const weakTopic = input.weakTopicRefs?.find((id) => titleFor(id));
+  if (weakTopic) add("knowledge-gap", `${titleFor(weakTopic)} audience need evidence gap`, "弱いTopicを昇格せずResearch gapとして再検証", [weakTopic]);
   else unknowns.push("Nightly weak topics are UNKNOWN");
 
   const gapArtifact = (input.researchArtifacts ?? []).find((artifact) => artifact.intelligence?.unknowns.length);
