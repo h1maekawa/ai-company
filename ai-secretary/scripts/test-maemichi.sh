@@ -50,6 +50,10 @@ npx tsc \
   app/lib/note/tokyoDate.ts \
   app/lib/note/quickXSelection.ts \
   app/lib/note/automation/dailyXPlan.ts \
+  app/lib/note/automation/dailyResearchAgenda.ts \
+  app/lib/note/automation/threePostReadiness.ts \
+  app/lib/company/research/types.ts \
+  app/lib/content/brandProfile.ts \
   app/lib/note/automation/queueLifecycle.ts \
   app/lib/note/automation/publishEligibility.ts \
   app/lib/note/automation/dailyXExecution.ts \

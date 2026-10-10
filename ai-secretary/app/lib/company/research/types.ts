@@ -24,6 +24,37 @@ export type DepartmentResearchPolicy = {
   allowedDomains?: string[]; blockedDomains?: string[]; knowledgeDomains?: string[]; autoKnowledgeCandidate: boolean;
 };
 
+export type ResearchAgendaCategory =
+  | "breaking-current"
+  | "strategic-brand"
+  | "performance-follow-up"
+  | "knowledge-gap"
+  | "evergreen-educational"
+  | "experiment";
+
+/**
+ * Research Storeへ保存する事実ではなく、既存Research実行へ渡すPlanning Artifact。
+ * Department共通contractであり、query上限はDepartmentResearchPolicyが常に権威を持つ。
+ */
+export type DailyResearchAgenda = {
+  date: string;
+  department: string;
+  goals: string[];
+  researchQuestions: string[];
+  queryIntents: Array<{
+    category: ResearchAgendaCategory;
+    query: string;
+    reason: string;
+    evidenceRefs: string[];
+  }>;
+  targetPillars: string[];
+  targetSlots: Array<{ time: string; role: string }>;
+  reason: string;
+  evidenceRefs: string[];
+  unknowns: string[];
+  createdAt: string;
+};
+
 export type ResearchItem = {
   id: string; departmentIds: string[]; researcherAgentId: string; topic: string; title: string; summary: string;
   sourceType: ResearchSourceType; sourceUrl?: string; sourceName?: string; publishedAt?: string; fetchedAt: string;
@@ -133,7 +164,7 @@ export type IntelligenceArtifact = {
   knowledgeCapture?: { status: "captured" | "candidate" | "skipped" | "failed"; path?: string; reason?: string };
 };
 export type CanonicalResearchArtifact = ResearchArtifact & { intelligence: IntelligenceArtifact };
-export type ResearchRun = { id: string; departmentId: string; researcherAgentId: string; startedAt: string; completedAt?: string; queryCount: number; fetchedCount: number; acceptedCount: number; duplicateCount: number; staleCount: number; checkedSources?: string[]; successfulSources?: string[]; failedSources: string[]; status: "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED" };
+export type ResearchRun = { id: string; departmentId: string; researcherAgentId: string; startedAt: string; completedAt?: string; queryCount: number; fetchedCount: number; acceptedCount: number; duplicateCount: number; staleCount: number; checkedSources?: string[]; successfulSources?: string[]; failedSources: string[]; status: "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED"; agenda?: DailyResearchAgenda };
 export type ResearchHealth = { departmentId: string; status: "HEALTHY" | "PARTIAL" | "FAILED" | "UNKNOWN"; lastSuccessfulRun: string | null; lastPartialRun: string | null; lastFailure: string | null; freshItemCount: number; staleItemCount: number; providerFailures: string[] };
 export type ResearchCoverageGap = {
   departmentId: string;

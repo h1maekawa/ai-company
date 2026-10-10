@@ -108,7 +108,7 @@ function buildOneTimeTransportPlan(date: string, accountKey: string, now: Date, 
       ...(strategy.updatedAt ? { strategyUpdatedAt: strategy.updatedAt } : {}),
     },
     slots: [{
-      id: dailyXSlotId(date, accountKey, 0), slotIndex: 0, purpose: "reach", bucket: "reach",
+      id: dailyXSlotId(date, accountKey, 0), slotIndex: 0, purpose: "reach", operationRole: "reach", bucket: "reach",
       scheduledTime: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false }).format(dueAt),
       scheduledAt: dueAt.toISOString(), timeSource: "one-time-transport-canary", exploration: false,
       status: "planned", updatedAt: stamp,

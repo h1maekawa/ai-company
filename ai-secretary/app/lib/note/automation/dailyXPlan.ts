@@ -129,6 +129,42 @@ export function explorationOrder(candidates: TrendCluster[]): TrendCluster[] {
   return [...candidates].sort((left, right) => hot(right) - hot(left) || left.id.localeCompare(right.id));
 }
 
+/**
+ * 新しいranking scoreは作らず、既存Hot候補を固定slot roleの観点で辞書式に並べる。
+ * 同値時は既存exploitation/exploration順へ戻る。
+ */
+export function orderCandidatesForSlot(
+  candidates: TrendCluster[],
+  role: "reach" | "trust" | "depth",
+  strategy: Pick<ContentGrowthStrategy, "topicPriority" | "genrePriority">,
+  explore: boolean,
+): TrendCluster[] {
+  const base = explore ? explorationOrder(candidates) : exploitationOrder(candidates, strategy);
+  const baseIndex = new Map(base.map((candidate, index) => [candidate.id, index]));
+  const observed = (value: number | null | undefined) => value ?? -1;
+  return [...base].sort((left, right) => {
+    if (role === "reach") {
+      const freshness = observed(right.hotScoreBreakdown?.freshness) - observed(left.hotScoreBreakdown?.freshness);
+      if (freshness) return freshness;
+      const momentum = observed(right.hotScoreBreakdown?.momentum) - observed(left.hotScoreBreakdown?.momentum);
+      if (momentum) return momentum;
+    } else if (role === "trust") {
+      const brand = right.brandFitScore - left.brandFitScore;
+      if (brand) return brand;
+      const originality = right.originalityScore - left.originalityScore;
+      if (originality) return originality;
+    } else {
+      const experience = Number(right.matchedExperienceIds.length > 0) - Number(left.matchedExperienceIds.length > 0);
+      if (experience) return experience;
+      const topic = Number(strategy.topicPriority.includes(right.id)) - Number(strategy.topicPriority.includes(left.id));
+      if (topic) return topic;
+      const monetization = right.monetizationFitScore - left.monetizationFitScore;
+      if (monetization) return monetization;
+    }
+    return (baseIndex.get(left.id) ?? 0) - (baseIndex.get(right.id) ?? 0);
+  });
+}
+
 export function buildDailyXPlan(input: {
   date: string;
   accountKey: string;
@@ -148,8 +184,6 @@ export function buildDailyXPlan(input: {
   const dayIndex = tokyoDayIndexInWeek(input.date);
   const buckets = weekly.slice(dayIndex * slotsPerDay, (dayIndex + 1) * slotsPerDay);
   const purposes = purposesForDay(buckets);
-  const exploitation = exploitationOrder(input.candidates, input.strategy);
-  const exploration = explorationOrder(input.candidates);
   const assigned = new Set<string>();
   const dayStart = new Date(tokyoDayStartMs(input.date));
   const timestamp = input.now.toISOString();
@@ -157,14 +191,16 @@ export function buildDailyXPlan(input: {
   const slots: DailyXPlanSlot[] = buckets.map((bucket, slotIndex) => {
     const id = dailyXSlotId(input.date, input.accountKey, slotIndex);
     const explore = isExplorationSlot(id, explorationRate);
-    const order = explore ? exploration : exploitation;
+    const schedule = DEFAULT_X_SCHEDULE[slotIndex];
+    const order = orderCandidatesForSlot(input.candidates, schedule.operationRole, input.strategy, explore);
     const candidate = order.find((cluster) => !assigned.has(cluster.id)) ?? order[0];
     assigned.add(candidate.id);
-    const time = DEFAULT_X_SCHEDULE[slotIndex].time;
+    const time = schedule.time;
     return {
       id,
       slotIndex,
       purpose: purposes[slotIndex],
+      operationRole: schedule.operationRole,
       bucket,
       scheduledTime: time,
       scheduledAt: scheduledAtInTokyo(dayStart, time),
