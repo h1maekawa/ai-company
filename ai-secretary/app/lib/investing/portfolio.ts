@@ -81,6 +81,13 @@ type LoadedHoldings = {
   totals: { totalJpy: number | null; totalPnlJpy: number | null } | null;
 };
 
+export type PortfolioInventory = {
+  available: boolean;
+  positionCount: number;
+  source: "holdings_csv" | "positions_md" | "none";
+  updatedAt: string | null;
+};
+
 // ─── 1. holdings.md（CSV取込） ─────────────────────────
 
 async function loadFromHoldings(): Promise<LoadedHoldings | null> {
@@ -353,5 +360,23 @@ export async function loadPortfolio(): Promise<Portfolio> {
     revaluedAt: revaluation.revaluedAt,
     fx: revaluation.fx,
     freshness: revaluation.freshness,
+  };
+}
+
+/**
+ * Read-only readiness inventory. Unlike loadPortfolio(), this deliberately does
+ * not revalue positions or call a market-data provider. It exposes no holdings,
+ * quantities, prices, or portfolio values.
+ */
+export async function loadPortfolioInventory(): Promise<PortfolioInventory> {
+  const loaded = (await loadFromHoldings()) ?? (await loadFromPositions());
+  if (!loaded) {
+    return { available: false, positionCount: 0, source: "none", updatedAt: null };
+  }
+  return {
+    available: loaded.positions.length > 0,
+    positionCount: loaded.positions.length,
+    source: loaded.source,
+    updatedAt: loaded.updatedAt,
   };
 }
