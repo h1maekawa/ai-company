@@ -1,5 +1,6 @@
 import { platformBrandPolicy } from "../brandProfile";
 import { defaultMonetizationPolicy } from "../monetization/types";
+import type { MediaAssetSource, MediaUsageRights } from "../core/types";
 
 export const INSTAGRAM_PILLARS = [
   "fashion",
@@ -52,8 +53,8 @@ export type InstagramAssetRef = {
     | "coffee"
     | "gadget"
     | "other";
-  source: "user" | "official" | "affiliate" | "authorized" | "generated";
-  usageRights: "owned" | "authorized" | "affiliate-provided" | "generated" | "unknown";
+  source: MediaAssetSource;
+  usageRights: MediaUsageRights;
   url?: string;
   storageRef?: string;
   realProductRepresentation: boolean;

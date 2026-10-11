@@ -4,7 +4,7 @@
  */
 
 import { getVaultFile, saveVaultFile } from "../../vault";
-import { ContentCandidate, Material } from "./types";
+import { ContentCandidate, Material, MediaAsset, PersonalProduct, validateMediaAsset, validatePersonalProduct } from "./types";
 
 const ROOT = "memory/personal/note";
 
@@ -62,6 +62,9 @@ ${JSON.stringify(data, null, 2)}
 export type ContentCoreFile = {
   materials: Material[];
   candidates: ContentCandidate[];
+  /** Additive IG-0 dimensions in the existing Content Core SSOT. */
+  products: PersonalProduct[];
+  mediaAssets: MediaAsset[];
 };
 
 const MAX_MATERIALS = 500;
@@ -71,6 +74,8 @@ export async function loadContentCore(): Promise<ContentCoreFile> {
   return {
     materials: Array.isArray(data?.materials) ? data.materials : [],
     candidates: Array.isArray(data?.candidates) ? data.candidates : [],
+    products: Array.isArray(data?.products) ? data.products : [],
+    mediaAssets: Array.isArray(data?.mediaAssets) ? data.mediaAssets : [],
   };
 }
 
@@ -78,10 +83,10 @@ export async function saveContentCore(file: ContentCoreFile): Promise<ContentCor
   const materials = [...file.materials]
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, MAX_MATERIALS);
-  const safeFile = { materials, candidates: file.candidates };
+  const safeFile = { materials, candidates: file.candidates, products: file.products, mediaAssets: file.mediaAssets };
 
   const human = [
-    `Material: ${materials.length}件 / ContentCandidate: ${safeFile.candidates.length}件`,
+    `Material: ${materials.length}件 / ContentCandidate: ${safeFile.candidates.length}件 / Product: ${safeFile.products.length}件 / MediaAsset: ${safeFile.mediaAssets.length}件`,
     "",
     "## 発信材料（Material）",
     materials
@@ -94,13 +99,19 @@ export async function saveContentCore(file: ContentCoreFile): Promise<ContentCor
       .slice(0, 30)
       .map((c) => `- [${c.status}] ${c.title} — ${c.whyInteresting}`)
       .join("\n") || "（まだありません）",
+    "",
+    "## Product Vault",
+    safeFile.products.slice(0, 30).map((p) => `- [${p.ownership}] ${p.brand} ${p.name}${p.personalExperience?.confirmedByUser ? "（本人確認済み）" : ""}`).join("\n") || "（まだありません）",
+    "",
+    "## Media Assets",
+    safeFile.mediaAssets.slice(0, 30).map((a) => `- [${a.usageRights}][${a.type}] ${a.id}`).join("\n") || "（まだありません）",
   ].join("\n");
 
   await write(
     CONTENT_CORE_PATHS.core,
     buildDoc(
       "note_content_core",
-      "Note・X共通の発信材料です。Timeboxはこの中の1つのsource（sourceType: timebox）に過ぎず、無くてもNote/Xは単独で完結します。",
+      "Content事業部共通のMaterial・Candidate・Product・Media Assetです。Instagram専用の第二Storeではありません。",
       human,
       safeFile
     )
@@ -125,4 +136,64 @@ export async function upsertCandidate(candidate: ContentCandidate): Promise<Cont
   else file.candidates.unshift(candidate);
   await saveContentCore(file);
   return candidate;
+}
+
+export async function upsertProduct(product: PersonalProduct): Promise<PersonalProduct> {
+  const validation = validatePersonalProduct(product);
+  if (!validation.valid) throw new Error(validation.errors.join(","));
+  const file = await loadContentCore();
+  const missingAsset = product.assetIds.find((id) => !file.mediaAssets.some((asset) => asset.id === id));
+  if (missingAsset) throw new Error(`PRODUCT_ASSET_NOT_FOUND:${missingAsset}`);
+  const index = file.products.findIndex((item) => item.id === product.id);
+  const createdAt = index >= 0 ? file.products[index].createdAt : product.createdAt;
+  const next = { ...product, createdAt, updatedAt: new Date().toISOString() };
+  if (index >= 0) file.products[index] = next;
+  else file.products.unshift(next);
+  await saveContentCore(file);
+  return next;
+}
+
+export async function deleteProduct(id: string): Promise<boolean> {
+  const file = await loadContentCore();
+  if (file.mediaAssets.some((asset) => asset.productIds.includes(id))) throw new Error("PRODUCT_HAS_LINKED_ASSETS");
+  const next = file.products.filter((item) => item.id !== id);
+  if (next.length === file.products.length) return false;
+  await saveContentCore({ ...file, products: next });
+  return true;
+}
+
+export async function upsertMediaAsset(asset: MediaAsset): Promise<MediaAsset> {
+  const validation = validateMediaAsset(asset);
+  if (!validation.valid) throw new Error(validation.errors.join(","));
+  const file = await loadContentCore();
+  const missingProduct = asset.productIds.find((id) => !file.products.some((product) => product.id === id));
+  if (missingProduct) throw new Error(`ASSET_PRODUCT_NOT_FOUND:${missingProduct}`);
+  const index = file.mediaAssets.findIndex((item) => item.id === asset.id);
+  const previousProductIds = index >= 0 ? file.mediaAssets[index].productIds : [];
+  const createdAt = index >= 0 ? file.mediaAssets[index].createdAt : asset.createdAt;
+  const next = { ...asset, createdAt, updatedAt: new Date().toISOString() };
+  if (index >= 0) file.mediaAssets[index] = next;
+  else file.mediaAssets.unshift(next);
+  const linkedProductIds = new Set(next.productIds);
+  for (const [productIndex, product] of file.products.entries()) {
+    const wasLinked = previousProductIds.includes(product.id) || product.assetIds.includes(next.id);
+    const shouldLink = linkedProductIds.has(product.id);
+    if (wasLinked || shouldLink) {
+      const assetIds = shouldLink
+        ? [...new Set([...product.assetIds, next.id])]
+        : product.assetIds.filter((id) => id !== next.id);
+      file.products[productIndex] = { ...product, assetIds, updatedAt: next.updatedAt };
+    }
+  }
+  await saveContentCore(file);
+  return next;
+}
+
+export async function deleteMediaAsset(id: string): Promise<boolean> {
+  const file = await loadContentCore();
+  const next = file.mediaAssets.filter((item) => item.id !== id);
+  if (next.length === file.mediaAssets.length) return false;
+  const products = file.products.map((product) => ({ ...product, assetIds: product.assetIds.filter((assetId) => assetId !== id) }));
+  await saveContentCore({ ...file, mediaAssets: next, products });
+  return true;
 }
