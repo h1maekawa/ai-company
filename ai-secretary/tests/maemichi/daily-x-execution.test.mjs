@@ -51,8 +51,17 @@ function harness(options = {}) {
       state.calls.generate++;
       return { draft: { id: `canary-${slot.id}`, xAccountId: PRIMARY, purpose: slot.purpose, genreId: "daily-thoughts", text: "考え方を少し広げる時間を大切にしたい。", urls: [], needsDisclosure: false, similarityScore: 0, status: "draft", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() } };
     },
-    safetyGate: async (draft) => (options.blockSlot !== undefined && draft.planSlotId?.endsWith(`:${options.blockSlot}`) ? { draft, safe: false, reasons: ["Fact Gate"] } : { draft, safe: true, reasons: [] }),
-    publishEligibility: async (draft, plan, slot) => options.publishEligibility?.(draft, plan, slot) ?? { eligible: true, reasons: [] },
+    safetyGate: async (draft) => (options.blockSlot !== undefined && draft.planSlotId?.endsWith(`:${options.blockSlot}`)
+      ? { draft, safe: false, reasons: ["Safety Gate"], evidence: { result: "FAIL", reasonCode: "SAFETY_REJECTED", policyVersion: "test-safety-v1" } }
+      : { draft, safe: true, reasons: [], evidence: { result: "PASS", reasonCode: "SAFETY_PASS", policyVersion: "test-safety-v1" } }),
+    publishEligibility: async (draft, plan, slot) => options.publishEligibility?.(draft, plan, slot) ?? {
+      eligible: true,
+      reasons: [],
+      evidence: {
+        fact: { result: "PASS", reasonCode: "FACT_PASS", policyVersion: "test-fact-v1" },
+        publishEligibility: { result: "PASS", reasonCode: "PUBLISH_ELIGIBILITY_PASS", policyVersion: "test-eligibility-v1" },
+      },
+    },
     loadDrafts: async () => structuredClone(state.drafts),
     saveDrafts: async (drafts) => {
       if (state.fail.saveDraftsWhenQueued && drafts.some((draft) => draft.status === "queued")) { state.fail.saveDraftsWhenQueued = false; throw new Error("draft save failed"); }
@@ -252,6 +261,16 @@ test("Publish Eligibility不合格はclaim/Buffer前にblockedとなり既存dra
   assert.equal(h.plan().slots[0].failureKind, "publish-eligibility");
   assert.equal(h.state.drafts.length, 1);
   assert.equal(result.scheduledDraftIds.length, 0);
+});
+
+test("Canonical Gate Evidenceは各gateの評価地点でplan/slot/draft lineage付きで保存する", async () => {
+  const h = harness({ ctx: { maxXPostsPerDay: 1 } });
+  await h.run();
+  const evidence = h.plan().gateEvidence;
+  assert.deepEqual(evidence.map((item) => item.gateType), ["SAFETY", "FACT", "PUBLISH_ELIGIBILITY"]);
+  assert.ok(evidence.every((item) => item.result === "PASS"));
+  assert.ok(evidence.every((item) => item.planId === h.plan().id && item.slotId === h.plan().slots[0].id && item.draftId === h.plan().slots[0].draftId));
+  assert.ok(evidence.every((item) => item.source === "daily-x-execution" && item.policyVersion.startsWith("test-")));
 });
 
 test("T10 strict count: 日次カウントを確認できなければ予約しない（fail-closed）", async () => {

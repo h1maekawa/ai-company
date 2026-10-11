@@ -20,6 +20,8 @@ test("Safety/length/similarity/failure/source gateをすべてpublish前に要�
   assert.match(result.reasons.join(" "), /failureReason/);
   assert.match(result.reasons.join(" "), /類似度/);
   assert.match(result.reasons.join(" "), /source\/evidence/);
+  assert.equal(result.evidence.fact.result, "FAIL");
+  assert.equal(result.evidence.publishEligibility.result, "BLOCKED");
 });
 
 test("RESEARCH_PROVIDER_FAILURE中はinvestmentを止め、低リスク投稿は通す", async () => {
@@ -27,6 +29,8 @@ test("RESEARCH_PROVIDER_FAILURE中はinvestmentを止め、低リスク投稿は
   const lowRisk = await gate.evaluatePublishEligibility(input(base, { researchProviderFailureUnresolved: true }));
   assert.equal(investment.eligible, false);
   assert.equal(lowRisk.eligible, true);
+  assert.equal(lowRisk.evidence.fact.result, "PASS");
+  assert.equal(lowRisk.evidence.publishEligibility.result, "PASS");
 });
 
 test("最新Research Runが成功なら過去のprovider failureは解消扱い", () => {

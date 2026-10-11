@@ -5,6 +5,7 @@ import type { ContentGrowthStrategy, DailyXPlan, DailyXPlanSlot, DailyXSlotStatu
 import { tokyoDateKey } from "../tokyoDate";
 import { buildDailyXPlan, classifyXTopicDomain, dailyXPlanId, dailyXSlotId, normalizePurposeMix, orderCandidatesForSlot } from "./dailyXPlan";
 import { deriveQueueLifecycle, type QueueLifecycleSnapshot } from "./queueLifecycle";
+import { appendGateEvidence, buildGateEvidence, type GateDecisionEvidence } from "./gateEvidence";
 
 /**
  * Daily X 実行の中核（依存注入）。I/Oは deps だけを通す。
@@ -33,8 +34,12 @@ export type DailyXContext = {
   oneTimeTransportCanary?: boolean;
 };
 
-export type SafetyOutcome = { draft: SocialDraft; safe: boolean; reasons: string[] };
-export type PublishEligibilityOutcome = { eligible: boolean; reasons: string[] };
+export type SafetyOutcome = { draft: SocialDraft; safe: boolean; reasons: string[]; evidence?: GateDecisionEvidence };
+export type PublishEligibilityOutcome = {
+  eligible: boolean;
+  reasons: string[];
+  evidence?: { fact: GateDecisionEvidence; publishEligibility: GateDecisionEvidence };
+};
 
 export type DailyXDeps = {
   now(): Date;
@@ -275,6 +280,8 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
     }
     const gate = await deps.safetyGate({ ...generated.draft, ...planDraftLineage(plan, slot) });
     const draft = gate.safe ? gate.draft : { ...gate.draft, failureReason: gate.reasons.join(" / ") };
+    appendGateEvidence(plan, buildGateEvidence({ gate: "SAFETY", decision: gate.evidence, plan, slot, draft, evaluatedAt: stamp() }));
+    await savePlan();
     newlyGenerated.push(draft);
     drafts = [draft, ...drafts.filter((item) => item.id !== draft.id)];
     await deps.saveDrafts(drafts);
@@ -314,6 +321,10 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
         continue;
       }
       const eligibility = await deps.publishEligibility(draft, plan, slot);
+      const evaluatedAt = stamp();
+      appendGateEvidence(plan, buildGateEvidence({ gate: "FACT", decision: eligibility.evidence?.fact, plan, slot, draft, evaluatedAt }));
+      appendGateEvidence(plan, buildGateEvidence({ gate: "PUBLISH_ELIGIBILITY", decision: eligibility.evidence?.publishEligibility, plan, slot, draft, evaluatedAt }));
+      await savePlan();
       if (!eligibility.eligible) {
         setSlot(slot, { status: "blocked", failureKind: "publish-eligibility", failureReason: eligibility.reasons.join(" / ") });
         await savePlan();

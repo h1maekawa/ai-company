@@ -23,7 +23,10 @@ test("Brand内部文脈だけの新規DraftはSafety/Fact/Eligibilityを通り�
   assert.ok(draft.similarityScore < 0.72);
   assert.equal(runXSafetyGate({ draft, brand, experiences: [] }).safe, true);
   const eligibility = await evaluatePublishEligibility({ draft: { ...draft, planId: "daily-x:2026-10-08:primary", planSlotId: slot.id }, currentPlanId: "daily-x:2026-10-08:primary", currentPlanSlotId: slot.id, brand, experiences: [], researchItems: [], researchProviderFailureUnresolved: true });
-  assert.deepEqual(eligibility, { eligible: true, reasons: [] });
+  assert.equal(eligibility.eligible, true);
+  assert.deepEqual(eligibility.reasons, []);
+  assert.equal(eligibility.evidence.fact.result, "PASS");
+  assert.equal(eligibility.evidence.publishEligibility.result, "PASS");
 });
 
 test("既存slotのDraftを流用せず、重複・Brand不一致はfail closed", () => {
