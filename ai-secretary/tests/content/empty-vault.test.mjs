@@ -18,10 +18,12 @@ test("初回起動: article-sessions.mdが無くても例外を投げず空配�
   assert.deepEqual(await noteStudioStore.loadSessions(), []);
 });
 
-test("初回起動: content-core.mdが無くてもMaterial/Candidateは空配列", async () => {
+test("初回起動: content-core.mdが無くても共有Content dimensionは空配列", async () => {
   const file = await coreStore.loadContentCore();
   assert.deepEqual(file.materials, []);
   assert.deepEqual(file.candidates, []);
+  assert.deepEqual(file.products, []);
+  assert.deepEqual(file.mediaAssets, []);
 });
 
 test("初回起動: offers.md/cta-library.md/monetization-ledger.mdが無くても安全な既定値", async () => {

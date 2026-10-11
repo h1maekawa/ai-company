@@ -21,6 +21,12 @@ export async function GET(): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.json();
+    if (body.channel === "instagram") {
+      return NextResponse.json(
+        { error: "Instagram publishing is not configured", code: "INSTAGRAM_PUBLISH_NOT_CONFIGURED" },
+        { status: 503 },
+      );
+    }
     const channel = body.channel === "x" ? "x" : "note";
     const contentId = String(body.contentId ?? "");
     const title = String(body.title ?? "").trim();

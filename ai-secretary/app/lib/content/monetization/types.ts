@@ -137,7 +137,7 @@ export function defaultMonetizationPolicy(): MonetizationPolicy {
 
 /* ─── Published Record ───────────────────────────────── */
 
-export type PublishChannel = "note" | "x";
+export type PublishChannel = "note" | "x" | "instagram";
 export type PublishedStatus = "published" | "unpublished" | "removed";
 
 /**

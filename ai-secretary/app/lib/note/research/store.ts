@@ -578,7 +578,7 @@ export async function saveNoteQueue(file: NoteQueueFile): Promise<NoteQueueFile>
 
 export type HistoryEntry = {
   id: string;
-  platform: "x" | "note";
+  platform: "x" | "note" | "instagram";
   contentId: string;
   /** 公開物の元となったAI下書き。公開履歴自身は本人の正式な公開物を表す。 */
   draftId?: string;

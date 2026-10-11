@@ -744,7 +744,7 @@ export type ContentPerformance = {
   trendClusterId?: string;
   /** Content Business OS: PublishedContent（monetization/types.ts）への参照。任意 */
   publishedContentId?: string;
-  platform: "x" | "note";
+  platform: "x" | "note" | "instagram";
   purpose: ContentPurpose;
   genreId: string;
   publishedAt: string;
