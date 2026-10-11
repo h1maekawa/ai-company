@@ -40,10 +40,12 @@ export function computeMarketDemand(cluster: TrendCluster, items: ResearchItem[]
   return { score: availableWeight ? Math.round(raw / availableWeight) : null, coverage, confidence: coverage >= .7 ? "HIGH" : coverage >= .4 ? "MEDIUM" : "LOW", signals };
 }
 
-export function rankCandidatesByMarketDemand(candidates: TrendCluster[], items: ResearchItem[], performance: ContentPerformance[], now = new Date()): TrendCluster[] {
-  return [...candidates].sort((a, b) => {
-    const left = computeMarketDemand(a, items, performance, now);
-    const right = computeMarketDemand(b, items, performance, now);
-    return (right.score ?? -1) - (left.score ?? -1) || a.id.localeCompare(b.id);
+export function attachMarketDemandRankingSignal(candidates: TrendCluster[], items: ResearchItem[], performance: ContentPerformance[], now = new Date()): TrendCluster[] {
+  return candidates.map((candidate) => {
+    const demand = computeMarketDemand(candidate, items, performance, now);
+    return {
+      ...candidate,
+      marketDemand: { score: demand.score, coverage: demand.coverage, confidence: demand.confidence },
+    };
   });
 }

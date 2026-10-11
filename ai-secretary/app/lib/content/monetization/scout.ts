@@ -4,8 +4,11 @@ import type { MonetizationCandidate, MonetizationCandidateType, Offer } from "./
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 16);
 
-/** Own Performance evidenceからCandidateだけを作る。申請・登録・URL生成・支払いは一切行わない。 */
-export function buildWeeklyMonetizationCandidates(input: {
+/**
+ * Observed X Performanceから収益化Opportunity Candidateだけを作るv1 Generator。
+ * 外部ProgramのResearch/Discoveryは行わず、申請・登録・URL生成・支払いも一切行わない。
+ */
+export function buildWeeklyMonetizationOpportunityCandidates(input: {
   performance: ContentPerformance[];
   offers: Offer[];
   existing?: MonetizationCandidate[];

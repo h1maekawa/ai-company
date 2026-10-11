@@ -13,9 +13,11 @@ test("B1.5 reuses canonical Research, Hot filter, and existing publish path", ()
   assert.match(platform, /agenda\?\.queryIntents/);
   assert.match(platform, /slice\(0,input\.policy\.maxQueriesPerRun\)/);
   assert.match(daily, /filterHotConfidenceCandidates/);
+  assert.match(daily, /attachMarketDemandRankingSignal/);
   assert.match(daily, /evaluatePublishEligibility/);
   assert.match(daily, /createPost/);
   assert.match(plan, /orderCandidatesForSlot/);
+  assert.match(plan, /marketDemandTieBreak/);
   assert.doesNotMatch(plan, /newHotScore|autonomousRankScore/);
 });
 
@@ -60,7 +62,7 @@ test("weekly monetization and CEO feedback remain candidate-only Human-gated pat
   const nightly = read("app/lib/note/automation/nightlyGrowthReview.ts");
   const skills = read("app/lib/company/evolution/skillCandidates.ts");
   assert.match(nightly, /tokyoWeekday === 0/);
-  assert.match(nightly, /buildWeeklyMonetizationCandidates/);
+  assert.match(nightly, /buildWeeklyMonetizationOpportunityCandidates/);
   assert.match(scout, /requiresHumanAction: true/);
   assert.match(scout, /externalActionAllowed: false/);
   assert.doesNotMatch(scout, /enroll|createAccount|stripe|paymentSetup/);

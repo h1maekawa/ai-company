@@ -112,6 +112,7 @@ export function purposesForDay(buckets: PurposeBucket[]): ContentPurpose[] {
 }
 
 const hot = (cluster: TrendCluster) => cluster.hotScore ?? cluster.totalScore;
+const MARKET_DEMAND_HOT_TIE_RANGE = 5;
 
 const INVESTMENT_TERMS = /investment|投資|株|市場|相場|半導体|銘柄|決算|業績|需給|出来高|金利|為替|債券|指数|market|stock|equity|semiconductor|earnings|guidance|volume|supply|demand/i;
 const AI_TERMS = /\bAI\b|人工知能|生成AI|LLM|agent|エージェント|model|モデル|OpenAI|Anthropic|Gemini|Claude/i;
@@ -131,16 +132,17 @@ export function normalizeXDomainMix(mix?: Partial<XDomainMix>): XDomainMix {
 }
 
 /** exploitation順: 既存の topicPriority / genrePriority 優先ソート（同順位はhotScore） */
+function strategyPriority(candidate: TrendCluster, strategy: Pick<ContentGrowthStrategy, "topicPriority" | "genrePriority">): number {
+  const topic = strategy.topicPriority.indexOf(candidate.id);
+  const genre = Math.min(...candidate.genreIds.map((id) => {
+    const index = strategy.genrePriority.indexOf(id);
+    return index < 0 ? 99 : index;
+  }), 99);
+  return (topic < 0 ? 99 : topic) * 100 + genre;
+}
+
 export function exploitationOrder(candidates: TrendCluster[], strategy: Pick<ContentGrowthStrategy, "topicPriority" | "genrePriority">): TrendCluster[] {
-  const priority = (candidate: TrendCluster) => {
-    const topic = strategy.topicPriority.indexOf(candidate.id);
-    const genre = Math.min(...candidate.genreIds.map((id) => {
-      const index = strategy.genrePriority.indexOf(id);
-      return index < 0 ? 99 : index;
-    }), 99);
-    return (topic < 0 ? 99 : topic) * 100 + genre;
-  };
-  return [...candidates].sort((left, right) => priority(left) - priority(right) || hot(right) - hot(left) || left.id.localeCompare(right.id));
+  return [...candidates].sort((left, right) => strategyPriority(left, strategy) - strategyPriority(right, strategy) || hot(right) - hot(left) || left.id.localeCompare(right.id));
 }
 
 /** exploration順: 既存の hotScore 順 */
@@ -161,6 +163,15 @@ export function orderCandidatesForSlot(
   const base = explore ? explorationOrder(candidates) : exploitationOrder(candidates, strategy);
   const baseIndex = new Map(base.map((candidate, index) => [candidate.id, index]));
   const observed = (value: number | null | undefined) => value ?? -1;
+  const marketDemandTieBreak = (left: TrendCluster, right: TrendCluster) => {
+    const leftScore = left.marketDemand?.score;
+    const rightScore = right.marketDemand?.score;
+    if (leftScore === null || leftScore === undefined || rightScore === null || rightScore === undefined) return 0;
+    // 既存priorityを越えず、Hotが同程度の候補間だけで使うbounded signal。
+    if (!explore && strategyPriority(left, strategy) !== strategyPriority(right, strategy)) return 0;
+    if (Math.floor(hot(left) / MARKET_DEMAND_HOT_TIE_RANGE) !== Math.floor(hot(right) / MARKET_DEMAND_HOT_TIE_RANGE)) return 0;
+    return rightScore - leftScore;
+  };
   return [...base].sort((left, right) => {
     if (role === "reach") {
       const freshness = observed(right.hotScoreBreakdown?.freshness) - observed(left.hotScoreBreakdown?.freshness);
@@ -180,6 +191,8 @@ export function orderCandidatesForSlot(
       const monetization = right.monetizationFitScore - left.monetizationFitScore;
       if (monetization) return monetization;
     }
+    const demand = marketDemandTieBreak(left, right);
+    if (demand) return demand;
     return (baseIndex.get(left.id) ?? 0) - (baseIndex.get(right.id) ?? 0);
   });
 }

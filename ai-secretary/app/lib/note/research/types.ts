@@ -228,6 +228,16 @@ export type TrendCluster = {
     measuredPostCount: number;
   };
 
+  /**
+   * DailyX選定中だけ付与するderived signal。Hot Score / Confidenceとは独立し、
+   * Hot eligible候補間のbounded tie-breakにだけ使う。Store上のSSOTではない。
+   */
+  marketDemand?: {
+    score: number | null;
+    coverage: number;
+    confidence: "LOW" | "MEDIUM" | "HIGH";
+  };
+
   /** 減点の理由（人が読んで納得できるように残す） */
   penalties: string[];
   /** 高リスク題材などで自動公開対象外にする */

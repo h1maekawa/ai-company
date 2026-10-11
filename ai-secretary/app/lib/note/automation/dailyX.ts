@@ -37,7 +37,7 @@ import { hotEvidenceDiagnostics } from "./hotEvidenceDiagnostics";
 import { createOneTimeTransportDraft } from "./oneTimeTransportCanary";
 import { deriveQueueLifecycle } from "./queueLifecycle";
 import { tokyoDateKey } from "../tokyoDate";
-import { rankCandidatesByMarketDemand } from "./marketDemand";
+import { attachMarketDemandRankingSignal } from "./marketDemand";
 import { classifyXTopicDomain } from "./dailyXPlan";
 
 export type { DailyXResult } from "./dailyXExecution";
@@ -116,7 +116,7 @@ export async function runDailyXAutomation(options: { oneTimeTransportCanary?: bo
           console.info("[daily-x][hot-evidence]", hotEvidenceDiagnostics(eligible, items));
         }
         const prioritized = prioritizeCanaryCandidates(hotCandidates.filter((candidate) => classifyXTopicDomain(candidate) !== null));
-        return { eligibleCount: eligible.length, candidates: rankCandidatesByMarketDemand(prioritized, items, performance.records) };
+        return { eligibleCount: eligible.length, candidates: attachMarketDemandRankingSignal(prioritized, items, performance.records) };
       }),
       findCluster: async (id) => (await loadClusters()).find((cluster) => cluster.id === id) ?? null,
       markClustersUsed: async (ids) => {

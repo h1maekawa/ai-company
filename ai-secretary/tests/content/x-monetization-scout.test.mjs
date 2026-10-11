@@ -18,7 +18,7 @@ const performance = (topic, index, impressions = 100) => ({
 });
 
 test("週次Scoutは観測済み3件以上からCandidateだけを作り外部Actionを許可しない", () => {
-  const candidates = subject.buildWeeklyMonetizationCandidates({
+  const candidates = subject.buildWeeklyMonetizationOpportunityCandidates({
     performance: [performance("ai-agent", 1), performance("ai-agent", 2), performance("ai-agent", 3)],
     offers: [],
     now: new Date("2026-10-11T00:00:00.000Z"),
@@ -31,7 +31,7 @@ test("週次Scoutは観測済み3件以上からCandidateだけを作り外部Ac
 
 test("missing metricsや2件以下はサンプルに数えず既存候補を保持する", () => {
   const existing = [{ id: "existing", type: "paid-note", status: "CANDIDATE", title: "keep", reason: "keep", evidenceRefs: [], createdAt: "2026-10-01T00:00:00.000Z", requiresHumanAction: true, externalActionAllowed: false }];
-  const result = subject.buildWeeklyMonetizationCandidates({
+  const result = subject.buildWeeklyMonetizationOpportunityCandidates({
     performance: [performance("ai", 1), performance("ai", 2), { ...performance("ai", 3), impressions: undefined }],
     offers: [], existing, now: new Date("2026-10-11T00:00:00.000Z"),
   });
@@ -39,7 +39,7 @@ test("missing metricsや2件以下はサンプルに数えず既存候補を保�
 });
 
 test("X Nativeは公式evidenceが明示された場合だけAffiliateと別候補になる", () => {
-  const candidates = subject.buildWeeklyMonetizationCandidates({
+  const candidates = subject.buildWeeklyMonetizationOpportunityCandidates({
     performance: [performance("investment", 1), performance("investment", 2), performance("investment", 3)],
     offers: [], officialXNativeEvidenceRef: "official-x-policy:2026-10-11", now: new Date("2026-10-11T00:00:00.000Z"),
   });

@@ -13,11 +13,11 @@ Status: PR #164 update audit. Scope is repository implementation only; Productio
 | Safety / publication | IMPLEMENTED | UNCHANGED: Safety, Fact, Duplicate, Eligibility, claim and Buffer final gates remain. |
 | Soft strategy learning | CONFLICT | IMPLEMENTED: allow-listed auto-apply with 7d/30d evidence, minimum samples, history and cooldown. |
 | Missing metrics | IMPLEMENTED | UNCHANGED: missing stays undefined and never becomes zero. |
-| Market demand | PARTIAL | IMPLEMENTED: availability, coverage and available-signal reweighting. |
+| Market demand | PARTIAL | IMPLEMENTED: availability, coverage and available-signal reweighting; carried into final slot ordering only as a bounded Hot-eligible tie-break. |
 | Google Trends | MISSING | NOT_CONFIGURED: no safe official/free existing provider was found; no scraper or credential was added. |
 | News summaries | CONFLICT | IMPLEMENTED: copying/value-free reposting remains prohibited; breaking Fact-first summaries may add importance, clarity or view. |
 | Investment context | PARTIAL | KEPT: market evidence may rank content candidates, never create a Trade Signal; Investment remains HUMAN_ONLY. |
-| Monetization scout | PARTIAL | IMPLEMENTED: Tokyo Sunday creates evidence-based Monetization Candidates in the existing Offer store; all candidates require Human action and prohibit external action. |
+| Monetization opportunity generator | PARTIAL | IMPLEMENTED: Tokyo Sunday turns strong observed X topics into Monetization Opportunity Candidates in the existing Offer store. This is not external Affiliate Program research; all candidates require Human action and prohibit external action. |
 | CEO feedback → skill | PARTIAL | IMPLEMENTED: explicit confirmed Creator CEO feedback projects into the existing non-executable SkillCandidate boundary for X writing/topic preferences. |
 | Canary | PROTECTED | UNCHANGED: no rerun or mutation. |
 
@@ -46,7 +46,8 @@ The JIT executor never cancels or replaces a Buffer post. Drafted, claimed, queu
 ## Remaining gaps
 
 1. Google Trends is `NOT_CONFIGURED` because no safe existing path is present.
-2. X Native monetization remains recommendation-only and produces no candidate without an explicitly supplied official-policy evidence reference.
-3. Production runtime was not triggered or validated in this PR; deployment and scheduled execution remain Human-reviewed follow-up work.
+2. Monetization Research / Affiliate Program Discovery remains follow-up work; v1 uses observed owned Performance and already registered affiliate relations only.
+3. X Native monetization remains recommendation-only and produces no candidate without an explicitly supplied official-policy evidence reference.
+4. Production runtime was not triggered or validated in this PR; deployment and scheduled execution remain Human-reviewed follow-up work.
 
 These gaps do not justify weaker gates or fake metrics.

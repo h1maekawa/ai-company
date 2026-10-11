@@ -106,7 +106,7 @@ export async function saveOffers(file: OffersFile): Promise<OffersFile> {
     `- 禁止カテゴリ: ${file.policy.prohibitedCategories.join("、") || "（なし）"}`,
     `- Affiliate表記: ${file.policy.affiliateDisclosure}`,
     "",
-    "## Candidate（提案のみ）",
+    "## Monetization Opportunity Candidate（観測Topic由来・外部Program調査未実施）",
     (file.monetizationCandidates ?? []).slice(0, 20).map((candidate) => `- [${candidate.type}] ${candidate.title}`).join("\n") || "（まだありません）",
   ].join("\n");
 
@@ -114,7 +114,7 @@ export async function saveOffers(file: OffersFile): Promise<OffersFile> {
     MONETIZATION_PATHS.offers,
     buildDoc(
       "note_offers",
-      "紹介する商品・サービスの一覧です。記事ごとにURLを毎回打たず、ここから選びます。有効化されていない種類をAIが勝手に推薦することはありません。",
+      "紹介する商品・サービスの一覧です。記事ごとにURLを毎回打たず、ここから選びます。Candidateは観測済みTopicからの提案であり、外部Affiliate Program等を調査済みという意味ではありません。",
       human,
       file
     )

@@ -18,7 +18,7 @@ import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
 import { compareOwnWithCompetitors, selectComparableContent } from "../competitorIntelligence";
 import { applyBoundedXStrategyLearning } from "./xStrategyLearning";
 import { loadOffers, saveOffers } from "../../content/monetization/store";
-import { buildWeeklyMonetizationCandidates } from "../../content/monetization/scout";
+import { buildWeeklyMonetizationOpportunityCandidates } from "../../content/monetization/scout";
 
 export type NightlyGrowthResult = {
   reviewDate: string;
@@ -28,9 +28,9 @@ export type NightlyGrowthResult = {
   autoApproval?: AutoApprovalResult;
   autoApprovalError?: string;
   noteMetricsJobsQueued: number;
-  /** Strategy candidate exists, but Human review is required before policy mutation. */
+  /** Protected policy is immutable; this reports unapplied/non-eligible strategy evidence only. */
   strategyCandidateAvailable: boolean;
-  /** Kept for API compatibility. Nightly Learning never mutates Strategy Policy. */
+  /** Only allow-listed bounded soft strategy fields may auto-apply. Protected policy never does. */
   strategyChanged: boolean;
   styleProfileUpdated: boolean;
   weeklyReportGenerated: boolean;
@@ -211,7 +211,7 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
   let monetizationCandidatesCreated = 0;
   if (tokyoWeekday === 0) {
     const previousCandidates = offersFile.monetizationCandidates ?? [];
-    const monetizationCandidates = buildWeeklyMonetizationCandidates({
+    const monetizationCandidates = buildWeeklyMonetizationOpportunityCandidates({
       performance: performance.records,
       offers: offersFile.offers,
       existing: previousCandidates,
