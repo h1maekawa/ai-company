@@ -60,6 +60,8 @@ npx tsc \
   app/lib/note/automation/dailyXExecution.ts \
   app/lib/note/automation/oneTimeTransportCanary.ts \
   app/lib/note/automation/hotEvidenceDiagnostics.ts \
+  app/lib/note/automation/marketDemand.ts \
+  app/lib/note/automation/xStrategyLearning.ts \
   app/lib/integrations/slack/verify.ts \
   app/lib/integrations/slack/conversation.ts \
   app/lib/integrations/slack/orchestrator.ts \

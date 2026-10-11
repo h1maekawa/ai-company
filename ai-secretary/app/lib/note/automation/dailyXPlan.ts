@@ -10,6 +10,8 @@ import type {
   PurposeBucket,
   PurposeMix,
   TrendCluster,
+  XDomainMix,
+  XTopicDomain,
 } from "../research/types";
 
 /**
@@ -111,6 +113,23 @@ export function purposesForDay(buckets: PurposeBucket[]): ContentPurpose[] {
 
 const hot = (cluster: TrendCluster) => cluster.hotScore ?? cluster.totalScore;
 
+const INVESTMENT_TERMS = /investment|投資|株|市場|相場|半導体|銘柄|決算|業績|需給|出来高|金利|為替|債券|指数|market|stock|equity|semiconductor|earnings|guidance|volume|supply|demand/i;
+const AI_TERMS = /\bAI\b|人工知能|生成AI|LLM|agent|エージェント|model|モデル|OpenAI|Anthropic|Gemini|Claude/i;
+
+/** 既存clusterの明示情報だけで分類する。推測不能な一般テーマは通常X候補へ昇格しない。 */
+export function classifyXTopicDomain(cluster: Pick<TrendCluster, "title" | "summary" | "genreIds">): XTopicDomain | null {
+  const text = `${cluster.title} ${cluster.summary} ${cluster.genreIds.join(" ")}`;
+  if (INVESTMENT_TERMS.test(text)) return "investment";
+  if (AI_TERMS.test(text)) return "ai";
+  return null;
+}
+
+export function normalizeXDomainMix(mix?: Partial<XDomainMix>): XDomainMix {
+  return mix?.ai === 2 && mix?.investment === 1
+    ? { ai: 2, investment: 1 }
+    : { ai: 1, investment: 2 };
+}
+
 /** exploitation順: 既存の topicPriority / genrePriority 優先ソート（同順位はhotScore） */
 export function exploitationOrder(candidates: TrendCluster[], strategy: Pick<ContentGrowthStrategy, "topicPriority" | "genrePriority">): TrendCluster[] {
   const priority = (candidate: TrendCluster) => {
@@ -184,6 +203,18 @@ export function buildDailyXPlan(input: {
   const dayIndex = tokyoDayIndexInWeek(input.date);
   const buckets = weekly.slice(dayIndex * slotsPerDay, (dayIndex + 1) * slotsPerDay);
   const purposes = purposesForDay(buckets);
+  const domainMix = normalizeXDomainMix(input.strategy.xDomainMix);
+  const domains: XTopicDomain[] = (domainMix.ai === 2
+    ? ["ai", "ai", "investment"]
+    : ["ai", "investment", "investment"]).slice(0, slotsPerDay) as XTopicDomain[];
+  const candidatesByDomain = {
+    ai: input.candidates.filter((candidate) => classifyXTopicDomain(candidate) === "ai"),
+    investment: input.candidates.filter((candidate) => classifyXTopicDomain(candidate) === "investment"),
+  };
+  const domainPolicyActive = input.strategy.xDomainPolicyVersion === 1;
+  const requiredAi = domains.filter((domain) => domain === "ai").length;
+  const requiredInvestment = domains.filter((domain) => domain === "investment").length;
+  if (domainPolicyActive && (candidatesByDomain.ai.length < requiredAi || candidatesByDomain.investment.length < requiredInvestment)) return null;
   const assigned = new Set<string>();
   const dayStart = new Date(tokyoDayStartMs(input.date));
   const timestamp = input.now.toISOString();
@@ -192,7 +223,8 @@ export function buildDailyXPlan(input: {
     const id = dailyXSlotId(input.date, input.accountKey, slotIndex);
     const explore = isExplorationSlot(id, explorationRate);
     const schedule = DEFAULT_X_SCHEDULE[slotIndex];
-    const order = orderCandidatesForSlot(input.candidates, schedule.operationRole, input.strategy, explore);
+    const topicDomain = domainPolicyActive ? domains[slotIndex] : undefined;
+    const order = orderCandidatesForSlot(topicDomain ? candidatesByDomain[topicDomain] : input.candidates, schedule.operationRole, input.strategy, explore);
     const candidate = order.find((cluster) => !assigned.has(cluster.id)) ?? order[0];
     assigned.add(candidate.id);
     const time = schedule.time;
@@ -201,6 +233,7 @@ export function buildDailyXPlan(input: {
       slotIndex,
       purpose: purposes[slotIndex],
       operationRole: schedule.operationRole,
+      ...(topicDomain ? { topicDomain } : {}),
       bucket,
       scheduledTime: time,
       scheduledAt: scheduledAtInTokyo(dayStart, time),

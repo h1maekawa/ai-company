@@ -1,5 +1,9 @@
 # X Autonomous Research and Three-Slot Operation
 
+The operating target is Affiliate Revenue ¥10,000/month. Monthly Impressions is the primary operating KPI and Revenue is the final KPI. Normal DailyX research is AI + Investment only, with a baseline daily mix of AI 1 / Investment 2. Evidence-backed bounded learning may use AI 2 / Investment 1; both domains remain present.
+
+See `X_AUTONOMOUS_GAP_AUDIT.md` for the requirement audit and protected boundaries.
+
 ## Scope
 
 B1.5 extends the existing X lifecycle; it does not replace any engine:

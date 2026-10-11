@@ -3,7 +3,7 @@ import { isAmbiguousBufferError } from "../publishing/buffer";
 import type { ClaimResult } from "../publishing/queue";
 import type { ContentGrowthStrategy, DailyXPlan, DailyXPlanSlot, DailyXSlotStatus, SocialDraft, TrendCluster } from "../research/types";
 import { tokyoDateKey } from "../tokyoDate";
-import { buildDailyXPlan, dailyXPlanId, dailyXSlotId, normalizePurposeMix } from "./dailyXPlan";
+import { buildDailyXPlan, classifyXTopicDomain, dailyXPlanId, dailyXSlotId, normalizePurposeMix, orderCandidatesForSlot } from "./dailyXPlan";
 import { deriveQueueLifecycle, type QueueLifecycleSnapshot } from "./queueLifecycle";
 
 /**
@@ -16,6 +16,7 @@ import { deriveQueueLifecycle, type QueueLifecycleSnapshot } from "./queueLifecy
  */
 
 export const MISSED_MARGIN_MS = 5 * 60_000;
+export const SLOT_EXECUTION_LEAD_MS = 35 * 60_000;
 
 export type DailyXContext = {
   accountKey: string;
@@ -181,9 +182,34 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
   const savePlan = async () => { plan!.updatedAt = stamp(); await deps.savePlan(plan!); };
   const setSlot = (slot: DailyXPlanSlot, patch: Partial<DailyXPlanSlot>) => { Object.assign(slot, patch, { updatedAt: stamp() }); };
 
-  /* S4.1 Plan保存後に unique cluster を idempotent に used 化（失敗しても止めない） */
+  const jitPolicyActive = plan.slots.some((slot) => Boolean(slot.topicDomain));
+  const isCurrentWindow = (slot: DailyXPlanSlot) => ctx.oneTimeTransportCanary || !jitPolicyActive
+    || (Date.parse(slot.scheduledAt) > now.getTime() + MISSED_MARGIN_MS
+      && Date.parse(slot.scheduledAt) <= now.getTime() + SLOT_EXECUTION_LEAD_MS);
+
+  /* JIT refresh: draft/Buffer/claimがまだ無い当該枠だけ、最新Hot候補で再評価する。 */
+  if (!ctx.oneTimeTransportCanary) {
+    const currentSlots = plan.slots.filter((slot) => slot.status === "planned" && Boolean(slot.topicDomain) && !slot.draftId && !slot.bufferPostId && isCurrentWindow(slot));
+    if (currentSlots.length) {
+      const { candidates } = await deps.loadCandidates();
+      const available = candidates.filter((candidate) => !saturatedTopics.has(candidate.id));
+      for (const slot of currentSlots) {
+        const reserved = new Set(plan.slots.filter((other) => other.id !== slot.id).map((other) => other.candidateRef?.id).filter(Boolean));
+        const domainCandidates = available.filter((candidate) => classifyXTopicDomain(candidate) === slot.topicDomain && !reserved.has(candidate.id));
+        const next = orderCandidatesForSlot(domainCandidates, slot.operationRole, ctx.strategy, slot.exploration)[0];
+        if (!next) {
+          setSlot(slot, { status: "skipped", failureKind: "insufficient-domain-candidate", failureReason: `${slot.topicDomain ?? "required"} domainの安全なHot候補が不足` });
+        } else if (slot.candidateRef?.id !== next.id) {
+          setSlot(slot, { candidateRef: { kind: "cluster", id: next.id }, failureKind: undefined, failureReason: undefined });
+        }
+      }
+      await savePlan();
+    }
+  }
+
+  /* S4.1 実行対象になったclusterだけをused化。未来枠はrefresh可能なまま保持する。 */
   let clusterUsedError: string | undefined;
-  const clusterIds = [...new Set(plan.slots.flatMap((slot) => slot.candidateRef?.kind === "cluster" ? [slot.candidateRef.id] : []))];
+  const clusterIds = [...new Set(plan.slots.flatMap((slot) => isCurrentWindow(slot) && slot.candidateRef?.kind === "cluster" ? [slot.candidateRef.id] : []))];
   try { await deps.markClustersUsed(clusterIds); } catch (error) {
     clusterUsedError = error instanceof Error ? error.message : "cluster used化に失敗";
     deps.logError("[daily-x] cluster used化に失敗（Planのcandidateが正なので続行）", { planId: plan.id, clusterIds, error: clusterUsedError });
@@ -204,7 +230,7 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
   const warnings: string[] = [];
   let generationFailures = 0;
   const lineageConflicts: string[] = [];
-  for (const slot of plan.slots.filter((item) => item.status === "planned")) {
+  for (const slot of plan.slots.filter((item) => item.status === "planned" && isCurrentWindow(item))) {
     /*
      * Recovery: 前回Runで Draft保存は成功したが Plan保存だけ失敗した場合、Planは planned のまま残る。
      * planId と planSlotId が完全一致する既存Draftがあれば、再生成せずその状態からPlanを回復する。
@@ -274,7 +300,7 @@ export async function executeDailyXPlan(ctx: DailyXContext, deps: DailyXDeps): P
   } else {
     const pendingAmbiguous = plan.slots.find((slot) => slot.status === "ambiguous");
     if (pendingAmbiguous) halt("ambiguous-slot-pending", pendingAmbiguous.id);
-    for (const slot of plan.slots.filter((item) => item.status === "generated" || item.status === "failed").sort((a, b) => a.slotIndex - b.slotIndex)) {
+    for (const slot of plan.slots.filter((item) => (item.status === "generated" || item.status === "failed") && isCurrentWindow(item)).sort((a, b) => a.slotIndex - b.slotIndex)) {
       if (haltedReason) break;
       const draft = drafts.find((item) => item.id === slot.draftId);
       if (!draft) {

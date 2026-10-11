@@ -86,6 +86,11 @@ export default function XDashboardPage() {
 function Overview({ data, loading, range, onRange }: { data: XDashboardData | null; loading: boolean; range: XDashboardRange; onRange: (range: XDashboardRange) => void }) {
   const metrics = data?.metrics[range];
   return <>
+    <section className="grid gap-3 sm:grid-cols-3">
+      <Kpi label="Goal" value={data?.operatingPolicy.businessGoal ?? "—"} />
+      <Kpi label="Primary KPI" value={data?.operatingPolicy.primaryKpi ?? "—"} />
+      <Kpi label="Today Mix" value={data ? `AI ${data.operatingPolicy.domainMix.ai} / Investment ${data.operatingPolicy.domainMix.investment}` : "—"} />
+    </section>
     <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
       <div className="order-1 min-w-0 lg:col-start-1 lg:row-start-1">
         <section className="rounded-2xl border border-hairline bg-ink-card p-5">
@@ -126,7 +131,7 @@ function PerformanceTrend({ data, range }: { data: XDashboardData | null; range:
 function TodayContent({ data }: { data: XDashboardData | null }) {
   return <section className="rounded-2xl border border-hairline bg-ink-card p-5"><SectionTitle eyebrow="DailyX Plan">今日の投稿</SectionTitle><div className="mt-4 space-y-3">
     {!data?.todayContent.length && <Empty label="本日のPlanなし" />}
-    {data?.todayContent.map((item) => <div key={item.id} className="border-l border-brand/50 pl-3"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-semibold text-white">{item.scheduledTime}</span><span className="text-sub">{SLOT_LABELS[item.status] ?? item.status}</span></div>{item.excerpt && <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-300">{item.excerpt}</p>}</div>)}
+    {data?.todayContent.map((item) => <div key={item.id} className="border-l border-brand/50 pl-3"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-semibold text-white">{item.scheduledTime} {item.domain ? `· ${item.domain}` : ""}</span><span className="text-sub">{SLOT_LABELS[item.status] ?? item.status}</span></div><p className="mt-1 text-[11px] text-sub">{item.why}</p>{item.excerpt && <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-300">{item.excerpt}</p>}</div>)}
   </div></section>;
 }
 
@@ -153,6 +158,7 @@ function Learning({ data, compact = false }: { data: XDashboardData | null; comp
   return <section className="rounded-2xl border border-hairline bg-ink-card p-5 sm:p-6"><div className="flex items-start gap-3"><BrainCircuit className="mt-0.5 h-5 w-5 text-brand" /><div><SectionTitle eyebrow="相関・仮説">AI Learning</SectionTitle><p className="mt-1 text-xs text-sub">Evidence {learning?.evidenceCount ?? "—"} ・ Confidence {learning?.confidence ?? "—"}</p></div></div>
     {learning?.observations.length ? <ul className="mt-4 space-y-2">{learning.observations.map((item) => <li key={item} className="rounded-xl border border-hairline bg-white/[0.02] p-3 text-sm text-slate-200">→ {item}。高いPerformanceと関連している可能性があります。</li>)}</ul> : <Empty label={learning?.status ?? "DATA UNAVAILABLE"} />}
     <div className="mt-4 rounded-xl border border-brand/20 bg-brand/5 p-4"><p className="text-xs font-semibold text-brand">Next Experiment</p><p className="mt-1 text-sm text-white">{learning?.nextExperiment ?? "—"}</p></div>
+    {data?.operatingPolicy.latestAutoLearning && <div className="mt-4 rounded-xl border border-hairline p-4"><p className="text-xs font-semibold text-white">Latest Auto Learning</p><p className="mt-1 text-xs text-sub">{data.operatingPolicy.latestAutoLearning.field}: {data.operatingPolicy.latestAutoLearning.reason}（sample {data.operatingPolicy.latestAutoLearning.sampleSize}）</p></div>}
     {!compact && <details className="mt-5 rounded-xl border border-hairline p-4"><summary className="cursor-pointer text-sm font-semibold text-white">X Platform Policy</summary><p className="mt-3 text-xs leading-5 text-sub">{xPolicy.positioning}</p><div className="mt-3 flex flex-wrap gap-2">{xPolicy.pillars.map((pillar) => <span key={pillar} className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">{pillar}</span>)}</div></details>}
     {data?.dataAsOf && <p className="mt-4 text-[11px] text-sub">最終更新 {new Date(data.dataAsOf).toLocaleString("ja-JP")}</p>}
   </section>;

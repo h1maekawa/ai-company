@@ -364,6 +364,24 @@ export type PurposeMix = {
 
 export type StrategyConfidence = "low" | "medium" | "high";
 
+export type XTopicDomain = "ai" | "investment";
+
+export type XDomainMix = {
+  ai: 1 | 2;
+  investment: 1 | 2;
+};
+
+export type XAutoLearningChange = {
+  field: "xDomainMix" | "topicPriority" | "genrePriority" | "patternPriority";
+  before: unknown;
+  after: unknown;
+  reason: string;
+  evidenceRefs: string[];
+  sampleSize: number;
+  expectedEffect: string;
+  appliedAt: string;
+};
+
 export type ContentGrowthStrategy = {
   purposeMix: PurposeMix;
   topicPriority: string[];
@@ -373,6 +391,12 @@ export type ContentGrowthStrategy = {
   ctaRate: number;
   noteBridgeRate: number;
   explorationRate: number;
+  /** Xの通常運用は必ず合計3、AI/Investmentを各1件以上にする。 */
+  xDomainMix: XDomainMix;
+  /** Runtime opt-in marker. Omitted legacy callers retain deterministic legacy planning semantics. */
+  xDomainPolicyVersion?: 1;
+  /** 既存Strategy Store内の監査履歴。Safety/Authority設定はここへ入れない。 */
+  xAutoLearningHistory: XAutoLearningChange[];
   updatedAt?: string;
 };
 
@@ -386,6 +410,8 @@ export function defaultContentGrowthStrategy(): ContentGrowthStrategy {
     ctaRate: 20,
     noteBridgeRate: 20,
     explorationRate: 20,
+    xDomainMix: { ai: 1, investment: 2 },
+    xAutoLearningHistory: [],
   };
 }
 
@@ -438,6 +464,7 @@ export type DailyXPlanSlot = {
   purpose: ContentPurpose;
   /** 固定Schedule Policyの役割。purposeは安全な候補に応じて別途決まる。 */
   operationRole: "reach" | "trust" | "depth";
+  topicDomain?: XTopicDomain;
   bucket: PurposeBucket;
   /** "HH:MM" JST */
   scheduledTime: string;

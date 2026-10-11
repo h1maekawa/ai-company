@@ -29,13 +29,28 @@ test("B1.5 preserves Buffer ambiguous no-resend and does not mutate schedule pol
   assert.doesNotMatch(agenda, /saveResearchSettings|improveStrategy|createPost|publish/);
 });
 
-test("B1.5 Learning produces candidates without mutating Strategy Policy", () => {
+test("B1.5 Learning applies only bounded soft strategy with evidence and cooldown", () => {
   const nightly = read("app/lib/note/automation/nightlyGrowthReview.ts");
   assert.match(nightly, /strategyCandidateAvailable/);
-  assert.match(nightly, /const strategyChanged = false/);
-  assert.doesNotMatch(nightly, /saveResearchSettings/);
-  assert.match(nightly, /review.strategyApplied = false/);
+  assert.match(nightly, /applyBoundedXStrategyLearning/);
+  assert.match(nightly, /saveResearchSettings/);
+  const learning = read("app/lib/note/automation/xStrategyLearning.ts");
+  assert.match(learning, /INSUFFICIENT_SAMPLE/);
+  assert.match(learning, /COOLDOWN/);
+  assert.doesNotMatch(learning, /Hot threshold|maxXPostsPerDay|publishingEnabled|xAutoPublish/);
   const report = read("app/lib/note/automation/weeklyReport.ts");
   assert.match(report, /filter\(\(r\) => r.strategyApplied === true\)/);
   assert.match(report, /Strategy変更候補/);
+});
+
+test("latest X policy is AI/Investment-only and uses intraday JIT refresh", () => {
+  const policy = read("app/lib/company/research/policies.ts");
+  const route = read("app/api/cron/x-intraday-refresh/route.ts");
+  const execution = read("app/lib/note/automation/dailyXExecution.ts");
+  assert.doesNotMatch(policy, /"副業"|"読書"|"習慣"/);
+  assert.match(policy, /AI Agent/);
+  assert.match(policy, /出来高 需給/);
+  assert.match(route, /runResearch/);
+  assert.match(route, /runDailyXAutomation/);
+  assert.match(execution, /!slot\.draftId && !slot\.bufferPostId/);
 });

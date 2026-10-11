@@ -1,4 +1,3 @@
-import { platformBrandPolicy } from "../../content/brandProfile";
 import type {
   DailyResearchAgenda,
   DepartmentResearchPolicy,
@@ -37,7 +36,6 @@ const categoryOrder: ResearchAgendaCategory[] = [
 /** Creator adapter。入力の欠損を0件の実績とは解釈せずunknownsへ残す。 */
 export function buildCreatorDailyResearchAgenda(input: CreatorAgendaInput): DailyResearchAgenda {
   if (input.policy.departmentId !== "creator") throw new Error("CREATOR_AGENDA_POLICY_REQUIRED");
-  const brand = platformBrandPolicy("x");
   const evidenceRefs = new Set<string>();
   const unknowns: string[] = [];
   const intents: DailyResearchAgenda["queryIntents"] = [];
@@ -48,11 +46,13 @@ export function buildCreatorDailyResearchAgenda(input: CreatorAgendaInput): Dail
   };
 
   const fresh = (input.recentResearch ?? []).filter((item) => item.freshnessStatus === "FRESH");
-  const latest = [...fresh].sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))[0];
+  const inXDomain = (value: string) => /AI|人工知能|LLM|agent|エージェント|投資|株|市場|半導体|銘柄|決算|需給|出来高|market|stock|earnings|volume/i.test(value);
+  const latest = [...fresh].filter((item) => inXDomain(`${item.topic} ${item.title} ${item.tags.join(" ")}`)).sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))[0];
   if (latest) add("breaking-current", `${latest.topic} 最新動向 一次情報`, "freshな既存Researchの続きを確認", [latest.id]);
-  else { unknowns.push("current external freshness is UNKNOWN"); add("breaking-current", `${brand.pillars[0]} 最新動向 一次情報`, "外部freshnessが未確認のため広く確認"); }
+  else { unknowns.push("current external freshness is UNKNOWN"); add("breaking-current", "AI 最新動向 一次情報", "AI外部freshnessを確認"); }
 
-  add("strategic-brand", `${brand.pillars[1] ?? brand.pillars[0]} 20代男性 選び方`, "X Brand pillarの継続調査");
+  add("breaking-current", "米国株 市場 半導体 AI株 出来高 需給 最新", "Investmentの市場変化・需給・Catalystを確認");
+  add("strategic-brand", "AI Agent 実務 活用 最新", "AI domainの継続調査");
 
   const observed = (input.performance ?? []).filter((record) => record.platform === "x" && record.impressions !== undefined);
   const recentTopics = new Set(input.recentlyUsedTopics ?? []);
@@ -74,15 +74,15 @@ export function buildCreatorDailyResearchAgenda(input: CreatorAgendaInput): Dail
   if (gap) add("knowledge-gap", `${gap} 独立ソース 最新 evidence`, "未解決Research gapを追加調査", [gapArtifact.id]);
   else unknowns.push("unresolved Research gaps are UNKNOWN");
 
-  add("evergreen-educational", `${brand.pillars[2] ?? brand.pillars[0]} 基礎 なぜ どう選ぶ`, "昼のtrust枠向けEvergreen調査");
-  add("experiment", `${brand.pillars[0]} 比較 よくある誤解`, "既存Hot Scoreで評価する探索候補");
+  add("evergreen-educational", "投資 市場 需給 出来高 基礎 なぜ重要", "昼のtrust枠向けInvestment Evergreen調査");
+  add("experiment", "AI 投資 比較 よくある誤解", "既存Hot Scoreで評価するAI/Investment探索候補");
 
   const verifiedExperience = (input.experiences ?? []).find((experience) => experience.verifiedByUser && !experience.sensitive);
-  if (verifiedExperience) add("performance-follow-up", `${verifiedExperience.title} 関連テーマ 追加根拠`, "確認済みPersonal Experienceを外部根拠で補強", [verifiedExperience.id]);
+  if (verifiedExperience && inXDomain(`${verifiedExperience.title} ${verifiedExperience.genres.join(" ")}`)) add("performance-follow-up", `${verifiedExperience.title} 関連テーマ 追加根拠`, "確認済みPersonal Experienceを外部根拠で補強", [verifiedExperience.id]);
   else unknowns.push("available verified Personal Experience is UNKNOWN");
 
   const noteRef = input.noteCandidateRefs?.[0];
-  if (noteRef) { evidenceRefs.add(noteRef); add("strategic-brand", `${brand.pillars[0]} 深掘り note candidate`, "夜のdepth候補を調査", [noteRef]); }
+  if (noteRef) { evidenceRefs.add(noteRef); add("strategic-brand", "AI 投資 深掘り note candidate", "夜のdepth候補を調査", [noteRef]); }
   else unknowns.push("Note candidates are UNKNOWN");
 
   if (input.recentPosts?.length) input.recentPosts.forEach((post) => evidenceRefs.add(post.id));
@@ -110,7 +110,7 @@ export function buildCreatorDailyResearchAgenda(input: CreatorAgendaInput): Dail
     goals: ["朝・昼・夜の安全なX候補に必要なfresh evidenceを集める", "未解決evidence gapを減らす"],
     researchQuestions: queryIntents.map((intent) => intent.query),
     queryIntents,
-    targetPillars: [...brand.pillars],
+    targetPillars: ["AI / AI Agent", "Investment"],
     targetSlots: [
       { time: "07:30", role: "reach" },
       { time: "12:15", role: "trust" },

@@ -33,6 +33,7 @@ export async function GET(): Promise<NextResponse> {
       drafts,
       published,
       revenueEvents: ledger.revenueEvents,
+      strategy: settings.growthStrategy,
     }));
   } catch (error) {
     console.error("[api/content/x/dashboard] GET failed:", error);

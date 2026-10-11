@@ -3,7 +3,7 @@ import type { PublishedContent, RevenueEvent } from "./monetization/types";
 import type { DailyGrowthReview, MetricSummary } from "../note/growthLoop";
 import { buildContentDashboardGrowth } from "../note/contentDashboardGrowth";
 import { tokyoDateKey } from "../note/tokyoDate";
-import type { ContentPerformance, DailyXPlan, SocialDraft, SocialOperationMode } from "../note/research/types";
+import type { ContentGrowthStrategy, ContentPerformance, DailyXPlan, SocialDraft, SocialOperationMode } from "../note/research/types";
 import type { PerformanceSnapshot } from "./monetization/types";
 import { adaptPlatformPerformance } from "./platform-intelligence/adapters";
 import type { PlatformPerformanceRecord } from "./platform-intelligence/types";
@@ -19,9 +19,16 @@ export type XDashboardMetricSet = MetricSummary & {
 export type XDashboardData = {
   generatedAt: string;
   mode: SocialOperationMode;
+  operatingPolicy: {
+    businessGoal: string;
+    primaryKpi: "Monthly Impressions";
+    finalKpi: "Revenue";
+    domainMix: ContentGrowthStrategy["xDomainMix"];
+    latestAutoLearning: ContentGrowthStrategy["xAutoLearningHistory"][number] | null;
+  };
   metrics: Record<XDashboardRange, XDashboardMetricSet>;
   trend: { date: string; posts: number; impressions: number | null }[];
-  todayContent: { id: string; scheduledTime: string; status: string; excerpt: string | null; draftId: string | null }[];
+  todayContent: { id: string; scheduledTime: string; status: string; excerpt: string | null; draftId: string | null; domain: string | null; why: string }[];
   queue: { scheduled: number; review: number; blocked: number; href: string };
   attention: { id: string; title: string; detail: string | null }[];
   topContent: {
@@ -140,8 +147,10 @@ export function buildXDashboard(input: {
   drafts: SocialDraft[];
   published: PublishedContent[];
   revenueEvents: RevenueEvent[];
+  strategy?: ContentGrowthStrategy;
 }): XDashboardData {
   const now = input.now ?? new Date();
+  const strategy = input.strategy;
   const today = tokyoDateKey(now);
   const currentPlan = input.plans.find((plan) => plan.date === today) ?? null;
   const draftById = new Map(input.drafts.map((draft) => [draft.id, draft]));
@@ -186,6 +195,13 @@ export function buildXDashboard(input: {
   return {
     generatedAt: now.toISOString(),
     mode: input.mode,
+    operatingPolicy: {
+      businessGoal: "Affiliate Revenue ¥10,000 / month",
+      primaryKpi: "Monthly Impressions",
+      finalKpi: "Revenue",
+      domainMix: strategy?.xDomainMix ?? { ai: 1, investment: 2 },
+      latestAutoLearning: strategy?.xAutoLearningHistory?.at(-1) ?? null,
+    },
     metrics: {
       today: metricSet(recordsInRange(projection.records, "today", now)),
       sevenDays: metricSet(recordsInRange(projection.records, "sevenDays", now)),
@@ -194,7 +210,7 @@ export function buildXDashboard(input: {
     trend: dailyTrend(thirtyDays),
     todayContent: (currentPlan?.slots ?? []).map((slot) => {
       const draft = slot.draftId ? draftById.get(slot.draftId) : undefined;
-      return { id: slot.id, scheduledTime: slot.scheduledTime, status: slot.status, excerpt: draft?.text.slice(0, 90) ?? null, draftId: slot.draftId ?? null };
+      return { id: slot.id, scheduledTime: slot.scheduledTime, status: slot.status, excerpt: draft?.text.slice(0, 90) ?? null, draftId: slot.draftId ?? null, domain: slot.topicDomain ?? null, why: `${slot.operationRole} / ${slot.exploration ? "exploration" : "priority"}` };
     }),
     queue: {
       scheduled: input.drafts.filter((draft) => draft.status === "queued" || draft.status === "scheduled").length,
