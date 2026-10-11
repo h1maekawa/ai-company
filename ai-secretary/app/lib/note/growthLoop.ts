@@ -75,6 +75,8 @@ export type AppliedStrategyChange = {
 };
 
 export type DailyGrowthReview = {
+  /** Explicit execution evidence; absent legacy values do not prove policy application. */
+  strategyApplied?: boolean;
   date: string;
   measuredThrough: string;
   dataFreshness: { x: "fresh" | "partial"; note: "fresh" | "stale" | "unavailable" };

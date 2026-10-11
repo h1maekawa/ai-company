@@ -10,6 +10,8 @@ import type {
   PurposeBucket,
   PurposeMix,
   TrendCluster,
+  XDomainMix,
+  XTopicDomain,
 } from "../research/types";
 
 /**
@@ -110,23 +112,89 @@ export function purposesForDay(buckets: PurposeBucket[]): ContentPurpose[] {
 }
 
 const hot = (cluster: TrendCluster) => cluster.hotScore ?? cluster.totalScore;
+const MARKET_DEMAND_HOT_TIE_RANGE = 5;
+
+const INVESTMENT_TERMS = /investment|投資|株|市場|相場|半導体|銘柄|決算|業績|需給|出来高|金利|為替|債券|指数|market|stock|equity|semiconductor|earnings|guidance|volume|supply|demand/i;
+const AI_TERMS = /\bAI\b|人工知能|生成AI|LLM|agent|エージェント|model|モデル|OpenAI|Anthropic|Gemini|Claude/i;
+
+/** 既存clusterの明示情報だけで分類する。推測不能な一般テーマは通常X候補へ昇格しない。 */
+export function classifyXTopicDomain(cluster: Pick<TrendCluster, "title" | "summary" | "genreIds">): XTopicDomain | null {
+  const text = `${cluster.title} ${cluster.summary} ${cluster.genreIds.join(" ")}`;
+  if (INVESTMENT_TERMS.test(text)) return "investment";
+  if (AI_TERMS.test(text)) return "ai";
+  return null;
+}
+
+export function normalizeXDomainMix(mix?: Partial<XDomainMix>): XDomainMix {
+  return mix?.ai === 2 && mix?.investment === 1
+    ? { ai: 2, investment: 1 }
+    : { ai: 1, investment: 2 };
+}
 
 /** exploitation順: 既存の topicPriority / genrePriority 優先ソート（同順位はhotScore） */
+function strategyPriority(candidate: TrendCluster, strategy: Pick<ContentGrowthStrategy, "topicPriority" | "genrePriority">): number {
+  const topic = strategy.topicPriority.indexOf(candidate.id);
+  const genre = Math.min(...candidate.genreIds.map((id) => {
+    const index = strategy.genrePriority.indexOf(id);
+    return index < 0 ? 99 : index;
+  }), 99);
+  return (topic < 0 ? 99 : topic) * 100 + genre;
+}
+
 export function exploitationOrder(candidates: TrendCluster[], strategy: Pick<ContentGrowthStrategy, "topicPriority" | "genrePriority">): TrendCluster[] {
-  const priority = (candidate: TrendCluster) => {
-    const topic = strategy.topicPriority.indexOf(candidate.id);
-    const genre = Math.min(...candidate.genreIds.map((id) => {
-      const index = strategy.genrePriority.indexOf(id);
-      return index < 0 ? 99 : index;
-    }), 99);
-    return (topic < 0 ? 99 : topic) * 100 + genre;
-  };
-  return [...candidates].sort((left, right) => priority(left) - priority(right) || hot(right) - hot(left) || left.id.localeCompare(right.id));
+  return [...candidates].sort((left, right) => strategyPriority(left, strategy) - strategyPriority(right, strategy) || hot(right) - hot(left) || left.id.localeCompare(right.id));
 }
 
 /** exploration順: 既存の hotScore 順 */
 export function explorationOrder(candidates: TrendCluster[]): TrendCluster[] {
   return [...candidates].sort((left, right) => hot(right) - hot(left) || left.id.localeCompare(right.id));
+}
+
+/**
+ * 新しいranking scoreは作らず、既存Hot候補を固定slot roleの観点で辞書式に並べる。
+ * 同値時は既存exploitation/exploration順へ戻る。
+ */
+export function orderCandidatesForSlot(
+  candidates: TrendCluster[],
+  role: "reach" | "trust" | "depth",
+  strategy: Pick<ContentGrowthStrategy, "topicPriority" | "genrePriority">,
+  explore: boolean,
+): TrendCluster[] {
+  const base = explore ? explorationOrder(candidates) : exploitationOrder(candidates, strategy);
+  const baseIndex = new Map(base.map((candidate, index) => [candidate.id, index]));
+  const observed = (value: number | null | undefined) => value ?? -1;
+  const marketDemandTieBreak = (left: TrendCluster, right: TrendCluster) => {
+    const leftScore = left.marketDemand?.score;
+    const rightScore = right.marketDemand?.score;
+    if (leftScore === null || leftScore === undefined || rightScore === null || rightScore === undefined) return 0;
+    // 既存priorityを越えず、Hotが同程度の候補間だけで使うbounded signal。
+    if (!explore && strategyPriority(left, strategy) !== strategyPriority(right, strategy)) return 0;
+    if (Math.floor(hot(left) / MARKET_DEMAND_HOT_TIE_RANGE) !== Math.floor(hot(right) / MARKET_DEMAND_HOT_TIE_RANGE)) return 0;
+    return rightScore - leftScore;
+  };
+  return [...base].sort((left, right) => {
+    if (role === "reach") {
+      const freshness = observed(right.hotScoreBreakdown?.freshness) - observed(left.hotScoreBreakdown?.freshness);
+      if (freshness) return freshness;
+      const momentum = observed(right.hotScoreBreakdown?.momentum) - observed(left.hotScoreBreakdown?.momentum);
+      if (momentum) return momentum;
+    } else if (role === "trust") {
+      const brand = right.brandFitScore - left.brandFitScore;
+      if (brand) return brand;
+      const originality = right.originalityScore - left.originalityScore;
+      if (originality) return originality;
+    } else {
+      const experience = Number(right.matchedExperienceIds.length > 0) - Number(left.matchedExperienceIds.length > 0);
+      if (experience) return experience;
+      const topic = Number(strategy.topicPriority.includes(right.id)) - Number(strategy.topicPriority.includes(left.id));
+      if (topic) return topic;
+      const monetization = right.monetizationFitScore - left.monetizationFitScore;
+      if (monetization) return monetization;
+    }
+    const demand = marketDemandTieBreak(left, right);
+    if (demand) return demand;
+    return (baseIndex.get(left.id) ?? 0) - (baseIndex.get(right.id) ?? 0);
+  });
 }
 
 export function buildDailyXPlan(input: {
@@ -148,8 +216,18 @@ export function buildDailyXPlan(input: {
   const dayIndex = tokyoDayIndexInWeek(input.date);
   const buckets = weekly.slice(dayIndex * slotsPerDay, (dayIndex + 1) * slotsPerDay);
   const purposes = purposesForDay(buckets);
-  const exploitation = exploitationOrder(input.candidates, input.strategy);
-  const exploration = explorationOrder(input.candidates);
+  const domainMix = normalizeXDomainMix(input.strategy.xDomainMix);
+  const domains: XTopicDomain[] = (domainMix.ai === 2
+    ? ["ai", "ai", "investment"]
+    : ["ai", "investment", "investment"]).slice(0, slotsPerDay) as XTopicDomain[];
+  const candidatesByDomain = {
+    ai: input.candidates.filter((candidate) => classifyXTopicDomain(candidate) === "ai"),
+    investment: input.candidates.filter((candidate) => classifyXTopicDomain(candidate) === "investment"),
+  };
+  const domainPolicyActive = input.strategy.xDomainPolicyVersion === 1;
+  const requiredAi = domains.filter((domain) => domain === "ai").length;
+  const requiredInvestment = domains.filter((domain) => domain === "investment").length;
+  if (domainPolicyActive && (candidatesByDomain.ai.length < requiredAi || candidatesByDomain.investment.length < requiredInvestment)) return null;
   const assigned = new Set<string>();
   const dayStart = new Date(tokyoDayStartMs(input.date));
   const timestamp = input.now.toISOString();
@@ -157,14 +235,18 @@ export function buildDailyXPlan(input: {
   const slots: DailyXPlanSlot[] = buckets.map((bucket, slotIndex) => {
     const id = dailyXSlotId(input.date, input.accountKey, slotIndex);
     const explore = isExplorationSlot(id, explorationRate);
-    const order = explore ? exploration : exploitation;
+    const schedule = DEFAULT_X_SCHEDULE[slotIndex];
+    const topicDomain = domainPolicyActive ? domains[slotIndex] : undefined;
+    const order = orderCandidatesForSlot(topicDomain ? candidatesByDomain[topicDomain] : input.candidates, schedule.operationRole, input.strategy, explore);
     const candidate = order.find((cluster) => !assigned.has(cluster.id)) ?? order[0];
     assigned.add(candidate.id);
-    const time = DEFAULT_X_SCHEDULE[slotIndex].time;
+    const time = schedule.time;
     return {
       id,
       slotIndex,
       purpose: purposes[slotIndex],
+      operationRole: schedule.operationRole,
+      ...(topicDomain ? { topicDomain } : {}),
       bucket,
       scheduledTime: time,
       scheduledAt: scheduledAtInTokyo(dayStart, time),

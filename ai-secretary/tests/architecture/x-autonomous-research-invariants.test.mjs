@@ -1,0 +1,73 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+
+const root = process.cwd();
+const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+
+test("B1.5 reuses canonical Research, Hot filter, and existing publish path", () => {
+  const platform = read("app/lib/company/research/platform.ts");
+  const daily = read("app/lib/note/automation/dailyX.ts");
+  const plan = read("app/lib/note/automation/dailyXPlan.ts");
+  assert.match(platform, /agenda\?\.queryIntents/);
+  assert.match(platform, /slice\(0,input\.policy\.maxQueriesPerRun\)/);
+  assert.match(daily, /filterHotConfidenceCandidates/);
+  assert.match(daily, /attachMarketDemandRankingSignal/);
+  assert.match(daily, /evaluatePublishEligibility/);
+  assert.match(daily, /createPost/);
+  assert.match(plan, /orderCandidatesForSlot/);
+  assert.match(plan, /marketDemandTieBreak/);
+  assert.doesNotMatch(plan, /newHotScore|autonomousRankScore/);
+});
+
+test("B1.5 preserves Buffer ambiguous no-resend and does not mutate schedule policy", () => {
+  const execution = read("app/lib/note/automation/dailyXExecution.ts");
+  const operations = read("app/lib/note/operations.ts");
+  const agenda = read("app/lib/note/automation/dailyResearchAgenda.ts");
+  assert.match(execution, /halt\("buffer-ambiguous"/);
+  assert.match(operations, /"07:30"[\s\S]*"12:15"[\s\S]*"20:30"/);
+  assert.match(operations, /operationRole: "depth"/);
+  assert.doesNotMatch(agenda, /saveResearchSettings|improveStrategy|createPost|publish/);
+});
+
+test("B1.5 Learning applies only bounded soft strategy with evidence and cooldown", () => {
+  const nightly = read("app/lib/note/automation/nightlyGrowthReview.ts");
+  assert.match(nightly, /strategyCandidateAvailable/);
+  assert.match(nightly, /applyBoundedXStrategyLearning/);
+  assert.match(nightly, /saveResearchSettings/);
+  const learning = read("app/lib/note/automation/xStrategyLearning.ts");
+  assert.match(learning, /INSUFFICIENT_SAMPLE/);
+  assert.match(learning, /COOLDOWN/);
+  assert.doesNotMatch(learning, /Hot threshold|maxXPostsPerDay|publishingEnabled|xAutoPublish/);
+  const report = read("app/lib/note/automation/weeklyReport.ts");
+  assert.match(report, /filter\(\(r\) => r.strategyApplied === true\)/);
+  assert.match(report, /Strategy変更候補/);
+});
+
+test("latest X policy is AI/Investment-only and uses intraday JIT refresh", () => {
+  const policy = read("app/lib/company/research/policies.ts");
+  const route = read("app/api/cron/x-intraday-refresh/route.ts");
+  const execution = read("app/lib/note/automation/dailyXExecution.ts");
+  assert.doesNotMatch(policy, /"副業"|"読書"|"習慣"/);
+  assert.match(policy, /AI Agent/);
+  assert.match(policy, /出来高 需給/);
+  assert.match(route, /runResearch/);
+  assert.match(route, /runDailyXAutomation/);
+  assert.match(execution, /!slot\.draftId && !slot\.bufferPostId/);
+});
+
+test("weekly monetization and CEO feedback remain candidate-only Human-gated paths", () => {
+  const scout = read("app/lib/content/monetization/scout.ts");
+  const nightly = read("app/lib/note/automation/nightlyGrowthReview.ts");
+  const skills = read("app/lib/company/evolution/skillCandidates.ts");
+  assert.match(nightly, /tokyoWeekday === 0/);
+  assert.match(nightly, /buildWeeklyMonetizationOpportunityCandidates/);
+  assert.match(scout, /requiresHumanAction: true/);
+  assert.match(scout, /externalActionAllowed: false/);
+  assert.doesNotMatch(scout, /enroll|createAccount|stripe|paymentSetup/);
+  assert.match(skills, /deriveXSkillCandidatesFromCeoFeedback/);
+  assert.match(skills, /executable: false/);
+  assert.match(skills, /engineeringRequestAllowed: false/);
+  assert.match(skills, /registryMutationAllowed: false/);
+});

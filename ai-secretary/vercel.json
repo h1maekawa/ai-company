@@ -10,6 +10,14 @@
       "schedule": "10 22 * * *"
     },
     {
+      "path": "/api/cron/x-intraday-refresh",
+      "schedule": "55 2 * * *"
+    },
+    {
+      "path": "/api/cron/x-intraday-refresh",
+      "schedule": "10 11 * * *"
+    },
+    {
       "path": "/api/cron/content-nightly-review",
       "schedule": "30 14 * * *"
     },

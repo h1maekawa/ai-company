@@ -26,6 +26,19 @@ export type OfferType =
 
 export type OfferStatus = "draft" | "active" | "paused" | "archived";
 
+export type MonetizationCandidateType = "affiliate" | "paid-note" | "pr" | "sponsor" | "own-product" | "service" | "x-native" | "subscription";
+export type MonetizationCandidate = {
+  id: string;
+  type: MonetizationCandidateType;
+  status: "CANDIDATE";
+  title: string;
+  reason: string;
+  evidenceRefs: string[];
+  createdAt: string;
+  requiresHumanAction: true;
+  externalActionAllowed: false;
+};
+
 export type Offer = {
   id: string;
   name: string;

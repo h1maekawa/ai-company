@@ -41,6 +41,7 @@ npx tsc \
   app/lib/content/x-studio/bridge.ts \
   app/lib/content/monetization/types.ts \
   app/lib/content/monetization/store.ts \
+  app/lib/content/monetization/scout.ts \
   app/lib/content/monetization/metrics.ts \
   app/lib/content/brandProfile.ts \
   app/lib/content/instagram/creativeSpec.ts \

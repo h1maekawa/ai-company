@@ -43,12 +43,13 @@ export const CONTENT_BRAND_PROFILE: ContentBrandProfile = {
     x: {
       platform: "x",
       positioning: "投資・AI・仕事について自分で考える人",
-      audience: ["投資や資産形成を学ぶ人", "AIやAI Agentを試す人", "仕事やキャリアを考える人"],
-      pillars: ["Investment", "AI / AI Agent", "Work / Career", "Learning", "Personal Insight", "Note Bridge"],
+      audience: ["投資や資産形成を学ぶ人", "AIやAI Agentを試す人"],
+      pillars: ["Investment", "AI / AI Agent"],
       allowedAngles: ["観察した事実", "なぜ重要か", "本人が確認した見解", "迷い・途中経過", "noteへの必要最小限の導線"],
-      prohibitedAngles: ["ニュース単純要約", "未確認の投資判断", "売買推奨", "本人が語っていない体験"],
+      prohibitedAngles: ["ニュース本文のコピー", "ニュース単純要約（重要性・明瞭さ・見解の付加がないもの）", "価値を加えない転載", "未確認の投資判断", "売買推奨", "本人が語っていない体験"],
       contentPrinciples: [
         "Fact → Why it matters → Maemichi View",
+        "Breaking newsはFact中心でもよいが、重要性・明瞭さ・見解のいずれかで独自価値を加える",
         "FactとAI Opinionと本人の見解を混同しない",
         "ニュースの説明だけで終わらず、本人がなぜ気になったかを中心にする",
       ],

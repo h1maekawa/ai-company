@@ -76,11 +76,14 @@ export function buildWeeklyCeoReport(input: {
         : undefined,
     learnings: [...new Set(input.reviews.flatMap((r) => r.insights))].slice(0, 10),
     strategyChanges: input.reviews
+      .filter((r) => r.strategyApplied === true)
       .flatMap((r) => r.appliedChanges.map((c) => `${c.field}: ${c.reason}`))
       .slice(0, 10),
     nextExperiments: latestReview?.experiments ?? [],
     errors: input.performanceSyncError ? [input.performanceSyncError] : [],
     needsHumanReview: [
+      ...input.reviews.filter((r) => r.strategyApplied !== true)
+        .flatMap((r) => r.appliedChanges.map((c) => `Strategy変更候補（適用未確認）: ${c.field}: ${c.reason}`)).slice(0, 10),
       ...(latestReview?.noteApprovalPriorities ?? []).map((p) => `note記事「${p.title}」の公開可否確認`),
       ...(latestReview?.skippedChanges ?? []),
     ],

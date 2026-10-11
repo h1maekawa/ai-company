@@ -75,3 +75,31 @@ test("Human decisionはApprove/Reject/Holdのみで実装やEngineeringを開始
   assert.throws(() => subject.decideSkillCandidate(candidate, "REJECTED"), /REJECTION_REASON_REQUIRED/);
   assert.equal(subject.decideSkillCandidate(candidate, "REJECTED", "不要").status, "REJECTED");
 });
+
+test("CEOの明示X feedbackは既存SkillCandidateへ投影するがSafetyや実装を変更しない", () => {
+  const value = state(0);
+  value.runtime.humanDecisionFeedback = [{
+    id: "feedback-1", targetType: "skill-candidate", targetId: "x-writing", departmentId: "creator",
+    decision: "APPROVED", note: "もっと短く。この表現はやめる", actor: "ceo", confirmedByHuman: true,
+    createdAt: "2026-10-11T00:00:00.000Z", codeChanged: false, registryChanged: false, policyChanged: false, engineeringStarted: false,
+  }, {
+    id: "feedback-2", targetType: "skill-candidate", targetId: "x-topic", departmentId: "creator",
+    decision: "APPROVED", note: "AI AgentのTopicを増やす", actor: "ceo", confirmedByHuman: true,
+    createdAt: "2026-10-11T00:01:00.000Z", codeChanged: false, registryChanged: false, policyChanged: false, engineeringStarted: false,
+  }];
+  const candidates = subject.discoverSkillCandidates(value, []);
+  assert.equal(candidates.length, 2);
+  assert.deepEqual(new Set(candidates.map((item) => item.suggestedCategory)), new Set(["generation", "research"]));
+  assert.ok(candidates.every((item) => item.executable === false && item.engineeringRequestAllowed === false && item.registryMutationAllowed === false));
+  assert.ok(candidates.every((item) => /Safety\/Authority変更には使用しない/.test(item.reason)));
+  assert.ok(candidates.every((item) => item.sourceKnowledgeIds[0].startsWith("human-feedback:")));
+});
+
+test("未確認・他部門・noteなしのfeedbackはX Skill Candidateにしない", () => {
+  const value = state(0);
+  value.runtime.humanDecisionFeedback = [
+    { id: "other", departmentId: "fund", note: "短く", actor: "ceo", confirmedByHuman: true },
+    { id: "empty", departmentId: "creator", note: null, actor: "ceo", confirmedByHuman: true },
+  ];
+  assert.equal(subject.discoverSkillCandidates(value, []).length, 0);
+});

@@ -10,6 +10,7 @@ import {
   CTA,
   defaultMonetizationPolicy,
   MonetizationPolicy,
+  MonetizationCandidate,
   Offer,
   RevenueEvent,
 } from "./types";
@@ -75,6 +76,7 @@ export type OffersFile = {
   offers: Offer[];
   campaigns: Campaign[];
   policy: MonetizationPolicy;
+  monetizationCandidates?: MonetizationCandidate[];
 };
 
 export async function loadOffers(): Promise<OffersFile> {
@@ -83,6 +85,7 @@ export async function loadOffers(): Promise<OffersFile> {
     offers: Array.isArray(data?.offers) ? data.offers : [],
     campaigns: Array.isArray(data?.campaigns) ? data.campaigns : [],
     policy: data?.policy ?? defaultMonetizationPolicy(),
+    monetizationCandidates: Array.isArray(data?.monetizationCandidates) ? data.monetizationCandidates : [],
   };
 }
 
@@ -102,13 +105,16 @@ export async function saveOffers(file: OffersFile): Promise<OffersFile> {
     `- 有効な収益源: ${file.policy.allowedOfferTypes.join("、") || "（未設定）"}`,
     `- 禁止カテゴリ: ${file.policy.prohibitedCategories.join("、") || "（なし）"}`,
     `- Affiliate表記: ${file.policy.affiliateDisclosure}`,
+    "",
+    "## Monetization Opportunity Candidate（観測Topic由来・外部Program調査未実施）",
+    (file.monetizationCandidates ?? []).slice(0, 20).map((candidate) => `- [${candidate.type}] ${candidate.title}`).join("\n") || "（まだありません）",
   ].join("\n");
 
   await write(
     MONETIZATION_PATHS.offers,
     buildDoc(
       "note_offers",
-      "紹介する商品・サービスの一覧です。記事ごとにURLを毎回打たず、ここから選びます。有効化されていない種類をAIが勝手に推薦することはありません。",
+      "紹介する商品・サービスの一覧です。記事ごとにURLを毎回打たず、ここから選びます。Candidateは観測済みTopicからの提案であり、外部Affiliate Program等を調査済みという意味ではありません。",
       human,
       file
     )

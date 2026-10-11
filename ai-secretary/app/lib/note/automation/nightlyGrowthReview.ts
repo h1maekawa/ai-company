@@ -4,7 +4,8 @@ import { runPerformanceSync, type PerformanceSyncResult } from "./performanceSyn
 import { runAutoApproval, type AutoApprovalResult } from "../../review/autoApprove";
 import {
   loadGrowthReviews, loadNoteQueue, loadPerformance, loadResearchSettings, loadResearchInbox,
-  loadSocialDrafts, saveGrowthReviews, saveNoteQueue, saveResearchSettings,
+  loadSocialDrafts, saveGrowthReviews, saveNoteQueue,
+  saveResearchSettings,
 } from "../research/store";
 import type { PublishJob } from "../research/types";
 import { captureKnowledgeCandidate } from "../../knowledge/captureService";
@@ -15,6 +16,9 @@ import { postToSlack } from "../../integrations/slack/blocks";
 import { weekKeyTokyo } from "../operations";
 import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
 import { compareOwnWithCompetitors, selectComparableContent } from "../competitorIntelligence";
+import { applyBoundedXStrategyLearning } from "./xStrategyLearning";
+import { loadOffers, saveOffers } from "../../content/monetization/store";
+import { buildWeeklyMonetizationOpportunityCandidates } from "../../content/monetization/scout";
 
 export type NightlyGrowthResult = {
   reviewDate: string;
@@ -24,9 +28,14 @@ export type NightlyGrowthResult = {
   autoApproval?: AutoApprovalResult;
   autoApprovalError?: string;
   noteMetricsJobsQueued: number;
+  /** Protected policy is immutable; this reports unapplied/non-eligible strategy evidence only. */
+  strategyCandidateAvailable: boolean;
+  /** Only allow-listed bounded soft strategy fields may auto-apply. Protected policy never does. */
   strategyChanged: boolean;
   styleProfileUpdated: boolean;
   weeklyReportGenerated: boolean;
+  /** Weekly evidence-based proposals only. Never enrolls, registers, pays, or publishes. */
+  monetizationCandidatesCreated: number;
   performanceDropEscalated: boolean;
   confidence: "low" | "medium" | "high";
 };
@@ -91,13 +100,14 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     autoApprovalError = error instanceof Error ? error.message : "Auto approval failed";
   }
 
-  const [performance, settings, queue, existingReviews, socialDrafts, styleProfile, workspace, researchItems] =
+  const [performance, settings, queue, existingReviews, socialDrafts, styleProfile, workspace, researchItems, offersFile] =
     await Promise.all([
       loadPerformance(), loadResearchSettings(), loadNoteQueue(), loadGrowthReviews(),
       loadSocialDrafts(), loadStyleProfile(),
       // 本人のX過去投稿（アーカイブ）。文体学習の「種」（TASK-N3 / 要件4）
       loadXWorkspace().catch(() => ({ ownedPosts: [], referenceNotes: [] })),
       loadResearchInbox(),
+      loadOffers(),
     ]);
   const tokyoDate = tokyoDateKey(now);
   const pendingArticleIds = new Set(queue.jobs.filter((job) => job.kind === "note-metrics-sync" && (job.status === "pending" || job.status === "running")).map((job) => job.articleId));
@@ -133,7 +143,20 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     now, noteFreshness, xFreshness: performanceSyncError ? "partial" : "fresh", experiments, noteApprovalPriorities: priorities,
     competitorDifferences: comparison?.observations, competitorEvidenceCount: comparison?.evidenceCount,
   });
+  const learned = applyBoundedXStrategyLearning({ strategy: settings.growthStrategy, review, records: performance.records, now });
+  if (learned.changes.length) {
+    await saveResearchSettings({ ...settings, growthStrategy: learned.strategy, purposeMix: learned.strategy.purposeMix });
+    review.strategyAfter = learned.strategy;
+    review.appliedChanges = learned.changes.map((change) => ({
+      field: change.field, before: change.before, after: change.after, reason: change.reason,
+    }));
+    review.skippedChanges = learned.skipped;
+  } else {
+    review.appliedChanges = [];
+    review.skippedChanges = learned.skipped;
+  }
   // 日付単位でidempotent。過去日は保持し、同日のretryは最新計測で置換する。
+  review.strategyApplied = learned.changes.length > 0;
   await saveGrowthReviews([review, ...existingReviews.filter((item) => item.date !== review.date)]);
 
   // 要件19: 繰り返し勝ったPatternだけをKnowledgeへ蓄積する（全件は保存しない。失敗しても致命的にしない）
@@ -149,10 +172,8 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     }).catch((error) => console.error("[nightly-growth] Knowledge Captureに失敗（非致命）:", error));
   }
 
-  const strategyChanged = review.appliedChanges.length > 0;
-  if (strategyChanged) {
-    await saveResearchSettings({ ...settings, purposeMix: review.strategyAfter.purposeMix, growthStrategy: review.strategyAfter });
-  }
+  const strategyCandidateAvailable = review.strategyApplied !== true && review.strategyAfter.updatedAt !== review.strategyBefore.updatedAt;
+  const strategyChanged = review.strategyApplied === true;
 
   // 要件P0.1/P0.2: Performance → Style自己改善。source:manualのフィールドは上書きしない。
   // Brand自体（人格）はここでは一切変更しない（StyleProfileはBrand/Safetyより下位の参照情報）。
@@ -187,7 +208,19 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
   const tokyoWeekday = new Date(now.getTime() + 9 * 3_600_000).getUTCDay();
   const weekKey = weekKeyTokyo(now);
   let weeklyReportGenerated = false;
+  let monetizationCandidatesCreated = 0;
   if (tokyoWeekday === 0) {
+    const previousCandidates = offersFile.monetizationCandidates ?? [];
+    const monetizationCandidates = buildWeeklyMonetizationOpportunityCandidates({
+      performance: performance.records,
+      offers: offersFile.offers,
+      existing: previousCandidates,
+      now,
+    });
+    monetizationCandidatesCreated = monetizationCandidates.length - previousCandidates.length;
+    if (monetizationCandidatesCreated > 0) {
+      await saveOffers({ ...offersFile, monetizationCandidates });
+    }
     const existingWeeklyReports = await loadWeeklyCeoReports();
     if (!existingWeeklyReports.some((r) => r.weekKey === weekKey)) {
       const weeklyReport = buildWeeklyCeoReport({
@@ -212,9 +245,11 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     autoApproval,
     autoApprovalError,
     noteMetricsJobsQueued: metricJobs.length,
+    strategyCandidateAvailable,
     strategyChanged,
     styleProfileUpdated,
     weeklyReportGenerated,
+    monetizationCandidatesCreated,
     performanceDropEscalated,
     confidence: review.confidence,
   };

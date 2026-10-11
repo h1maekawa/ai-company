@@ -234,6 +234,10 @@ export async function loadResearchSettings(): Promise<ResearchSettingsFile> {
       ...defaultContentGrowthStrategy(),
       ...(data?.growthStrategy ?? {}),
       purposeMix: { ...defaultPurposeMix(), ...(data?.growthStrategy?.purposeMix ?? data?.purposeMix ?? {}) },
+      xDomainMix: { ...defaultContentGrowthStrategy().xDomainMix, ...(data?.growthStrategy?.xDomainMix ?? {}) },
+      xAutoLearningHistory: Array.isArray(data?.growthStrategy?.xAutoLearningHistory)
+        ? data.growthStrategy.xAutoLearningHistory
+        : [],
     },
   };
 }

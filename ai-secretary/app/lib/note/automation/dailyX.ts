@@ -12,6 +12,7 @@ import {
   loadExperiences,
   loadResearchInbox,
   loadResearchSettings,
+  loadPerformance,
   loadSocialDrafts,
   saveClusters,
   saveSocialDrafts,
@@ -36,6 +37,8 @@ import { hotEvidenceDiagnostics } from "./hotEvidenceDiagnostics";
 import { createOneTimeTransportDraft } from "./oneTimeTransportCanary";
 import { deriveQueueLifecycle } from "./queueLifecycle";
 import { tokyoDateKey } from "../tokyoDate";
+import { attachMarketDemandRankingSignal } from "./marketDemand";
+import { classifyXTopicDomain } from "./dailyXPlan";
 
 export type { DailyXResult } from "./dailyXExecution";
 export { executeDailyXPlan } from "./dailyXExecution";
@@ -73,7 +76,7 @@ export async function runDailyXAutomation(options: { oneTimeTransportCanary?: bo
     try { return await fn(...args); } finally { logPhaseDuration(phase, startedAt); }
   };
   const loadContextStartedAt = Date.now();
-  const [settings, items, experiences, brandFile, ideaFile, styleProfile, researchProviderFailureUnresolved] = await Promise.all([
+  const [settings, items, experiences, brandFile, ideaFile, styleProfile, researchProviderFailureUnresolved, performance] = await Promise.all([
     loadResearchSettings(),
     loadResearchInbox(),
     loadExperiences(),
@@ -81,6 +84,7 @@ export async function runDailyXAutomation(options: { oneTimeTransportCanary?: bo
     loadIdeas(),
     loadStyleProfile(),
     loadExecutionState().then((state) => hasUnresolvedResearchProviderFailure(state.runtime?.researchRuns ?? [])).catch(() => true),
+    loadPerformance(),
   ]);
   logPhaseDuration("load-context", loadContextStartedAt);
   const primaryAccount = brandFile.xAccounts[0];
@@ -91,7 +95,7 @@ export async function runDailyXAutomation(options: { oneTimeTransportCanary?: bo
   const result = await executeDailyXPlan(
     {
       accountKey: ACCOUNT_KEY,
-      strategy: settings.growthStrategy,
+      strategy: { ...settings.growthStrategy, xDomainPolicyVersion: 1 },
       maxXPostsPerDay: settings.flags.maxXPostsPerDay,
       autopilot: settings.flags.publishingEnabled && settings.flags.xAutoPublish,
       bufferConfigured: isBufferConfigured(),
@@ -111,7 +115,8 @@ export async function runDailyXAutomation(options: { oneTimeTransportCanary?: bo
         if (eligible.length > 0 && hotCandidates.length === 0) {
           console.info("[daily-x][hot-evidence]", hotEvidenceDiagnostics(eligible, items));
         }
-        return { eligibleCount: eligible.length, candidates: prioritizeCanaryCandidates(hotCandidates) };
+        const prioritized = prioritizeCanaryCandidates(hotCandidates.filter((candidate) => classifyXTopicDomain(candidate) !== null));
+        return { eligibleCount: eligible.length, candidates: attachMarketDemandRankingSignal(prioritized, items, performance.records) };
       }),
       findCluster: async (id) => (await loadClusters()).find((cluster) => cluster.id === id) ?? null,
       markClustersUsed: async (ids) => {
