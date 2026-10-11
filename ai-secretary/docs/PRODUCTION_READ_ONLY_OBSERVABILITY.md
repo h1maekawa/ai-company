@@ -9,7 +9,7 @@
 This layer answers what the existing Production stores currently prove about an X lifecycle. It is a projection, not a store, executor, retry mechanism, or source of truth.
 
 ```text
-DailyX Plan + Social Draft + Trend Cluster + Platform Performance
+DailyX Plan + Gate Evidence + Social Draft + Trend Cluster + Platform Performance + Morning Brief Evidence
   -> read-only X projection
   -> GET-only authenticated API
 ```
@@ -26,8 +26,8 @@ It never posts, schedules, retries, approves, changes a queue, runs a Canary or 
 | Buffer handoff | Plan / Draft fields | `bufferPostId`, `scheduledAt` | partial; raw provider response is deliberately excluded |
 | Actual X publish | Social Draft | `xPostId`, canonical X URL, `publishedAt` | available when reconciliation has persisted all three |
 | Performance | `loadPerformance` | `contentId = draft.id` | available; missing metrics remain `null` |
-| Morning Brief | no canonical delivery-result reader | none | unavailable; never inferred from the generated message |
-| Gate evidence | no independent persisted outcome contract | none | unavailable or explicit failure only |
+| Morning Brief | Execution Store `morning-brief-evidence` scope | deterministic `briefId` / `briefDate` | available only for validated canonical evidence |
+| Gate evidence | `DailyXPlan.gateEvidence` | exact `planId`, `slotId`, `draftId` | available for Safety, Fact, and Publish Eligibility; missing/mismatched lineage stays `UNKNOWN` |
 
 `runId`, `publishJobId`, an independent `providerJobId`, `performanceRecordId`, and `morningBriefItemId` are not all represented by current canonical stores. The API returns `null`/`UNKNOWN` rather than manufacturing them.
 
@@ -49,7 +49,8 @@ The existing `/api/company/runtime/observability` contract remains unchanged. Al
 - Buffer scheduled is not X published.
 - Missing metrics are `null`, never `0`.
 - `UNKNOWN` is never promoted to `PASS`.
-- A published item without persisted Safety evidence is reported as `SAFETY_INTEGRITY_VIOLATION`.
+- Missing Gate Evidence remains `UNKNOWN` and is not promoted to PASS or declared a violation.
+- A confirmed publication with persisted FAIL/BLOCKED Safety, Fact, or Publish Eligibility evidence is `INTEGRITY_VIOLATION`.
 - A normal LOW-confidence skip is `NORMAL_SKIP_LOW_CONFIDENCE` / `HEALTHY_WITH_SKIP`.
 - Multiple published drafts for the same `(planId, slotId)` are `DUPLICATE_CONFIRMED`; no item is selected or changed.
 
@@ -57,12 +58,12 @@ The existing `/api/company/runtime/observability` contract remains unchanged. Al
 
 The projection exposes these gaps rather than hiding them:
 
-1. Safety, Fact, and Publish Eligibility outcomes are evaluated in the execution path but are not independently persisted as immutable outcome records. Successful historical publication therefore does not prove each gate through current storage alone.
-2. Morning Brief generation/delivery does not currently expose a canonical read model containing referenced X post IDs and published counts. Runtime reconciliation is therefore `UNKNOWN` until that evidence exists.
+1. Historical plans created before canonical Gate Evidence remain `UNKNOWN`; publication state is never used to backfill or infer PASS.
+2. Morning Brief dates without a validated canonical evidence record remain `UNAVAILABLE` with reconciliation `UNKNOWN`.
 3. Buffer request/accept/schedule timestamps and safe response codes are not fully normalized in canonical fields.
 4. Research trust tier, candidate rank, and plan version are not persisted for every historical slot.
 
-Closing these gaps requires a separate reviewed change to the canonical artifact contracts and normal writers. It must not be implemented by making Observability write data or by retrospectively guessing Production truth.
+Closing the remaining historical gaps must not make Observability write data or retrospectively guess Production truth.
 
 ## Verification and Production smoke
 

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import type { ContentPerformance, DailyXPlan, SocialDraft, TrendCluster } from "../../note/research/types";
+import type { MorningBriefEvidence } from "../morningBrief/evidenceContract";
 import { xWeightedLength } from "../../note/operations";
+import { readGateEvidence } from "./gateEvidenceReader";
 import type { ObservabilityHealth, XObservabilityProjection, XPipelineStage, XSlotObservation } from "./types";
 
-export type MorningBriefEvidence = { briefDate: string; publishedCount: number; successfulPostCount: number; failedPostCount: number; skippedPostCount: number; performanceAvailableCount: number; referencedPostIds: string[] };
 export type XProjectionInput = { plans: DailyXPlan[]; drafts: SocialDraft[]; performance: ContentPerformance[]; clusters: TrendCluster[]; morningBrief?: MorningBriefEvidence | null; now?: Date };
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -61,19 +62,17 @@ export function buildXObservabilityProjection(input: XProjectionInput): XObserva
     if (duplicateStatus !== "NONE") codes.push(duplicateStatus);
     if ((slot.bufferPostId || draft?.bufferPostId) && !draft?.xPostId && slot.status === "scheduled" && Date.parse(slot.scheduledAt) < now.getTime()) codes.push("PROVIDER_PUBLISH_NOT_CONFIRMED");
     if (draft?.xPostId && !perf) codes.push("PERFORMANCE_PENDING");
-    const safety: XSlotObservation["gates"]["safety"] = slot.status === "blocked" && /safety/i.test(slot.failureReason ?? "") ? "FAIL" : "UNKNOWN";
-    const fact: XSlotObservation["gates"]["fact"] = slot.status === "blocked" && /fact/i.test(slot.failureReason ?? "") ? "FAIL" : "UNKNOWN";
-    const eligibility: XSlotObservation["gates"]["publishEligibility"] = slot.status === "blocked" ? "BLOCKED" : "UNKNOWN";
+    const gates = readGateEvidence(plan, slot, draft?.id);
     if (pipeline === "PUBLISHED" || pipeline === "PERFORMANCE_SYNCED") {
-      if (safety === "UNKNOWN") codes.push("SAFETY_INTEGRITY_VIOLATION");
-      if (fact === "UNKNOWN") codes.push("FACT_EVIDENCE_INCOMPLETE");
-      if (eligibility === "UNKNOWN") codes.push("ELIGIBILITY_EVIDENCE_INCOMPLETE");
+      if (gates.safety === "FAIL" || gates.safety === "BLOCKED") codes.push("SAFETY_INTEGRITY_VIOLATION");
+      if (gates.fact === "FAIL" || gates.fact === "BLOCKED") codes.push("FACT_INTEGRITY_VIOLATION");
+      if (gates.publishEligibility === "FAIL" || gates.publishEligibility === "BLOCKED") codes.push("PUBLISH_ELIGIBILITY_INTEGRITY_VIOLATION");
     }
     const slotStatus = statusFor(codes, pipeline, normalLowSkip);
     return {
       plan: { planId: plan.id, planDate: plan.date, planVersion: null, slotId: slot.id, slotTime: slot.scheduledTime, topic: cluster?.title ?? null, platform: "x", intendedContentType: slot.operationRole, sourceResearchIds: evidence, hotConfidence: cluster?.hotConfidence ?? null, candidateRank: null, generatedAt: plan.generatedAt },
       draft: { draftId: draft?.id ?? null, createdAt: draft?.createdAt ?? null, weightedLength: draft ? xWeightedLength(draft.text) : null, contentHash: draft ? hash(draft.text) : null, preview: null, similarityScore: draft?.similarityScore ?? null, duplicateCandidate: draft?.similarTo ?? null, sourceLineage: [...evidence, ...(draft?.sourceViewpointIds ?? []), ...(draft?.sourceExperienceIds ?? [])] },
-      gates: { safety, fact, publishEligibility: eligibility }, pipelineStage: pipeline,
+      gates, pipelineStage: pipeline,
       buffer: { requestObserved: Boolean(slot.bufferPostId || draft?.bufferPostId) || null, updateId: slot.bufferPostId ?? draft?.bufferPostId ?? null, providerJobId: slot.bufferPostId ?? draft?.bufferPostId ?? null, requestedScheduleTime: draft?.scheduledAt ?? slot.scheduledAt ?? null, actualProviderScheduleTime: null, providerStatus: slot.status, providerError: slot.failureKind ?? (draft?.failureReason ? "DRAFT_FAILURE_RECORDED" : null), createdAt: draft?.createdAt ?? null, updatedAt: draft?.updatedAt ?? slot.updatedAt ?? null },
       publication: { state: draft?.xPostId && validXUrl(draft.bufferExternalLink) && draft.publishedAt ? "CONFIRMED" : slot.status === "ambiguous" ? "AMBIGUOUS" : slot.status === "scheduled" ? "PENDING" : "UNKNOWN", published: draft?.xPostId && validXUrl(draft.bufferExternalLink) && draft.publishedAt ? true : null, externalPostId: draft?.xPostId ?? null, externalUrl: validXUrl(draft?.bufferExternalLink) ? draft!.bufferExternalLink! : null, actualPublishedAt: draft?.publishedAt ?? null, provider: draft?.bufferPostId ? "buffer" : null, expectedPublishedAt: draft?.scheduledAt ?? slot.scheduledAt ?? null, delayMs: draft?.publishedAt ? Date.parse(draft.publishedAt) - Date.parse(draft.scheduledAt ?? slot.scheduledAt) : null, mismatch: draft?.bufferExternalLink && !validXUrl(draft.bufferExternalLink) ? true : null },
       performance: { performanceRecordId: perf ? `${perf.platform}:${perf.contentId}:${perf.publishedAt}` : null, impressions: metric(perf?.impressions), likes: metric(perf?.likes), replies: metric(perf?.replies), reposts: metric(perf?.reposts), bookmarks: metric(perf?.bookmarks), clicks: metric(perf?.linkClicks ?? perf?.urlClicks), measuredAt: draft?.metricsLastSyncedAt ?? null, syncStatus: perf ? "SYNCED" : draft?.metricsSyncError ? "UNAVAILABLE" : draft?.xPostId ? "PENDING" : "UNKNOWN", provider: perf ? "canonical-performance" : null, freshness: perf && draft?.metricsLastSyncedAt ? (now.getTime() - Date.parse(draft.metricsLastSyncedAt) <= 86_400_000 ? "FRESH" : "STALE") : "UNKNOWN" },
@@ -83,14 +82,29 @@ export function buildXObservabilityProjection(input: XProjectionInput): XObserva
     } satisfies XSlotObservation;
   }));
 
+  const briefReconciliation: XObservabilityProjection["reconciliation"] = [];
   if (input.morningBrief) {
     const referenced = new Set(input.morningBrief.referencedPostIds);
-    for (const slot of slots.filter((item) => item.publication.state === "CONFIRMED" && item.plan.planDate === input.morningBrief!.briefDate)) {
-      if (slot.publication.externalPostId && !referenced.has(slot.publication.externalPostId)) slot.reconciliationCodes.push("BRIEF_RECONCILIATION_REQUIRED");
+    const confirmed = slots.filter((item) => item.publication.state === "CONFIRMED");
+    const referencedDates = new Set(confirmed.filter((item) => item.publication.externalPostId && referenced.has(item.publication.externalPostId)).map((item) => item.plan.planDate));
+    const previousBriefDate = new Date(`${input.morningBrief.briefDate}T12:00:00.000Z`);
+    previousBriefDate.setUTCDate(previousBriefDate.getUTCDate() - 1);
+    const fallbackDate = previousBriefDate.toISOString().slice(0, 10);
+    const relevant = confirmed.filter((item) => referencedDates.size > 0 ? referencedDates.has(item.plan.planDate) : item.plan.planDate === fallbackDate);
+    for (const item of relevant) {
+      if (item.publication.externalPostId && !referenced.has(item.publication.externalPostId)) item.reconciliationCodes.push("BRIEF_RECONCILIATION_REQUIRED");
+    }
+    if (relevant.length !== input.morningBrief.successfulPostCount) {
+      briefReconciliation.push({ planId: input.morningBrief.briefId, slotId: "summary", code: "RECONCILIATION_REQUIRED", status: "RECONCILIATION_REQUIRED" });
+    }
+    if (input.morningBrief.performanceAvailableCount < relevant.length) {
+      briefReconciliation.push({ planId: input.morningBrief.briefId, slotId: "summary", code: "PERFORMANCE_RECONCILIATION_REQUIRED", status: "RECONCILIATION_REQUIRED" });
     }
   }
-  const reconciliation = slots.flatMap((slot) => slot.reconciliationCodes.map((code) => ({ planId: slot.plan.planId, slotId: slot.plan.slotId, code, status: code.includes("INTEGRITY") ? "INTEGRITY_VIOLATION" as const : code.includes("INCOMPLETE") || code === "PERFORMANCE_PENDING" ? "DATA_INCOMPLETE" as const : "RECONCILIATION_REQUIRED" as const })));
+  for (const slot of slots) slot.status = statusFor(slot.reconciliationCodes, slot.pipelineStage, slot.skip.normal);
+  const reconciliation = [...slots.flatMap((slot) => slot.reconciliationCodes.map((code) => ({ planId: slot.plan.planId, slotId: slot.plan.slotId, code, status: code.includes("INTEGRITY") ? "INTEGRITY_VIOLATION" as const : code.includes("INCOMPLETE") || code === "PERFORMANCE_PENDING" ? "DATA_INCOMPLETE" as const : "RECONCILIATION_REQUIRED" as const }))), ...briefReconciliation];
   const priority: ObservabilityHealth[] = ["INTEGRITY_VIOLATION", "RECONCILIATION_REQUIRED", "DEGRADED", "DATA_INCOMPLETE", "PENDING", "HEALTHY_WITH_SKIP", "HEALTHY", "UNKNOWN"];
-  const overall = priority.find((value) => slots.some((slot) => slot.status === value)) ?? "UNKNOWN";
-  return { observedAt: now.toISOString(), readOnly: true, status: overall, slots, summary: { plans: input.plans.length, slots: slots.length, published: slots.filter((slot) => slot.publication.state === "CONFIRMED").length, performanceSynced: slots.filter((slot) => slot.performance.syncStatus === "SYNCED").length, normalLowSkips: slots.filter((slot) => slot.skip.normal).length, duplicateRisks: slots.filter((slot) => slot.duplicateStatus !== "NONE").length, integrityViolations: slots.filter((slot) => slot.status === "INTEGRITY_VIOLATION").length }, morningBrief: input.morningBrief ? { availability: "AVAILABLE", ...input.morningBrief, reconciliation: reconciliation.some((item) => item.code === "BRIEF_RECONCILIATION_REQUIRED") ? "RECONCILIATION_REQUIRED" : "MATCHED" } : { availability: "UNAVAILABLE", briefDate: null, publishedCount: null, successfulPostCount: null, failedPostCount: null, skippedPostCount: null, performanceAvailableCount: null, referencedPostIds: [], reconciliation: "UNKNOWN" }, reconciliation };
+  const overall = priority.find((value) => slots.some((slot) => slot.status === value) || reconciliation.some((item) => item.status === value)) ?? "UNKNOWN";
+  const briefNeedsReconciliation = reconciliation.some((item) => ["RECONCILIATION_REQUIRED", "BRIEF_RECONCILIATION_REQUIRED", "PERFORMANCE_RECONCILIATION_REQUIRED"].includes(item.code));
+  return { observedAt: now.toISOString(), readOnly: true, status: overall, slots, summary: { plans: input.plans.length, slots: slots.length, published: slots.filter((slot) => slot.publication.state === "CONFIRMED").length, performanceSynced: slots.filter((slot) => slot.performance.syncStatus === "SYNCED").length, normalLowSkips: slots.filter((slot) => slot.skip.normal).length, duplicateRisks: slots.filter((slot) => slot.duplicateStatus !== "NONE").length, integrityViolations: slots.filter((slot) => slot.status === "INTEGRITY_VIOLATION").length }, morningBrief: input.morningBrief ? { availability: "AVAILABLE", briefDate: input.morningBrief.briefDate, publishedCount: input.morningBrief.publishedCount, successfulPostCount: input.morningBrief.successfulPostCount, failedPostCount: input.morningBrief.failedPostCount, skippedPostCount: input.morningBrief.skippedPostCount, performanceAvailableCount: input.morningBrief.performanceAvailableCount, referencedPostIds: input.morningBrief.referencedPostIds, generatedAt: input.morningBrief.generatedAt, deliveredAt: input.morningBrief.deliveredAt ?? null, status: input.morningBrief.status, reconciliation: briefNeedsReconciliation ? "RECONCILIATION_REQUIRED" : "MATCHED" } : { availability: "UNAVAILABLE", briefDate: null, publishedCount: null, successfulPostCount: null, failedPostCount: null, skippedPostCount: null, performanceAvailableCount: null, referencedPostIds: [], generatedAt: null, deliveredAt: null, status: "UNKNOWN", reconciliation: "UNKNOWN" }, reconciliation };
 }

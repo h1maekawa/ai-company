@@ -55,7 +55,9 @@ npx tsc \
   app/lib/note/automation/threePostReadiness.ts \
   app/lib/company/research/types.ts \
   app/lib/company/observability/types.ts \
+  app/lib/company/observability/gateEvidenceReader.ts \
   app/lib/company/observability/xProjection.ts \
+  app/lib/company/morningBrief/evidenceContract.ts \
   app/lib/content/brandProfile.ts \
   app/lib/note/automation/queueLifecycle.ts \
   app/lib/note/automation/publishEligibility.ts \

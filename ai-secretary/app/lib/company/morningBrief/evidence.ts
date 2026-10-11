@@ -1,31 +1,8 @@
 import type { ExecutionStore } from "../runtime/runtimeTypes";
-
-export type MorningBriefEvidenceStatus = "GENERATED" | "DELIVERED" | "PARTIAL" | "FAILED" | "UNKNOWN";
-
-export type MorningBriefEvidence = {
-  briefId: string;
-  briefDate: string;
-  referencedPostIds: string[];
-  publishedCount: number;
-  successfulPostCount: number;
-  failedPostCount: number;
-  skippedPostCount: number;
-  performanceAvailableCount: number;
-  generatedAt: string;
-  deliveredAt?: string;
-  status: MorningBriefEvidenceStatus;
-};
-
-export const MORNING_BRIEF_EVIDENCE_SCOPE = "morning-brief-evidence";
+import { MORNING_BRIEF_EVIDENCE_SCOPE, type MorningBriefEvidence } from "./evidenceContract";
+export { isMorningBriefEvidence, MORNING_BRIEF_EVIDENCE_SCOPE } from "./evidenceContract";
+export type { MorningBriefEvidence, MorningBriefEvidenceStatus } from "./evidenceContract";
 const MORNING_BRIEF_EVIDENCE_TTL_SECONDS = 400 * 24 * 60 * 60;
-
-export function isMorningBriefEvidence(value: unknown): value is MorningBriefEvidence {
-  if (!value || typeof value !== "object") return false;
-  const evidence = value as Partial<MorningBriefEvidence>;
-  return typeof evidence.briefId === "string" && typeof evidence.briefDate === "string" &&
-    Array.isArray(evidence.referencedPostIds) && typeof evidence.generatedAt === "string" &&
-    ["GENERATED", "DELIVERED", "PARTIAL", "FAILED", "UNKNOWN"].includes(evidence.status ?? "");
-}
 
 /** Existing Execution Store, separate from delivery idempotency. */
 export async function saveMorningBriefEvidence(store: ExecutionStore, evidence: MorningBriefEvidence): Promise<void> {

@@ -10,6 +10,7 @@ export type ObservabilityHealth =
   | "RECONCILIATION_REQUIRED" | "INTEGRITY_VIOLATION" | "DATA_INCOMPLETE" | "UNKNOWN";
 
 export type SafeMetric = number | null;
+export type MorningBriefObservationStatus = "GENERATED" | "DELIVERED" | "PARTIAL" | "FAILED" | "UNKNOWN";
 
 export type XSlotObservation = {
   plan: {
@@ -66,7 +67,8 @@ export type XObservabilityProjection = {
     availability: "AVAILABLE" | "UNAVAILABLE";
     briefDate: string | null; publishedCount: number | null; successfulPostCount: number | null;
     failedPostCount: number | null; skippedPostCount: number | null; performanceAvailableCount: number | null;
-    referencedPostIds: string[]; reconciliation: "MATCHED" | "RECONCILIATION_REQUIRED" | "UNKNOWN";
+    referencedPostIds: string[]; generatedAt: string | null; deliveredAt: string | null;
+    status: MorningBriefObservationStatus; reconciliation: "MATCHED" | "RECONCILIATION_REQUIRED" | "UNKNOWN";
   };
   reconciliation: Array<{ planId: string; slotId: string; code: string; status: ObservabilityHealth }>;
 };
