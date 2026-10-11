@@ -17,8 +17,8 @@ Status: PR #164 update audit. Scope is repository implementation only; Productio
 | Google Trends | MISSING | NOT_CONFIGURED: no safe official/free existing provider was found; no scraper or credential was added. |
 | News summaries | CONFLICT | IMPLEMENTED: copying/value-free reposting remains prohibited; breaking Fact-first summaries may add importance, clarity or view. |
 | Investment context | PARTIAL | KEPT: market evidence may rank content candidates, never create a Trade Signal; Investment remains HUMAN_ONLY. |
-| Monetization scout | PARTIAL | DEFERRED: canonical revenue/affiliate policy exists, but weekly discovery lacks an official evidence source and approved candidate writer contract. |
-| CEO feedback → skill | PARTIAL | DEFERRED: canonical SkillCandidate exists, but direct X feedback ingestion is not proven; no parallel store was added. |
+| Monetization scout | PARTIAL | IMPLEMENTED: Tokyo Sunday creates evidence-based Monetization Candidates in the existing Offer store; all candidates require Human action and prohibit external action. |
+| CEO feedback → skill | PARTIAL | IMPLEMENTED: explicit confirmed Creator CEO feedback projects into the existing non-executable SkillCandidate boundary for X writing/topic preferences. |
 | Canary | PROTECTED | UNCHANGED: no rerun or mutation. |
 
 ## Protected boundaries
@@ -46,7 +46,7 @@ The JIT executor never cancels or replaces a Buffer post. Drafted, claimed, queu
 ## Remaining gaps
 
 1. Google Trends is `NOT_CONFIGURED` because no safe existing path is present.
-2. Weekly monetization scouting remains `PARTIAL`; adding a writer now would create an unreviewed authority path.
-3. CEO feedback ingestion to X Skill Candidates remains `PARTIAL`; it should reuse the existing SkillCandidate store in a separately reviewed connection change.
+2. X Native monetization remains recommendation-only and produces no candidate without an explicitly supplied official-policy evidence reference.
+3. Production runtime was not triggered or validated in this PR; deployment and scheduled execution remain Human-reviewed follow-up work.
 
 These gaps do not justify weaker gates or fake metrics.

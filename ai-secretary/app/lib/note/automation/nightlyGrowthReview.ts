@@ -17,6 +17,8 @@ import { weekKeyTokyo } from "../operations";
 import { tokyoDateKey } from "@/app/lib/note/tokyoDate";
 import { compareOwnWithCompetitors, selectComparableContent } from "../competitorIntelligence";
 import { applyBoundedXStrategyLearning } from "./xStrategyLearning";
+import { loadOffers, saveOffers } from "../../content/monetization/store";
+import { buildWeeklyMonetizationCandidates } from "../../content/monetization/scout";
 
 export type NightlyGrowthResult = {
   reviewDate: string;
@@ -32,6 +34,8 @@ export type NightlyGrowthResult = {
   strategyChanged: boolean;
   styleProfileUpdated: boolean;
   weeklyReportGenerated: boolean;
+  /** Weekly evidence-based proposals only. Never enrolls, registers, pays, or publishes. */
+  monetizationCandidatesCreated: number;
   performanceDropEscalated: boolean;
   confidence: "low" | "medium" | "high";
 };
@@ -96,13 +100,14 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     autoApprovalError = error instanceof Error ? error.message : "Auto approval failed";
   }
 
-  const [performance, settings, queue, existingReviews, socialDrafts, styleProfile, workspace, researchItems] =
+  const [performance, settings, queue, existingReviews, socialDrafts, styleProfile, workspace, researchItems, offersFile] =
     await Promise.all([
       loadPerformance(), loadResearchSettings(), loadNoteQueue(), loadGrowthReviews(),
       loadSocialDrafts(), loadStyleProfile(),
       // 本人のX過去投稿（アーカイブ）。文体学習の「種」（TASK-N3 / 要件4）
       loadXWorkspace().catch(() => ({ ownedPosts: [], referenceNotes: [] })),
       loadResearchInbox(),
+      loadOffers(),
     ]);
   const tokyoDate = tokyoDateKey(now);
   const pendingArticleIds = new Set(queue.jobs.filter((job) => job.kind === "note-metrics-sync" && (job.status === "pending" || job.status === "running")).map((job) => job.articleId));
@@ -203,7 +208,19 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
   const tokyoWeekday = new Date(now.getTime() + 9 * 3_600_000).getUTCDay();
   const weekKey = weekKeyTokyo(now);
   let weeklyReportGenerated = false;
+  let monetizationCandidatesCreated = 0;
   if (tokyoWeekday === 0) {
+    const previousCandidates = offersFile.monetizationCandidates ?? [];
+    const monetizationCandidates = buildWeeklyMonetizationCandidates({
+      performance: performance.records,
+      offers: offersFile.offers,
+      existing: previousCandidates,
+      now,
+    });
+    monetizationCandidatesCreated = monetizationCandidates.length - previousCandidates.length;
+    if (monetizationCandidatesCreated > 0) {
+      await saveOffers({ ...offersFile, monetizationCandidates });
+    }
     const existingWeeklyReports = await loadWeeklyCeoReports();
     if (!existingWeeklyReports.some((r) => r.weekKey === weekKey)) {
       const weeklyReport = buildWeeklyCeoReport({
@@ -232,6 +249,7 @@ export async function runNightlyGrowthReview(now = new Date()): Promise<NightlyG
     strategyChanged,
     styleProfileUpdated,
     weeklyReportGenerated,
+    monetizationCandidatesCreated,
     performanceDropEscalated,
     confidence: review.confidence,
   };

@@ -10,6 +10,7 @@ import {
   CTA,
   defaultMonetizationPolicy,
   MonetizationPolicy,
+  MonetizationCandidate,
   Offer,
   RevenueEvent,
 } from "./types";
@@ -75,6 +76,7 @@ export type OffersFile = {
   offers: Offer[];
   campaigns: Campaign[];
   policy: MonetizationPolicy;
+  monetizationCandidates?: MonetizationCandidate[];
 };
 
 export async function loadOffers(): Promise<OffersFile> {
@@ -83,6 +85,7 @@ export async function loadOffers(): Promise<OffersFile> {
     offers: Array.isArray(data?.offers) ? data.offers : [],
     campaigns: Array.isArray(data?.campaigns) ? data.campaigns : [],
     policy: data?.policy ?? defaultMonetizationPolicy(),
+    monetizationCandidates: Array.isArray(data?.monetizationCandidates) ? data.monetizationCandidates : [],
   };
 }
 
@@ -102,6 +105,9 @@ export async function saveOffers(file: OffersFile): Promise<OffersFile> {
     `- 有効な収益源: ${file.policy.allowedOfferTypes.join("、") || "（未設定）"}`,
     `- 禁止カテゴリ: ${file.policy.prohibitedCategories.join("、") || "（なし）"}`,
     `- Affiliate表記: ${file.policy.affiliateDisclosure}`,
+    "",
+    "## Candidate（提案のみ）",
+    (file.monetizationCandidates ?? []).slice(0, 20).map((candidate) => `- [${candidate.type}] ${candidate.title}`).join("\n") || "（まだありません）",
   ].join("\n");
 
   await write(

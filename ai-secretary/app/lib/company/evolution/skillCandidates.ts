@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { SkillCategory, SkillDefinition } from "../../skills/types";
 import type { ExecutionState } from "../execution/store";
 import { creatorSkillOpportunity } from "../execution/creatorWorkflow";
+import type { HumanDecisionFeedback } from "../../mobile-ceo/controlCenter";
 
 export type KnowledgeUsageType = "research" | "analysis" | "generation" | "review";
 export type KnowledgeUsageEvent = {
@@ -74,6 +75,59 @@ function similarSkills(group: Observation[], skills: SkillDefinition[]) {
   return skills.filter((skill) => required.has(skill.id)).map((skill) => skill.id);
 }
 
+function feedbackCategory(note: string): { category: SkillCategory; purpose: string } {
+  if (/(topic|トピック|テーマ|増や)/iu.test(note)) {
+    return { category: "research", purpose: "CEOが明示したX Topic選好を次回の調査・候補提案へ反映する" };
+  }
+  return { category: "generation", purpose: "CEOが明示したX文章・表現の選好を次回のDraft候補へ反映する" };
+}
+
+/**
+ * CEOの明示Feedbackを既存SkillCandidate境界へ投影する。
+ * Candidateは非実行であり、Safety/Authority/Registry/Engineeringを変更しない。
+ */
+export function deriveXSkillCandidatesFromCeoFeedback(
+  feedback: HumanDecisionFeedback[] | undefined,
+  existing: SkillCandidate[],
+  now = new Date()
+): SkillCandidate[] {
+  const candidates = [...existing];
+  for (const record of feedback ?? []) {
+    if (record.actor !== "ceo" || record.confirmedByHuman !== true || record.departmentId !== "creator" || !record.note?.trim()) continue;
+    const note = record.note.trim();
+    const signature = `creator|x-ceo-feedback|${record.id}`;
+    const id = `skill_candidate_${hash(signature)}`;
+    if (candidates.some((candidate) => candidate.id === id)) continue;
+    const classification = feedbackCategory(note);
+    const observedAt = record.createdAt || now.toISOString();
+    candidates.push({
+      id,
+      patternSignature: signature,
+      name: `x-ceo-feedback-${hash(note).slice(0, 8)}`,
+      purpose: classification.purpose,
+      departmentId: "creator",
+      sourceMissionIds: [],
+      sourceKnowledgeIds: [`human-feedback:${record.id}`],
+      repeatedSteps: [classification.category === "research" ? "x-topic-feedback" : "x-writing-feedback"],
+      usageCount: 1,
+      suggestedAgents: [classification.category === "research" ? "creator-research" : "creator-content"],
+      suggestedCategory: classification.category,
+      inputDescription: "CEOがHuman確認したXフィードバック（本文は監査元レコードを参照）",
+      outputDescription: "次回のX候補へ適用可能な非実行Skill提案",
+      reason: `CEOの明示FeedbackをX ${classification.category === "research" ? "Topic" : "Writing"} Skill Candidateとして保持。Safety/Authority変更には使用しない。`,
+      existingSimilarSkillIds: [],
+      status: "PROPOSED",
+      createdAt: observedAt,
+      updatedAt: observedAt,
+      lastObservedAt: observedAt,
+      executable: false,
+      engineeringRequestAllowed: false,
+      registryMutationAllowed: false,
+    });
+  }
+  return candidates;
+}
+
 export function discoverSkillCandidates(state: ExecutionState, skills: SkillDefinition[], now = new Date()): SkillCandidate[] {
   const grouped = new Map<string, Observation[]>();
   for (const observation of observations(state)) grouped.set(observation.signature, [...(grouped.get(observation.signature) ?? []), observation]);
@@ -95,7 +149,7 @@ export function discoverSkillCandidates(state: ExecutionState, skills: SkillDefi
     const first = raw[0];
     candidates.push({ id, patternSignature: signature, name: `${first.agentId}-${first.stepId}`.replace(/_/g, "-").toLowerCase(), purpose: `${first.stepId}で反復しているKnowledge利用を再現可能な仕様にする`, departmentId: first.departmentId, ...evidence, suggestedCategory: first.category, inputDescription: first.input, outputDescription: first.output, reason: opportunity.reason, existingSimilarSkillIds: [], status: "PROPOSED", createdAt: observedAt, updatedAt: observedAt, lastObservedAt: observedAt, executable: false, engineeringRequestAllowed: false, registryMutationAllowed: false });
   }
-  return candidates;
+  return deriveXSkillCandidatesFromCeoFeedback(state.runtime?.humanDecisionFeedback, candidates, now);
 }
 
 export function decideSkillCandidate(candidate: SkillCandidate, decision: "APPROVED" | "REJECTED" | "HOLD", reason: string | undefined, now = new Date()): SkillCandidate {

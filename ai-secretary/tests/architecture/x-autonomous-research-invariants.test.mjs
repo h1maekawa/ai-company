@@ -54,3 +54,18 @@ test("latest X policy is AI/Investment-only and uses intraday JIT refresh", () =
   assert.match(route, /runDailyXAutomation/);
   assert.match(execution, /!slot\.draftId && !slot\.bufferPostId/);
 });
+
+test("weekly monetization and CEO feedback remain candidate-only Human-gated paths", () => {
+  const scout = read("app/lib/content/monetization/scout.ts");
+  const nightly = read("app/lib/note/automation/nightlyGrowthReview.ts");
+  const skills = read("app/lib/company/evolution/skillCandidates.ts");
+  assert.match(nightly, /tokyoWeekday === 0/);
+  assert.match(nightly, /buildWeeklyMonetizationCandidates/);
+  assert.match(scout, /requiresHumanAction: true/);
+  assert.match(scout, /externalActionAllowed: false/);
+  assert.doesNotMatch(scout, /enroll|createAccount|stripe|paymentSetup/);
+  assert.match(skills, /deriveXSkillCandidatesFromCeoFeedback/);
+  assert.match(skills, /executable: false/);
+  assert.match(skills, /engineeringRequestAllowed: false/);
+  assert.match(skills, /registryMutationAllowed: false/);
+});
