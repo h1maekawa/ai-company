@@ -3,6 +3,7 @@ import type { ExperienceEntry, ResearchItem, SocialDraft, TrendCluster } from ".
 import type { ResearchRun } from "../../company/research/types";
 import { runXSafetyGate, X_MAX_WEIGHTED_LENGTH, xWeightedLength } from "../operations";
 import { checkNumbersAgainstSources } from "../../qa/factChecks";
+import type { GateDecisionEvidence } from "./gateEvidence";
 
 export type PublishEligibilityInput = {
   draft: SocialDraft;
@@ -14,7 +15,17 @@ export type PublishEligibilityInput = {
   researchProviderFailureUnresolved: boolean;
 };
 
-export type PublishEligibility = { eligible: boolean; reasons: string[] };
+export const FACT_GATE_POLICY_VERSION = "x-fact-v1";
+export const PUBLISH_ELIGIBILITY_POLICY_VERSION = "x-publish-eligibility-v1";
+
+export type PublishEligibility = {
+  eligible: boolean;
+  reasons: string[];
+  evidence: {
+    fact: GateDecisionEvidence;
+    publishEligibility: GateDecisionEvidence;
+  };
+};
 
 const FACTUAL_LANGUAGE = /(?:調査|統計|データ|報告|発表|によると|前年比|前月比|市場|売上|利益|株価|利回り|%|％|\d{2,})/;
 const INVESTMENT_OR_HIGH_RISK = /(?:投資|株|銘柄|資産|金融|利回り|決算|医療|法律|政治|選挙)/;
@@ -22,6 +33,7 @@ const INVESTMENT_OR_HIGH_RISK = /(?:投資|株|銘柄|資産|金融|利回り|�
 /** Buffer予約専用のfail-closed gate。手動下書き保存には使わない。 */
 export async function evaluatePublishEligibility(input: PublishEligibilityInput): Promise<PublishEligibility> {
   const reasons: string[] = [];
+  const factReasons: string[] = [];
   const { draft } = input;
   if (draft.planId !== input.currentPlanId || draft.planSlotId !== input.currentPlanSlotId) {
     reasons.push("当日のcurrent DailyX Plan/slotに属していません");
@@ -36,15 +48,32 @@ export async function evaluatePublishEligibility(input: PublishEligibilityInput)
   const sourceIds = new Set(draft.sourceResearchIds ?? []);
   const sources = input.researchItems.filter((item) => sourceIds.has(item.id)).map((item) => [item.title, item.textExcerpt, item.sourceUrl].filter(Boolean).join(" "));
   const numberCheck = checkNumbersAgainstSources({ text: draft.text, sources });
-  if (numberCheck.status !== "pass") reasons.push(`数値の裏取り: ${numberCheck.detail ?? "検証できません"}`);
+  if (numberCheck.status !== "pass") factReasons.push(`数値の裏取り: ${numberCheck.detail ?? "検証できません"}`);
   if (factual && sources.length === 0) {
-    reasons.push("factual / numeric claimのsource/evidenceを追跡できません");
+    factReasons.push("factual / numeric claimのsource/evidenceを追跡できません");
   }
   const highRisk = draft.genreId === "asset-building" || INVESTMENT_OR_HIGH_RISK.test(draft.text);
   if (input.researchProviderFailureUnresolved && highRisk) {
-    reasons.push("RESEARCH_PROVIDER_FAILURE未解決中のinvestment / high-risk factual contentです");
+    factReasons.push("RESEARCH_PROVIDER_FAILURE未解決中のinvestment / high-risk factual contentです");
   }
-  return { eligible: reasons.length === 0, reasons: [...new Set(reasons)] };
+  reasons.push(...factReasons);
+  const uniqueReasons = [...new Set(reasons)];
+  return {
+    eligible: uniqueReasons.length === 0,
+    reasons: uniqueReasons,
+    evidence: {
+      fact: {
+        result: factReasons.length === 0 ? "PASS" : "FAIL",
+        reasonCode: factReasons.length === 0 ? "FACT_PASS" : "FACT_EVIDENCE_REJECTED",
+        policyVersion: FACT_GATE_POLICY_VERSION,
+      },
+      publishEligibility: {
+        result: uniqueReasons.length === 0 ? "PASS" : "BLOCKED",
+        reasonCode: uniqueReasons.length === 0 ? "PUBLISH_ELIGIBILITY_PASS" : "PUBLISH_ELIGIBILITY_BLOCKED",
+        policyVersion: PUBLISH_ELIGIBILITY_POLICY_VERSION,
+      },
+    },
+  };
 }
 
 /** 各departmentの最新Runだけを見て、失敗sourceが後続成功で解消されたか判定する。 */

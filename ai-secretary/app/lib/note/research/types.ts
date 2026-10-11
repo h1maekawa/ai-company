@@ -467,6 +467,26 @@ export type DailyXStrategySnapshot = {
   strategyUpdatedAt?: string;
 };
 
+export type ExecutionGateType = "SAFETY" | "FACT" | "PUBLISH_ELIGIBILITY";
+export type ExecutionGateResult = "PASS" | "FAIL" | "BLOCKED" | "UNKNOWN";
+
+/**
+ * Canonical, content-owned evidence written where an execution gate is evaluated.
+ * It contains no post body, provider secret, or inferred observability result.
+ */
+export type GateEvidence = {
+  id: string;
+  gateType: ExecutionGateType;
+  result: ExecutionGateResult;
+  reasonCode: string;
+  policyVersion: string;
+  planId: string;
+  slotId: string;
+  draftId: string;
+  evaluatedAt: string;
+  source: "daily-x-execution";
+};
+
 export type DailyXPlanSlot = {
   /** daily-x:{date}:{accountKey}:{slotIndex}（時刻を含めない） */
   id: string;
@@ -504,6 +524,8 @@ export type DailyXPlan = {
   canaryResult?: "1/3 successful";
   strategySnapshot: DailyXStrategySnapshot;
   slots: DailyXPlanSlot[];
+  /** Append-only execution evidence. Readers must not infer missing gates. */
+  gateEvidence?: GateEvidence[];
   generatedAt: string;
   updatedAt: string;
 };

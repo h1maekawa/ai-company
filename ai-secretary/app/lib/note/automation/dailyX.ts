@@ -39,6 +39,7 @@ import { deriveQueueLifecycle } from "./queueLifecycle";
 import { tokyoDateKey } from "../tokyoDate";
 import { attachMarketDemandRankingSignal } from "./marketDemand";
 import { classifyXTopicDomain } from "./dailyXPlan";
+import type { GateDecisionEvidence } from "./gateEvidence";
 
 export type { DailyXResult } from "./dailyXExecution";
 export { executeDailyXPlan } from "./dailyXExecution";
@@ -48,6 +49,7 @@ export const DAILY_X_LOCK_TTL_SEC = 360;
 
 /** Phase 0 は Buffer channel が env の単一channelのため primary 固定 */
 const ACCOUNT_KEY = "primary";
+const SAFETY_GATE_POLICY_VERSION = "x-safety-v1";
 
 /**
  * 毎日のX自動化。依存を束ねて executeDailyXPlan（Plan駆動・retry安全）を呼ぶだけにする。
@@ -166,7 +168,12 @@ export async function runDailyXAutomation(options: { oneTimeTransportCanary?: bo
       safetyGate: timed("safety-gate", async (draft: SocialDraft) => {
         const cluster = (await loadClusters()).find((item) => item.id === draft.trendClusterId);
         const prepared = await prepareXDraftForPublishing({ draft, brand: brandFile.brand, experiences: usableExperiences(experiences, cluster?.matchedExperienceIds ?? []) });
-        return { draft: prepared.draft, safe: prepared.safe, reasons: prepared.reasons };
+        const evidence: GateDecisionEvidence = {
+          result: prepared.safe ? "PASS" : "FAIL",
+          reasonCode: prepared.safe ? "SAFETY_PASS" : "SAFETY_REJECTED",
+          policyVersion: SAFETY_GATE_POLICY_VERSION,
+        };
+        return { draft: prepared.draft, safe: prepared.safe, reasons: prepared.reasons, evidence };
       }),
       publishEligibility: timed("publish-eligibility", (draft, plan, slot) => evaluatePublishEligibility({
         draft,

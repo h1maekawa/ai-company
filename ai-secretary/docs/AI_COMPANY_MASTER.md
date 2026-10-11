@@ -114,6 +114,8 @@ Departments exchange typed artifacts rather than unstructured copied prose.
 | `Opportunity` | evidence, coverage, expected value availability, score basis, status | Implemented for revenue and investment domains; cross-domain normalization partial |
 | `Mission` | owner, outcome, status, trace, authority | Implemented |
 | `PublishedContent` | plan/slot lineage, provider ID, external URL, publication time | Implemented in X domain; cross-platform contract partial |
+| `GateEvidence` | gate type/result, safe reason code, policy version, plan/slot/draft lineage, evaluated time | Implemented for X Safety, Fact, and Publish Eligibility on `DailyXPlan` |
+| `MorningBriefEvidence` | brief/date, referenced post IDs, outcome counts, generation/delivery times, availability status | Implemented in the existing Execution Store |
 | `PlatformPerformance` | platform identity, measured metrics, availability, observed time | Implemented foundation; provider coverage partial |
 | `Learning` | observation, hypothesis, evidence, confidence, decision/effectiveness | Implemented foundation; operational feedback loops partial |
 | `CreativeSpec` | brand, platform, pillar, topic, products, slides, assets, visual rules, caption, CTA, commercial relation | Implemented as the typed Instagram domain artifact; persistence and rendering remain planned |

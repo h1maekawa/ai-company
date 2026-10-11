@@ -7,9 +7,25 @@ const compiled = (file) => path.join(process.env.QA_DIST, "out/app/lib", file);
 const { buildMorningBrief } = require(compiled("company/morningBrief/build.js"));
 const { absoluteDeepLink, morningBriefBlocks } = require(compiled("company/morningBrief/slack.js"));
 const { buildXGrowthInsight } = require(compiled("company/morningBrief/xGrowth.js"));
+const { isMorningBriefEvidence, loadMorningBriefEvidence, saveMorningBriefEvidence } = require(compiled("company/morningBrief/evidence.js"));
 const { safeSlackUrl } = require(compiled("integrations/slack/blocks.js"));
 
 const notification = (extra = {}) => ({ id: "n1", fingerprint: "approval:a", kind: "COMPANY_APPROVAL_REQUIRED", sourceType: "approval", sourceId: "a", title: "承認してください", summary: "R2 action", priority: "ACTION_REQUIRED", actionRequired: true, deepLink: "/ceo/approvals#a", createdAt: "2026-10-02T00:00:00Z", riskLevel: "R2", ...extra });
+test("MorningBriefEvidenceは既存Execution Storeへ完全な件数とpost参照を保存する", async () => {
+  const rows = new Map();
+  const store = {
+    completeIdempotency: async (scope, key, value) => rows.set(`${scope}:${key}`, structuredClone(value)),
+    getIdempotencyResult: async (scope, key) => structuredClone(rows.get(`${scope}:${key}`) ?? null),
+  };
+  const evidence = {
+    briefId: "morning-brief:2026-10-11", briefDate: "2026-10-11", referencedPostIds: ["2107877739529170991"],
+    publishedCount: 1, successfulPostCount: 1, failedPostCount: 0, skippedPostCount: 2, performanceAvailableCount: 0,
+    generatedAt: "2026-10-10T22:00:00.000Z", status: "PARTIAL",
+  };
+  assert.equal(isMorningBriefEvidence(evidence), true);
+  await saveMorningBriefEvidence(store, evidence);
+  assert.deepEqual(await loadMorningBriefEvidence(store, evidence.briefId), evidence);
+});
 test("Morning Brief includes only actionable events and deduplicates fingerprints", () => {
   const brief = buildMorningBrief({ now: new Date("2026-10-02T00:00:00Z"), notifications: [notification(), notification({ id: "duplicate" }), notification({ id: "info", fingerprint: "info", priority: "INFO", actionRequired: false })], homeAttention: [], opportunities: [] });
   assert.equal(brief.day, "2026-10-02"); assert.equal(brief.items.length, 1); assert.equal(brief.items[0].sourceAlreadyNotified, false);
