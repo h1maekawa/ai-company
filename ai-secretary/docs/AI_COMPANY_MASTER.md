@@ -213,6 +213,7 @@ This section reports repository capability. It does not claim a live provider, C
 ### Partial
 
 - X Production stability and complete metric coverage;
+- authenticated, GET-only X Production Observability projection; gate outcome history and Morning Brief delivery evidence remain unavailable in canonical read models;
 - end-to-end Action Gateway adoption by legacy integrations;
 - canonical content and published-content contracts across platforms;
 - Note growth and paid-publication workflow;
@@ -294,6 +295,7 @@ This section reports repository capability. It does not claim a live provider, C
 | 2026-10-10 | Continue with B1–B9; defer A4/A5 until concrete provider or cost/observability boundaries exist | A1–A3 supply the ownership contracts required for current SNS delivery without speculative foundations |
 | 2026-10-10 | Define Instagram CreativeSpec as a contract-only domain artifact with no new persistence or provider | establish product-image, evidence, rights, disclosure, and human-review boundaries before B3 rendering |
 | 2026-10-10 | Reuse canonical Research and existing Hot Score for an X Daily Research Agenda and fixed three-slot operation | expand autonomy without a parallel engine, LOW promotion, policy self-mutation, or publication-gate bypass |
+| 2026-10-11 | Add X Production Observability as a GET-only projection over existing stores | make runtime truth and evidence gaps inspectable without a second store, Production mutation, retry, or guessed success |
 
 ## Protected Boundaries
 
