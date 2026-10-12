@@ -214,6 +214,7 @@ const PURPOSE_GUIDE: Record<ContentPurpose, string> = {
   affiliate: "アフィリエイト。読者の悩みと案件が本当に一致する場合のみ。合わないなら書かない",
   "paid-note": "有料note誘導。無料で出せる範囲を出し切ってから、続きの価値を示す",
   "x-monetization": "X内で読み切る形。リンクなしで、返信・保存が起きやすい問いかけを含める",
+  learn: "学びの共有。前川本人が今まさに学んでいる最中の気づきや疑問を、結論を急がずに書く",
 };
 
 export type GenerateXInput = {

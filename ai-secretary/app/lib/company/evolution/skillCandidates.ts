@@ -10,7 +10,22 @@ export type KnowledgeUsageEvent = {
   agentId: string; departmentId?: string; skillId?: string; usageType: KnowledgeUsageType; usedAt: string;
 };
 export type KnowledgeUsageSummary = { status: "CONFIRMED" | "UNKNOWN"; count: number | null; agents: string[]; missions: Array<{ id: string; title: string; agentId: string; usedAt: string }>; lastUsedAt: string | null };
-export type SkillCandidateStatus = "PROPOSED" | "APPROVED" | "REJECTED" | "HOLD";
+/**
+ * PR-XT2で ACTIVE / DEPRECATED を追加（既存の PROPOSED/APPROVED/REJECTED/HOLD はそのまま）。
+ * 既存Store/既存status体系を再利用し、第二の並行enumは作らない（XT2 section7）。
+ *
+ * 注意: ACTIVEは「Creator Thinking Modelへ反映された」というステータスマーカーに過ぎない。
+ * executable/engineeringRequestAllowed/registryMutationAllowedは ACTIVE でも常に false のまま
+ * であり、このStoreのcandidateが実行権限を持つことは無い（既存の安全不変条件は変更しない）。
+ */
+export type SkillCandidateStatus = "PROPOSED" | "APPROVED" | "REJECTED" | "HOLD" | "ACTIVE" | "DEPRECATED";
+
+/** XT2 section10: Skill Promotion Decision */
+export type SkillPromotionDecision = "PROMOTE" | "KEEP_CANDIDATE" | "REJECT" | "DEPRECATE" | "INSUFFICIENT_DATA";
+
+/** Performanceとは独立した「前川らしさ」の評価。creatorFitを自動でPerformanceから算出しない（section2/9） */
+export type SkillImpactLabel = "HIGH" | "LOW" | "UNKNOWN";
+
 export type SkillCandidate = {
   id: string; patternSignature: string; name: string; purpose: string; departmentId?: string;
   sourceMissionIds: string[]; sourceKnowledgeIds: string[]; repeatedSteps: string[]; usageCount: number;
@@ -19,6 +34,17 @@ export type SkillCandidate = {
   createdAt: string; updatedAt: string; lastObservedAt: string;
   decision?: { decision: "APPROVED" | "REJECTED" | "HOLD"; actor: "ceo"; decidedAt: string; reason?: string };
   executable: false; engineeringRequestAllowed: false; registryMutationAllowed: false;
+  /** XT2: Creator Skill Promotion Gate（section6/7/8）で使う追加フィールド。既存消費者には影響しないoptional拡張 */
+  creatorFit?: SkillImpactLabel;
+  performanceImpact?: SkillImpactLabel;
+  promotionDecision?: SkillPromotionDecision;
+  sampleCount?: number;
+  evidenceCount?: number;
+  reviewedAt?: string;
+  approvedBy?: string;
+  activatedAt?: string;
+  deprecatedAt?: string;
+  replacementSkillId?: string;
 };
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 20);
@@ -156,5 +182,104 @@ export function decideSkillCandidate(candidate: SkillCandidate, decision: "APPRO
   if (candidate.status !== "PROPOSED") throw new Error("CANDIDATE_ALREADY_DECIDED");
   if (decision === "REJECTED" && !reason?.trim()) throw new Error("REJECTION_REASON_REQUIRED");
   const decidedAt = now.toISOString();
-  return { ...candidate, status: decision, updatedAt: decidedAt, decision: { decision, actor: "ceo", decidedAt, reason: reason?.trim() }, executable: false, engineeringRequestAllowed: false, registryMutationAllowed: false };
+  return { ...candidate, status: decision, updatedAt: decidedAt, reviewedAt: decidedAt, decision: { decision, actor: "ceo", decidedAt, reason: reason?.trim() }, executable: false, engineeringRequestAllowed: false, registryMutationAllowed: false };
+}
+
+/* ─── XT2: Skill Promotion Gate（section8/9/10） ───────────────────────── */
+
+export type SkillPromotionPolicy = {
+  /** 最低サンプル数（複数の独立したポストであること） */
+  minSampleCount: number;
+  /** 独立したEvidence源（sourceKnowledgeIds）の最小数 */
+  minIndependentEvidence: number;
+};
+
+export function defaultSkillPromotionPolicy(): SkillPromotionPolicy {
+  return { minSampleCount: 3, minIndependentEvidence: 2 };
+}
+
+/**
+ * 1投稿が伸びただけでActive Skillへ昇格させない（section8）。
+ * Performance=HIGH/Creator Fit=LOWの組み合わせはPerformance Strategy Candidateとしてのみ利用可能で、
+ * Creator Skillへは自動昇格しない（section9）。creatorFitが未確認（UNKNOWN）の場合も昇格しない
+ * （UNKNOWNをPASSとして扱わない）。
+ *
+ * baseline comparison / no safety regression / no factual regression は、Safety Gate / Fact Gate側の
+ * 既存チェックの責務であり、ここでは再実装しない（Protected Boundary）。ここは sample size・独立性・
+ * creatorFit・Human Review状態という、このStoreのデータだけで判定可能な範囲に限定する。
+ */
+export function evaluateSkillPromotion(
+  candidate: SkillCandidate,
+  policy: SkillPromotionPolicy = defaultSkillPromotionPolicy()
+): SkillPromotionDecision {
+  if (candidate.status === "REJECTED") return "REJECT";
+  if (candidate.status === "DEPRECATED") return "DEPRECATE";
+
+  const sampleCount = candidate.sampleCount ?? candidate.usageCount;
+  const independentEvidence = new Set(candidate.sourceKnowledgeIds).size;
+  if (sampleCount < policy.minSampleCount || independentEvidence < policy.minIndependentEvidence) {
+    return "INSUFFICIENT_DATA";
+  }
+  if (candidate.creatorFit === undefined || candidate.creatorFit === "UNKNOWN") {
+    return "INSUFFICIENT_DATA";
+  }
+  if (candidate.creatorFit === "LOW") {
+    // Performanceがどれだけ高くてもCreator Skillへは自動昇格しない
+    return "KEEP_CANDIDATE";
+  }
+  if (candidate.status !== "APPROVED") {
+    // PROMOTEにはHuman Reviewを要求する（section10）。XT2では完全自動Active化しない
+    return "KEEP_CANDIDATE";
+  }
+  return "PROMOTE";
+}
+
+/**
+ * APPROVED（Human Review済み）かつ evaluateSkillPromotion が PROMOTE の場合のみ ACTIVE へ遷移する。
+ * executable等は常にfalseのまま（この遷移はCreator Thinking Modelへの反映マーカーであり、実行権限ではない）。
+ */
+export function promoteSkillCandidateToActive(
+  candidate: SkillCandidate,
+  approvedBy: string,
+  policy: SkillPromotionPolicy = defaultSkillPromotionPolicy(),
+  now = new Date()
+): SkillCandidate {
+  if (candidate.status !== "APPROVED") throw new Error("SKILL_CANDIDATE_NOT_APPROVED");
+  if (evaluateSkillPromotion(candidate, policy) !== "PROMOTE") throw new Error("PROMOTION_GATE_NOT_SATISFIED");
+  if (!approvedBy?.trim()) throw new Error("APPROVER_REQUIRED");
+  const activatedAt = now.toISOString();
+  return {
+    ...candidate,
+    status: "ACTIVE",
+    updatedAt: activatedAt,
+    activatedAt,
+    approvedBy: approvedBy.trim(),
+    promotionDecision: "PROMOTE",
+    executable: false,
+    engineeringRequestAllowed: false,
+    registryMutationAllowed: false,
+  };
+}
+
+/** ACTIVEだったSkillを無効化する。理由を必須にする（監査可能性） */
+export function deprecateSkillCandidate(
+  candidate: SkillCandidate,
+  reason: string,
+  replacementSkillId: string | undefined,
+  now = new Date()
+): SkillCandidate {
+  if (candidate.status !== "ACTIVE") throw new Error("SKILL_CANDIDATE_NOT_ACTIVE");
+  if (!reason?.trim()) throw new Error("DEPRECATION_REASON_REQUIRED");
+  const deprecatedAt = now.toISOString();
+  return {
+    ...candidate,
+    status: "DEPRECATED",
+    updatedAt: deprecatedAt,
+    deprecatedAt,
+    replacementSkillId,
+    promotionDecision: "DEPRECATE",
+    executable: false,
+    engineeringRequestAllowed: false,
+    registryMutationAllowed: false,
+  };
 }
