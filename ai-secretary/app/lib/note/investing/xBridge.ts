@@ -19,6 +19,8 @@ import { getOrCreateTodayLearningBrief } from "./learningBrief";
 import { loadPortfolio } from "../../investing/portfolio";
 import type { Portfolio } from "../../investing/types";
 import type { StyleProfile } from "../styleProfile";
+import { loadIntelligenceToday } from "../../investing/intelligence/store";
+import { projectInvestmentResearchForX } from "./researchProjection";
 
 const RECOMMENDATION_PATTERNS: RegExp[] = [
   /買うべき/,
@@ -89,7 +91,9 @@ export async function tryGenerateInvestmentDraft(input: {
   if (!brief || !brief.hasContent) return null;
 
   const portfolio = await loadPortfolio();
-  const facts = [
+  const intelligence = await loadIntelligenceToday();
+  const researchProjection = intelligence?.researchArtifact ? projectInvestmentResearchForX(intelligence.researchArtifact, "LEARNING") : null;
+  const facts = researchProjection?.eligible ? researchProjection.facts : [
     ...portfolio.positions
       .filter((p) => p.pnlPct !== null)
       .map((p) => `${p.name}（${p.code}）評価損益率 ${p.pnlPct?.toFixed(1)}%`),
@@ -97,7 +101,7 @@ export async function tryGenerateInvestmentDraft(input: {
   ];
   const seed: InvestmentPostSeed = {
     facts,
-    aiInterpretation: brief.aiInterpretation,
+    aiInterpretation: researchProjection?.eligible ? researchProjection.interpretation : brief.aiInterpretation,
     // Phase1: 本人承認済みのPERSONAL OPINION登録UIは未実装。常に未設定のfallback経路（記録/観察/学びとして書く）を使う
     personalOpinion: undefined,
     disallowedNumbers: disallowedNumberStrings(portfolio),

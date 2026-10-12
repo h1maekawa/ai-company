@@ -128,6 +128,31 @@ export function deriveXSkillCandidatesFromCeoFeedback(
   return candidates;
 }
 
+/** Investment model feedback enters the existing non-executable SkillCandidate review boundary. */
+export function deriveInvestmentThinkingSkillCandidatesFromFeedback(
+  feedback: HumanDecisionFeedback[] | undefined,
+  existing: SkillCandidate[],
+  now = new Date()
+): SkillCandidate[] {
+  const candidates = [...existing];
+  for (const record of feedback ?? []) {
+    if (record.actor !== "ceo" || !record.confirmedByHuman || record.departmentId !== "fund" || !record.note?.trim()) continue;
+    const signature = `fund|investment-thinking-feedback|${record.id}`;
+    const id = `skill_candidate_${hash(signature)}`;
+    if (candidates.some((candidate) => candidate.id === id)) continue;
+    const observedAt = record.createdAt || now.toISOString();
+    candidates.push({
+      id, patternSignature: signature, name: `investment-thinking-${hash(record.note).slice(0, 8)}`,
+      purpose: "Evidence-backed Investment Thinking Model improvement proposal for human review",
+      departmentId: "fund", sourceMissionIds: [], sourceKnowledgeIds: [`human-feedback:${record.id}`], repeatedSteps: ["investment-thinking-model-review"], usageCount: 1,
+      suggestedAgents: ["fund-research"], suggestedCategory: "research", inputDescription: "Human-confirmed investment research feedback; full text remains in the audit record", outputDescription: "Non-executable versioned thinking-model change candidate",
+      reason: "Approval records intent only. It cannot mutate the active model, registry, trade authority, broker, or portfolio.", existingSimilarSkillIds: [], status: "PROPOSED", createdAt: observedAt, updatedAt: observedAt, lastObservedAt: observedAt,
+      executable: false, engineeringRequestAllowed: false, registryMutationAllowed: false,
+    });
+  }
+  return candidates;
+}
+
 export function discoverSkillCandidates(state: ExecutionState, skills: SkillDefinition[], now = new Date()): SkillCandidate[] {
   const grouped = new Map<string, Observation[]>();
   for (const observation of observations(state)) grouped.set(observation.signature, [...(grouped.get(observation.signature) ?? []), observation]);
