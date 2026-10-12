@@ -1,6 +1,7 @@
 "use client";
 
 import { Coffee } from "lucide-react";
+import Link from "next/link";
 import { Skeleton } from "@/components/ui/primitives";
 import { DepartmentPanel } from "./DepartmentPanel";
 import { TaskBoard } from "./TaskBoard";
@@ -52,6 +53,12 @@ export function CompanyOfficeOverview({
             <Coffee aria-hidden="true" className="h-3.5 w-3.5" /> Office online
           </span>
         </div>
+        <Link
+          href="/company/office-map"
+          className="mt-3 inline-flex items-center gap-1 text-[11px] text-brand hover:underline"
+        >
+          🗺️ 2D フロアマップで見る →
+        </Link>
         <dl className="mt-4 flex flex-wrap gap-2">
           <Stat label="稼働中" value={`${view.people.working} 人`} />
           <Stat label="待機" value={`${view.people.idle} 人`} />

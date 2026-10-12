@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { DepartmentOverview } from "@/components/mobile-ceo/DepartmentOverview";
 
 export const dynamic = "force-dynamic";
@@ -10,9 +11,17 @@ function greeting() {
 export default function HomePage() {
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl overflow-x-hidden px-4 py-8 sm:px-8 lg:py-10">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">AI Company</p>
-        <h1 className="mt-1 text-2xl font-bold text-white">{greeting()}</h1>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">AI Company</p>
+          <h1 className="mt-1 text-2xl font-bold text-white">{greeting()}</h1>
+        </div>
+        <Link
+          href="/company/office-map"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/60 px-3 text-sm font-medium text-violet-200 hover:border-violet-400"
+        >
+          🗺️ オフィスマップ
+        </Link>
       </header>
       <div className="mt-6 space-y-7">
         <DepartmentOverview />
