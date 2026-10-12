@@ -203,10 +203,14 @@ export const PURPOSE_BOUNDS: Record<keyof PurposeMix, [number, number]> = {
   reach: [50, 80], noteBridge: [10, 35], monetize: [5, 20],
 };
 
-/** 投稿目的 → 学習・配分の bucket。trust は信頼獲得でも「収益化」ではないので reach 側に入れる */
+/**
+ * 投稿目的 → 学習・配分の bucket。trust は信頼獲得でも「収益化」ではないので reach 側に入れる。
+ * learn（PR-XT2）も同様に学び共有＝信頼構築であり収益目的ではないため reach 側に入れる。
+ */
 export const PURPOSE_BUCKET: Record<ContentPurpose, PurposeBucket> = {
   reach: "reach",
   trust: "reach",
+  learn: "reach",
   "note-bridge": "noteBridge",
   affiliate: "monetize",
   "paid-note": "monetize",

@@ -58,6 +58,10 @@ npx tsc \
   app/lib/content/creator-thinking/contentThesis.ts \
   app/lib/content/creator-thinking/creatorFit.ts \
   app/lib/content/creator-thinking/investmentProjection.ts \
+  app/lib/content/creator-thinking/creatorLearning.ts \
+  app/lib/content/creator-thinking/creatorLearningStore.ts \
+  app/lib/content/creator-thinking/modelVersioning.ts \
+  app/lib/content/creator-thinking/modelVersioningStore.ts \
   app/lib/ai/client.ts app/lib/ai/gemini.ts app/lib/ai/groq.ts app/lib/ai/ollama.ts app/lib/ai/types.ts \
   app/lib/utils/redis.ts \
   --outDir "$DIST" --module commonjs --target es2020 \

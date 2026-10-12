@@ -16,6 +16,12 @@ npx tsc app/lib/memory/artifacts.ts "${TSC_FLAGS[@]}"
 npx tsc app/lib/company/execution/reviewer.ts "${TSC_FLAGS[@]}"
 npx tsc app/lib/company/runtime/canaryContract.ts "${TSC_FLAGS[@]}"
 
+# PR-XT2: Creator Skill Promotion Gate（section8/9/10）の実挙動を検証する。
+# skillCandidates.tsは既存Store（ExecutionState.skillCandidates）の型・関数を持つため依存が広いが、
+# エラー無くコンパイルできることを別途確認済み（app/lib配下に出力が展開される）。
+npx tsc app/lib/company/evolution/skillCandidates.ts "${TSC_FLAGS[@]}"
+npx tsc app/lib/content/creator-thinking/skillPromotionBridge.ts "${TSC_FLAGS[@]}"
+
 node --test tests/architecture/*.test.mjs
 echo "✅ Architecture and Vault contracts are valid"
 

@@ -336,13 +336,19 @@ export type ViewpointLibraryEntry = {
 
 /* ─── コンテンツ設計 ───────────────────────────── */
 
+/**
+ * "learn"（PR-XT2）: 前川本人の学びを共有する投稿目的。収益化目的ではなく、
+ * trust同様に信頼構築（reach bucket）として扱う。PURPOSE_BOUNDS等の配分比率は
+ * 変更せず、note/growthLoop.tsのPURPOSE_BUCKETへreach側として追加するのみ。
+ */
 export type ContentPurpose =
   | "reach"
   | "trust"
   | "note-bridge"
   | "affiliate"
   | "paid-note"
-  | "x-monetization";
+  | "x-monetization"
+  | "learn";
 
 export type ContentDestination = "none" | "free-note" | "paid-note" | "affiliate-direct";
 

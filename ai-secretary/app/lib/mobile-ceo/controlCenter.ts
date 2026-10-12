@@ -119,7 +119,12 @@ export function departmentSkillIds(skills: SkillLike[], employeeIds: string[]): 
 /* ─── CEO補足（append-only） ─────────────────────── */
 
 export const HUMAN_NOTE_MAX_LENGTH = 1000;
-export type HumanDecisionTargetType = "skill-improvement" | "skill-candidate" | "constitution-proposal";
+/** "creator-model-change"はPR-XT2で追加。Creator Thinking ModelのModelChangeCandidate承認に使う（既存の3値はそのまま） */
+export type HumanDecisionTargetType =
+  | "skill-improvement"
+  | "skill-candidate"
+  | "constitution-proposal"
+  | "creator-model-change";
 
 /**
  * AI提案本文とは別に保存する、人間の判断と補足。
