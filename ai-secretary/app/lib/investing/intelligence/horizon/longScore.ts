@@ -6,6 +6,18 @@ import type { HorizonAssessment } from "./types";
 /** 1 Direct .. 5 Indirect -> confidence multiplier, per INVESTMENT_THINKING_MODEL.md §Causal Distance. */
 const CAUSAL_DISTANCE_CONFIDENCE: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 1, 2: 0.85, 3: 0.7, 4: 0.55, 5: 0.4 };
 
+/** Single source of truth for LONG's weights (sum to 100). See SHORT_SCORE_WEIGHTS for why this is exported. */
+export const LONG_SCORE_WEIGHTS: Record<string, number> = {
+  futureDemandTam: 20,
+  competitiveAdvantage: 15,
+  revenueEpsGrowth: 15,
+  fcfRoic: 15,
+  marginQuality: 10,
+  balanceSheet: 5,
+  structuralBottleneck: 10,
+  valuation: 10,
+};
+
 /**
  * LONG (6 months - 3+ years) per INVESTMENT_THINKING_MODEL.md §Long Score.
  *
@@ -42,15 +54,16 @@ export function buildLongTermAssessment(opportunity: InvestmentOpportunity, rese
 
   const structuralBottleneck = !bottleneck || bottleneck.confidence === null ? null : { score: bottleneck.confidence * 100, reason: bottleneck.bottleneck, evidenceRefs: bottleneck.evidenceRefs };
 
+  const w = LONG_SCORE_WEIGHTS;
   const factors = [
-    buildFactor("futureDemandTam", "Future Demand / TAM", 20, futureDemand),
-    buildFactor("competitiveAdvantage", "Competitive Advantage", 15, null),
-    buildFactor("revenueEpsGrowth", "Revenue / EPS Growth", 15, revenueEpsGrowth),
-    buildFactor("fcfRoic", "FCF / ROIC", 15, fcfRoic),
-    buildFactor("marginQuality", "Margin Quality", 10, marginQuality),
-    buildFactor("balanceSheet", "Balance Sheet", 5, null),
-    buildFactor("structuralBottleneck", "Structural Bottleneck", 10, structuralBottleneck),
-    buildFactor("valuation", "Valuation", 10, null),
+    buildFactor("futureDemandTam", "Future Demand / TAM", w.futureDemandTam, futureDemand),
+    buildFactor("competitiveAdvantage", "Competitive Advantage", w.competitiveAdvantage, null),
+    buildFactor("revenueEpsGrowth", "Revenue / EPS Growth", w.revenueEpsGrowth, revenueEpsGrowth),
+    buildFactor("fcfRoic", "FCF / ROIC", w.fcfRoic, fcfRoic),
+    buildFactor("marginQuality", "Margin Quality", w.marginQuality, marginQuality),
+    buildFactor("balanceSheet", "Balance Sheet", w.balanceSheet, null),
+    buildFactor("structuralBottleneck", "Structural Bottleneck", w.structuralBottleneck, structuralBottleneck),
+    buildFactor("valuation", "Valuation", w.valuation, null),
   ];
 
   const assessment = buildAssessment("LONG", factors, opportunity, now);

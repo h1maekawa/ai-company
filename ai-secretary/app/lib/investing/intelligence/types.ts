@@ -121,4 +121,20 @@ export type InvestmentDecisionRecord = {
   opportunityScore: number | null;
   scenario: "BULL" | "BASE" | "BEAR";
   timestamp: string;
+
+  /**
+   * PR-E: Decision Snapshot, additive and optional. `opportunityId` alone cannot be resolved
+   * back to a ticker once a later day's IntelligenceToday has overwritten `opportunities` with a
+   * different day's candidates, so `ticker`/`theme` are captured here directly. The three
+   * Horizon snapshots and Triple Gate are copied verbatim from the opportunity already computed
+   * that same run — never recomputed later — so Performance Review can never silently use a
+   * score the decision-maker did not actually see. Records created before PR-E simply lack
+   * these fields; Decision Performance treats that as DATA_INCOMPLETE, not a guess.
+   */
+  ticker?: string;
+  theme?: string;
+  shortTermSnapshot?: import("./horizon/types").HorizonAssessment;
+  midTermSnapshot?: import("./horizon/types").HorizonAssessment;
+  longTermSnapshot?: import("./horizon/types").HorizonAssessment;
+  tripleGateSnapshot?: import("./horizon/types").TripleGate;
 };
