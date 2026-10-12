@@ -18,6 +18,10 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
     marketRegime: today.marketRegime, opportunityScore: opportunity.score,
     scenario: (["BULL", "BASE", "BEAR"].includes(body.scenario ?? "") ? body.scenario : "BASE") as InvestmentDecisionRecord["scenario"],
     timestamp: new Date().toISOString(),
+    // PR-E Decision Snapshot: copied as-is from the opportunity already computed this run, never recomputed.
+    ticker: opportunity.ticker, theme: opportunity.theme,
+    shortTermSnapshot: opportunity.shortTerm, midTermSnapshot: opportunity.midTerm, longTermSnapshot: opportunity.longTerm,
+    tripleGateSnapshot: opportunity.tripleGate,
   };
   await appendInvestmentDecision(record);
   return NextResponse.json({ record }, { status: 201 });
