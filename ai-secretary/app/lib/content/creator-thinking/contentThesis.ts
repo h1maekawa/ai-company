@@ -4,7 +4,7 @@
  * 直接本文を生成せず、必ずこのThesisを経由させるための純関数。
  */
 
-import type { AIThinkingModelOutput, ContentThesis, CreatorContentPurpose, InvestmentProjection } from "./types";
+import type { AIThinkingModelOutput, ContentThesis, ContentPurpose, InvestmentProjection } from "./types";
 
 function newThesisId(): string {
   return `thesis_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -12,7 +12,7 @@ function newThesisId(): string {
 
 export function buildContentThesisFromAIThinking(input: {
   output: AIThinkingModelOutput;
-  purpose: CreatorContentPurpose;
+  purpose: ContentPurpose;
   creatorFitReason: string;
 }): ContentThesis {
   const { output } = input;
@@ -33,7 +33,7 @@ export function buildContentThesisFromAIThinking(input: {
 /** Investment系はRead-only Projectionからのみ生成する。投資ロジック自体はここに持たない */
 export function buildContentThesisFromInvestmentProjection(input: {
   projection: InvestmentProjection;
-  purpose: CreatorContentPurpose;
+  purpose: ContentPurpose;
   creatorFitReason: string;
 }): ContentThesis {
   const { projection } = input;

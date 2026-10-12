@@ -14,6 +14,9 @@
 
 import type { BrandPersonality } from "../../note/types";
 import type { FactRef, ResearchFreshness } from "../../company/research/types";
+import type { ContentPurpose } from "../../note/research/types";
+
+export type { ContentPurpose };
 
 export type CreatorThinkingModelStatus = "DRAFT" | "ACTIVE" | "DEPRECATED";
 
@@ -135,13 +138,19 @@ export type AIThinkingStepAnswers = {
 /* ─── Content Thesis（section17） ──────────────────────── */
 
 /**
- * 各投稿のPurpose（section9）。既存の ContentPurpose（note/research/types.ts、
- * reach/trust/note-bridge/affiliate/paid-note/x-monetization）や ContentGoal とは別軸。
- * 既存軸の置き換えではなく、Creator Thinking Model独自の目的分類として新設する。
- * 既存軸との対応付けはUNKNOWNのため、ここでは推測しない（将来PRで必要なら検討）。
+ * 各投稿のPurpose（section9: LEARN/GROW/TRUST/MONETIZE）。
+ *
+ * 再監査の結果、新しい並行SSOT/型は作らず既存の ContentPurpose
+ * （note/research/types.ts、reach/trust/note-bridge/affiliate/paid-note/x-monetization）を
+ * そのまま再利用する。既存の PURPOSE_BUCKET（note/growthLoop.ts）が reach/trust→reach,
+ * note-bridge→noteBridge, affiliate/paid-note/x-monetization→monetize という学習bucketへの
+ * mappingを既に持っており、section9の GROW(≈reach)/TRUST(=trust)/MONETIZE(≈monetize) と
+ * 概念が重複するため、別軸を新設する根拠がない。
+ *
+ * 既知のギャップ: ContentPurposeには「LEARN」に対応する値が無い（trustが信頼獲得目的であり
+ * 学習目的ではない）。これは推測で値を追加せず、Human Reviewで確認すべき点として残す
+ * （ContentPurposeへの値追加は既存SSOTの拡張であり、XT1の変更範囲を超える）。
  */
-export type CreatorContentPurpose = "LEARN" | "GROW" | "TRUST" | "MONETIZE";
-
 /** Draft前に必ず生成する。ResearchItemから直接本文を生成しないための中間契約 */
 export type ContentThesis = {
   id: string;
@@ -152,7 +161,7 @@ export type ContentThesis = {
   myInterpretation: string;
   audienceTakeaway: string;
   unknownCaveat: string[];
-  intendedPurpose: CreatorContentPurpose;
+  intendedPurpose: ContentPurpose;
   creatorFitReason: string;
   createdAt: string;
 };

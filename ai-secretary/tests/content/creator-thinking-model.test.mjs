@@ -94,25 +94,31 @@ test("ContentThesis: AIThinkingModelOutputから生成し、Research本体では
   });
   const thesis = contentThesis.buildContentThesisFromAIThinking({
     output,
-    purpose: "LEARN",
+    purpose: "trust",
     creatorFitReason: "自分の学びになる",
   });
   assert.equal(thesis.sourceThinkingOutputId, output.id);
-  assert.equal(thesis.intendedPurpose, "LEARN");
+  assert.equal(thesis.intendedPurpose, "trust");
   assert.deepEqual(thesis.unknownCaveat, output.unknown);
   assert.ok(thesis.whatHappened.length >= 0);
 });
 
-test("ContentThesis: Purposeは LEARN/GROW/TRUST/MONETIZE の4値のみ", () => {
+test("ContentThesis: intendedPurposeは既存ContentPurpose（note/research/types.ts）をそのまま再利用する（新しい並行Purpose軸を作らない）", () => {
   const output = aiThinkingModel.buildAIThinkingModelOutput({
     sourceTopicKey: "topic_1",
     freshness: "FRESH",
     steps: validSteps(),
   });
-  for (const purpose of ["LEARN", "GROW", "TRUST", "MONETIZE"]) {
+  for (const purpose of ["reach", "trust", "note-bridge", "affiliate", "paid-note", "x-monetization"]) {
     const thesis = contentThesis.buildContentThesisFromAIThinking({ output, purpose, creatorFitReason: "r" });
     assert.equal(thesis.intendedPurpose, purpose);
   }
+});
+
+test("Creator Thinking Model層はCreatorContentPurposeという独自Purpose型を持たない（重複SSOT化していないことの確認）", () => {
+  const src = fs.readFileSync("app/lib/content/creator-thinking/types.ts", "utf8");
+  assert.doesNotMatch(src, /CreatorContentPurpose/);
+  assert.match(src, /import type \{ ContentPurpose \} from "\.\.\/\.\.\/note\/research\/types"/);
 });
 
 /* ─── Creator Fit ───────────────────────────────────────── */
@@ -190,7 +196,7 @@ test("Content Thesisは Investment Projectionからも生成できる（Investme
   const projection = investmentProjection.projectInvestmentThinking(artifact);
   const thesis = contentThesis.buildContentThesisFromInvestmentProjection({
     projection,
-    purpose: "TRUST",
+    purpose: "trust",
     creatorFitReason: "自分のポートフォリオの学びと一致する",
   });
   assert.equal(thesis.sourceThinkingOutputId, "topic_semi");
