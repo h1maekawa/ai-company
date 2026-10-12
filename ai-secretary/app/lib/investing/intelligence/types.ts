@@ -74,6 +74,13 @@ export type InvestmentOpportunity = {
 };
 
 export type IntelligenceToday = {
+  /**
+   * PR-B: structured research (Market Hypothesis -> Market Structure -> Picks & Shovels ->
+   * Bottleneck -> Causal Distance -> Company Comparison), additive and optional. Absent on
+   * older saved snapshots and when building fails; never required by existing consumers of
+   * IntelligenceToday.
+   */
+  research?: import("./research/types").InvestmentResearchBundle;
   asOf: string;
   marketRegime: MarketRegime;
   marketRegimeDetail: MarketRegimeArtifact;

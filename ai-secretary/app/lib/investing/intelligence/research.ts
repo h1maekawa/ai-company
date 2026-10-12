@@ -13,6 +13,7 @@ import { buildInvestmentCandidates, discoverThemeGraphCandidates } from "./theme
 import { INVESTMENT_INTELLIGENCE_CONFIG } from "./config";
 import type { IntelligenceFreshness, IntelligenceToday, InvestmentEvidence, ProviderStatus } from "./types";
 import { buildThemeGraph, scoreTheme } from "./themeIntelligence";
+import { buildInvestmentResearchBundle } from "./research/orchestrator";
 
 function freshnessOf(date: string | null, now: Date): IntelligenceFreshness { if (!date) return "unknown"; return now.getTime() - new Date(`${date}T23:59:59Z`).getTime() <= 4 * 86_400_000 ? "daily" : "stale"; }
 export { investmentIntelligenceEnabled } from "./flags";
@@ -30,10 +31,12 @@ export async function runDailyInvestmentResearch(now = new Date()): Promise<Inte
     max: 30,
   });
   let secOk = 0; let secErrors = 0;
+  const fundamentalsByTicker = new Map<string, import("./types").FundamentalSnapshot>();
   const evaluateCandidates = (items: typeof candidates) => Promise.all(items.map(async (item) => {
     const ticker = item.ticker;
     const [bars, fundamentalResult] = await Promise.all([provider.getDailyBars(ticker, 30), fetchSecFundamentals(ticker, cikMap.get(ticker) ?? null)]);
     if (fundamentalResult.status === "OK") secOk++; else if (fundamentalResult.status === "ERROR") secErrors++;
+    fundamentalsByTicker.set(ticker, fundamentalResult.data);
     const last = bars?.at(-1) ?? null; const evidence: InvestmentEvidence[] = [];
     if (last) evidence.push({ id: `market_${ticker}_${last.date}`, sourceType: "market", sourceName: provider.name, sourceUrl: null, publishedAt: last.date, fetchedAt: now.toISOString(), fact: `${ticker} 終値 ${last.close}、出来高 ${last.volume}`, metric: "ohlcv", value: last.close, freshness: freshnessOf(last.date, now) });
     if (fundamentalResult.data.sourceUrl) evidence.push({ id: `sec_${ticker}_${fundamentalResult.data.observedAt}`, sourceType: "research", sourceName: "SEC EDGAR", sourceUrl: fundamentalResult.data.sourceUrl, publishedAt: fundamentalResult.data.observedAt, fetchedAt: now.toISOString(), fact: `${ticker} revenue ${fundamentalResult.data.revenue ?? "unknown"}, FCF ${fundamentalResult.data.fcf ?? "unknown"}`, metric: "fundamentals", value: fundamentalResult.data.revenue, freshness: fundamentalResult.data.freshness });
@@ -52,7 +55,15 @@ export async function runDailyInvestmentResearch(now = new Date()): Promise<Inte
   const themeStrength = finalThemeNames.map((name) => scoreTheme(name, { news: newsResult.items, sectors, opportunities }));
   const themeGraph = buildThemeGraph(themeStrength.filter((item) => item.hot).map((item) => item.name), themeStrength);
   const providerStatus: ProviderStatus[] = [...macroResult.statuses, { provider: "SerpAPI", status: newsResult.status, checkedAt: now.toISOString() }, { provider: "SEC", status: !process.env.SEC_USER_AGENT ? "NOT_CONFIGURED" : secErrors > 0 && secOk === 0 ? "ERROR" : "OK", checkedAt: now.toISOString(), detail: `${secOk} symbols loaded` }];
-  const result: IntelligenceToday = { asOf: now.toISOString(), runId: `investment-${tokyoDateKey(now)}`, marketRegime, marketRegimeDetail, marketEvidence, macro: macroResult.macro, economicNews: newsResult.items, sectors, providerStatus,
+  // PR-B: structured research is additive and must never break the existing daily artifact.
+  let research: IntelligenceToday["research"];
+  try {
+    const hotThemes = [...new Set(themeStrength.filter((item) => item.hot).map((item) => item.name))];
+    research = buildInvestmentResearchBundle({ now, marketRegime, themes: hotThemes, candidates: [...candidates, ...graphCandidates], opportunities, fundamentals: fundamentalsByTicker, news: newsResult.items, graph: themeGraph });
+  } catch (error) {
+    console.error("[investing/research] Research Structure構築に失敗（既存artifactは継続します）:", error);
+  }
+  const result: IntelligenceToday = { asOf: now.toISOString(), runId: `investment-${tokyoDateKey(now)}`, marketRegime, marketRegimeDetail, marketEvidence, macro: macroResult.macro, economicNews: newsResult.items, sectors, providerStatus, research,
     sectorStrength: sectors.map((item) => ({ name: item.name, score: item.score, reason: item.score === null ? "市場データ未取得" : `${item.proxy}: 20日momentum ${item.momentum20d?.toFixed(1) ?? "—"}%` })),
     themeStrength, themeGraph, opportunities,
     portfolioAlerts: opportunities.filter((item) => item.portfolioAction === "RECHECK_THESIS" && (item.relativeVolume ?? 0) >= 2).map((item) => ({ ticker: item.ticker, level: "warning" as const, message: `RVOL ${item.relativeVolume?.toFixed(2)}x。投資仮説を再確認してください` })), economicEvents: [],
