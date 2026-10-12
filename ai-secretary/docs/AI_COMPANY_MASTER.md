@@ -265,6 +265,11 @@ This section reports repository capability. It does not claim a live provider, C
 
 ### Phase C — Investment Business
 
+- [x] C0: Investment Architecture Foundation — canonical `Investment Thinking Model v1`
+  (`docs/INVESTMENT_THINKING_MODEL.md`), 7-department responsibility map
+  (`docs/INVESTMENT_DEPARTMENT_STRUCTURE.md`), and 16 Investment Skill playbooks
+  (`skills/investing/`, registered in `app/lib/skills/registry.ts`) exist. No runtime behavior
+  changed; existing Investment Intelligence is reused, not duplicated.
 - [ ] C1: audit providers and evidence gaps
 - [ ] C2–C3: complete macro and financial providers
 - [ ] C4–C6: complete news/sector intelligence, picks-and-shovels analysis, and opportunity scoring
@@ -292,6 +297,7 @@ This section reports repository capability. It does not claim a live provider, C
 | 2026-10-09 | Existing stores are preferred; new stores require a documented representational gap | avoid parallel truth and migration debt |
 | 2026-10-09 | Typed canonical artifacts replace raw-text handoffs | preserve provenance, availability, policy, and lineage |
 | 2026-10-09 | Human gates and R4 prohibitions cannot be bypassed by autonomy | external impact and irreversible risk remain human-controlled |
+| 2026-10-12 | Investment Architecture Foundation (thinking model, department map, 16 Skill playbooks) lands before Investment Research/Horizon/Portfolio/Performance/Learning PRs | prevent duplicate Research/Decision stores as Investment Business expands; reuse existing `app/lib/investing/` and `app/lib/fund/` rather than re-platforming |
 | 2026-10-09 | Missing data is not zero and runtime health is not inferred from code presence | prevent false operational or business claims |
 | 2026-10-09 | Real products use real images; AI imagery is limited to background, illustration, decoration, and motifs | prevent product fabrication |
 | 2026-10-10 | Continue with B1–B9; defer A4/A5 until concrete provider or cost/observability boundaries exist | A1–A3 supply the ownership contracts required for current SNS delivery without speculative foundations |

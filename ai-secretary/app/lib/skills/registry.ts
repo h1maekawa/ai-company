@@ -208,6 +208,108 @@ export const SKILL_REGISTRY: SkillDefinition[] = [
     allowedSecretaries: ["executive-assistant", "personal-finance"], inputSchemaDescription: "revenueAdjustmentPercent / additionalInflows / additionalOutflows / adjustments", outputSchemaDescription: "cashflow:v1 Base/Scenario comparison",
   },
 
+  // ─── Investment Department (PR-A, Investment Architecture Foundation) ──────
+  // 16 Skills decomposing docs/INVESTMENT_THINKING_MODEL.md (ai-secretary/docs/)。
+  // 各playbookは skills/investing/<id>/SKILL.md。既存 app/lib/investing/* ・app/lib/fund/* を
+  // 再利用するだけで、新しいProvider/Research Store/Decision Store/Broker実行は一切追加しない。
+  // 全件 status: "planned"（run()実装なし）。最終GO/WAIT/PASS・発注・資金移動はHUMAN_ONLY。
+  {
+    id: "market-hypothesis", name: "Market Hypothesis", category: "research", status: "planned",
+    description: "既存news/macro providerの evidence から市場仮説をHYPOTHESISとして組み立てる。playbook: skills/investing/market-hypothesis/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "EconomicNewsItem[]・MacroSnapshot・MarketRegimeArtifact",
+    outputSchemaDescription: "confirming/invalidating evidenceIds付きのHYPOTHESIS claim（evidence無しはUNKNOWN）",
+  },
+  {
+    id: "long-term-demand", name: "Long-Term Demand", category: "research", status: "planned",
+    description: "future_demand役割のNews Impactから耐久的需要の有無を判定する。playbook: skills/investing/long-term-demand/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "EconomicNewsItem[]（role: future_demand）・ThemeStrength[]",
+    outputSchemaDescription: "SUPPORTED/PARTIAL/UNKNOWNの需要ステータス",
+  },
+  {
+    id: "market-structure", name: "Market Structure", category: "research", status: "planned",
+    description: "既存InvestmentThemeGraphを読み取り、市場構造をnarrativeとして記述する。playbook: skills/investing/market-structure/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "InvestmentThemeGraph・SectorSnapshot[]",
+    outputSchemaDescription: "evidenceRefs付きの構造ナラティブ（新規グラフは作らない）",
+  },
+  {
+    id: "picks-and-shovels", name: "Picks & Shovels", category: "research", status: "planned",
+    description: "需要仮説のインフラ受益者をevidenced dependencyで識別する。playbook: skills/investing/picks-and-shovels/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "InvestmentThemeGraph・InvestmentCandidate[]",
+    outputSchemaDescription: "evidenceRefs付きインフラ受益者リスト（テーマ類似のみでは不可）",
+  },
+  {
+    id: "bottleneck-discovery", name: "Bottleneck Discovery", category: "research", status: "planned",
+    description: "明示的な供給制約evidenceのみからボトルネックを抽出する。playbook: skills/investing/bottleneck-discovery/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "EconomicNewsItem[]",
+    outputSchemaDescription: "EVIDENCEDステータス付きボトルネック候補（evidence無し=無しと報告）",
+  },
+  {
+    id: "causal-distance", name: "Causal Distance", category: "research", status: "planned",
+    description: "需要仮説からCompanyまでの因果距離（1 Direct〜5 Indirect）を記録する。playbook: skills/investing/causal-distance/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "InvestmentCandidate.themeGraphDiscoveries・InvestmentThemeGraph",
+    outputSchemaDescription: "候補ごとの因果距離とevidence（経路無しはUNKNOWN）",
+  },
+  {
+    id: "candidate-company-discovery", name: "Candidate Company Discovery", category: "research", status: "planned",
+    description: "保有・Watchlist・テーマ/グラフ由来の候補から3〜5社を比較ショートリスト化する。playbook: skills/investing/candidate-company-discovery/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "InvestmentCandidate[]",
+    outputSchemaDescription: "candidateSources付き3〜5社ショートリスト（単独指定は人間明示時のみ）",
+  },
+  {
+    id: "fundamental-research", name: "Fundamental Research", category: "research", status: "planned",
+    description: "SEC providerベースのFundamentalSnapshotを収集・整理する。playbook: skills/investing/fundamental-research/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "ticker別FundamentalSnapshot",
+    outputSchemaDescription: "source/freshness付きFundamentalsテーブル（欠損はnull）",
+  },
+  {
+    id: "valuation-research", name: "Valuation Research", category: "research", status: "planned",
+    description: "評価済み（fresh）peer 3社以上でのみ相対バリュエーションを行う。playbook: skills/investing/valuation-research/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "ショートリストのFundamentalSnapshot[]",
+    outputSchemaDescription: "相対バリュエーション、またはINSUFFICIENT（理由付き）",
+  },
+  {
+    id: "risk-research", name: "Risk Research", category: "research", status: "planned",
+    description: "既存OpportunityRiskFlagをカテゴリ別に整理し、不明確率はUNKNOWNのまま保持する。playbook: skills/investing/risk-research/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "InvestmentOpportunity.riskFlags",
+    outputSchemaDescription: "カテゴリ別リスクリスト（probability: LOW/MEDIUM/HIGH/UNKNOWN）",
+  },
+  {
+    id: "short-term-analysis", name: "Short-Term Analysis", category: "research", status: "planned",
+    description: "SHORT（1営業日〜4週間）視点のRVOL/モメンタム/Catalystをnarrativeで出力する。playbook: skills/investing/short-term-analysis/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "InvestmentOpportunity（既存score/breakdown）",
+    outputSchemaDescription: "SHORT視点ナラティブ（型付きHorizonAssessmentはPR-C）",
+  },
+  {
+    id: "mid-term-analysis", name: "Mid-Term Analysis", category: "research", status: "planned",
+    description: "MID（1〜6か月）視点の需要/決算成長/セクター強度をnarrativeで出力する。playbook: skills/investing/mid-term-analysis/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "InvestmentOpportunity・FundamentalSnapshot",
+    outputSchemaDescription: "MID視点ナラティブ（型付きHorizonAssessmentはPR-C）",
+  },
+  {
+    id: "long-term-analysis", name: "Long-Term Analysis", category: "research", status: "planned",
+    description: "LONG（6か月〜3年以上）視点のTAM/FCF/ROIC/構造的ボトルネックをnarrativeで出力する。playbook: skills/investing/long-term-analysis/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "InvestmentOpportunity・FundamentalSnapshot",
+    outputSchemaDescription: "LONG視点ナラティブ（型付きHorizonAssessmentはPR-C）",
+  },
+  {
+    id: "opportunity-decision", name: "Opportunity Decision", category: "research", status: "planned",
+    description: "既存decision APIで人間が判断する前に、Research要約を組み立てる（判断そのものは書かない）。playbook: skills/investing/opportunity-decision/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "他15 Skillの出力一式",
+    outputSchemaDescription: "既存decision formに添える要約（GO/WAIT/PASSはHUMAN_ONLY）",
+  },
+  {
+    id: "performance-review", name: "Performance Review", category: "calculation", status: "planned",
+    description: "GO/WAIT/PASS後のリターン・drawdownをLook-Aheadなしで追跡する。playbook: skills/investing/performance-review/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "InvestmentDecisionRecord[]（型付きDecisionPerformanceはPR-E）",
+    outputSchemaDescription: "1D/5D/20D/60D/120D/250D return・drawdown・gain（PR-E以降）",
+  },
+  {
+    id: "investment-learning", name: "Investment Learning", category: "calculation", status: "planned",
+    description: "Win Rate/EV/Factor Attributionを集計し、Weight変更はRecommendationのみ提示する（既存note/X向けlearningBrief.tsは変更しない）。playbook: skills/investing/investment-learning/SKILL.md",
+    allowedSecretaries: ["personal-fund"], inputSchemaDescription: "DecisionPerformance[]（PR-E以降）",
+    outputSchemaDescription: "Win Rate/EV/Drawdown/WeightRecommendation（サンプル30未満はINSUFFICIENT_SAMPLE、PR-F以降）",
+  },
+
 ];
 
 /**
