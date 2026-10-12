@@ -22,6 +22,9 @@ npx tsc app/lib/company/runtime/canaryContract.ts "${TSC_FLAGS[@]}"
 npx tsc app/lib/company/evolution/skillCandidates.ts "${TSC_FLAGS[@]}"
 npx tsc app/lib/content/creator-thinking/skillPromotionBridge.ts "${TSC_FLAGS[@]}"
 
+# PR-XT3: Creator Thinking Model Runtime Integration（SHADOW projection）の実挙動を検証する。
+npx tsc app/lib/content/creator-thinking/runtimeProjection.ts "${TSC_FLAGS[@]}"
+
 node --test tests/architecture/*.test.mjs
 echo "✅ Architecture and Vault contracts are valid"
 
