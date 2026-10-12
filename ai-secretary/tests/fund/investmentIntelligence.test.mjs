@@ -10,6 +10,56 @@ const { investmentIntelligenceEnabled } = await import(path.join(dist, "intel/in
 const { classifyNewsDirection, classifyNewsImpacts, newsTrustTier } = await import(path.join(dist, "intel/investing/intelligence/newsImpact.js"));
 const { buildInvestmentCandidates, discoverThemeGraphCandidates, normalizeTheme, sectorsForThemes } = await import(path.join(dist, "intel/investing/intelligence/themes.js"));
 const { buildThemeGraph, scoreTheme, detectMeaningfulThemeChanges } = await import(path.join(dist, "intel/investing/intelligence/themeIntelligence.js"));
+const { deriveInvestmentPhase2Readiness } = await import(path.join(dist, "intel/investing/intelligence/readinessProjection.js"));
+
+test("Phase 2 readiness uses recorded evidence and never infers configured providers as OK", () => {
+  const base = {
+    generatedAt: "2026-10-12T00:00:00.000Z",
+    environment: {
+      investmentIntelligenceFlag: undefined,
+      fredApiKeyConfigured: false,
+      secUserAgentConfigured: true,
+      serpApiEnabled: true,
+      serpApiKeyConfigured: true,
+    },
+    providerEvidence: [{ provider: "Yahoo", status: "OK", checkedAt: "2026-10-11T00:00:00.000Z" }],
+    portfolio: { available: true, positionCount: 2, source: "holdings_csv", updatedAt: "2026-10-10" },
+    watchlist: { themeCount: 1, itemCount: 3, updatedAt: "2026-10-10" },
+  };
+  const result = deriveInvestmentPhase2Readiness(base);
+  assert.equal(result.featureFlag.status, "NOT_CONFIGURED");
+  assert.equal(result.providers.find((item) => item.provider === "Yahoo").status, "OK");
+  assert.equal(result.providers.find((item) => item.provider === "FRED").status, "NOT_CONFIGURED");
+  assert.equal(result.providers.find((item) => item.provider === "SEC").status, "SKIPPED");
+  assert.equal(result.providers.find((item) => item.provider === "SerpAPI").status, "SKIPPED");
+  assert.equal(result.productionMutationPerformed, false);
+});
+
+test("current missing configuration overrides stale provider evidence and missing data stays unavailable", () => {
+  const result = deriveInvestmentPhase2Readiness({
+    generatedAt: "2026-10-12T00:00:00.000Z",
+    environment: {
+      investmentIntelligenceFlag: "false",
+      fredApiKeyConfigured: false,
+      secUserAgentConfigured: false,
+      serpApiEnabled: false,
+      serpApiKeyConfigured: false,
+    },
+    providerEvidence: [
+      { provider: "FRED", status: "OK", checkedAt: "2026-01-01T00:00:00.000Z" },
+      { provider: "SEC", status: "OK", checkedAt: "2026-01-01T00:00:00.000Z" },
+    ],
+    portfolio: { available: false, positionCount: 0, source: "none", updatedAt: null },
+    watchlist: { themeCount: 0, itemCount: 0, updatedAt: null },
+  });
+  assert.equal(result.featureFlag.status, "DISABLED");
+  assert.equal(result.providers.find((item) => item.provider === "FRED").status, "NOT_CONFIGURED");
+  assert.equal(result.providers.find((item) => item.provider === "SEC").status, "NOT_CONFIGURED");
+  assert.equal(result.portfolio.available, false);
+  assert.equal(result.watchlist.available, false);
+  assert.ok(result.blockers.includes("PORTFOLIO_UNAVAILABLE"));
+  assert.ok(result.blockers.includes("WATCHLIST_UNAVAILABLE"));
+});
 
 test("theme graph expands HBM and Data Center at most two hops without duplicates", () => { for (const seed of ["HBM", "Data Center"]) { const graph = buildThemeGraph([seed], [], 2); assert.equal(new Set(graph.nodes.map((x) => x.id)).size, graph.nodes.length); assert.equal(new Set(graph.edges.map((x) => `${x.from}|${x.to}|${x.relation}`)).size, graph.edges.length); } const hbm = buildThemeGraph(["HBM"], [], 2); assert.ok(hbm.nodes.some((x) => x.id === "ticker:MU")); assert.ok(hbm.nodes.some((x) => x.id === "ticker:AMAT")); });
 test("hot theme graph discovers bounded deterministic candidates with provenance", () => {
