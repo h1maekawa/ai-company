@@ -48,6 +48,13 @@ This guide outlines common development commands and the available slash commands
 - /fund 画面上部の「市場スキャン実行」から利用。一次抽出のみで購入判断はしない（詳細はPolicy Engineへ）
 - Phase B（決算・ニュース・企業情報のAI自動調査）は未実装
 
+#### Investment Architecture Foundation (PR-A, 2026-10-12)
+Investment Thinking Model v1（最上位Policy）は `ai-secretary/docs/INVESTMENT_THINKING_MODEL.md`、
+7部門の責任分界は `ai-secretary/docs/INVESTMENT_DEPARTMENT_STRUCTURE.md`、16 Investment Skillの
+playbookは `skills/investing/`（コード側登録は `ai-secretary/app/lib/skills/registry.ts`）を参照。
+最終GO/WAIT/PASS・発注・資金移動はHUMAN_ONLY。既存 `app/lib/investing/` ・`app/lib/fund/` を再利用し、
+新しいProvider/Research Store/Decision Store/Broker実行は追加しない。
+
 ### 3. Note Department (`personal-note`)
 - `/note-research` - トレンド＋競合＋アフィリ案件の3点調査
 - `/note-title` - バズりタイトル5案（アフィリ連動度スコア付き）
