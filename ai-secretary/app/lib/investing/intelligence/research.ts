@@ -14,6 +14,10 @@ import { INVESTMENT_INTELLIGENCE_CONFIG } from "./config";
 import type { IntelligenceFreshness, IntelligenceToday, InvestmentEvidence, ProviderStatus } from "./types";
 import { buildThemeGraph, scoreTheme } from "./themeIntelligence";
 import { buildInvestmentResearchBundle } from "./research/orchestrator";
+import { buildShortTermAssessment } from "./horizon/shortScore";
+import { buildMidTermAssessment } from "./horizon/midScore";
+import { buildLongTermAssessment } from "./horizon/longScore";
+import { deriveTripleGate } from "./horizon/tripleGate";
 
 function freshnessOf(date: string | null, now: Date): IntelligenceFreshness { if (!date) return "unknown"; return now.getTime() - new Date(`${date}T23:59:59Z`).getTime() <= 4 * 86_400_000 ? "daily" : "stale"; }
 export { investmentIntelligenceEnabled } from "./flags";
@@ -32,11 +36,15 @@ export async function runDailyInvestmentResearch(now = new Date()): Promise<Inte
   });
   let secOk = 0; let secErrors = 0;
   const fundamentalsByTicker = new Map<string, import("./types").FundamentalSnapshot>();
+  const barsByTicker = new Map<string, import("../../fund/marketData/calc").DailyBar[] | null>();
   const evaluateCandidates = (items: typeof candidates) => Promise.all(items.map(async (item) => {
     const ticker = item.ticker;
-    const [bars, fundamentalResult] = await Promise.all([provider.getDailyBars(ticker, 30), fetchSecFundamentals(ticker, cikMap.get(ticker) ?? null)]);
+    // PR-C: 205 bars (same provider call, same shape as the SPY/QQQ/SOX fetch above) so Technical
+    // Position (marketEnv, which needs a 200-day SMA) is computable instead of always UNKNOWN.
+    const [bars, fundamentalResult] = await Promise.all([provider.getDailyBars(ticker, 205), fetchSecFundamentals(ticker, cikMap.get(ticker) ?? null)]);
     if (fundamentalResult.status === "OK") secOk++; else if (fundamentalResult.status === "ERROR") secErrors++;
     fundamentalsByTicker.set(ticker, fundamentalResult.data);
+    barsByTicker.set(ticker, bars);
     const last = bars?.at(-1) ?? null; const evidence: InvestmentEvidence[] = [];
     if (last) evidence.push({ id: `market_${ticker}_${last.date}`, sourceType: "market", sourceName: provider.name, sourceUrl: null, publishedAt: last.date, fetchedAt: now.toISOString(), fact: `${ticker} 終値 ${last.close}、出来高 ${last.volume}`, metric: "ohlcv", value: last.close, freshness: freshnessOf(last.date, now) });
     if (fundamentalResult.data.sourceUrl) evidence.push({ id: `sec_${ticker}_${fundamentalResult.data.observedAt}`, sourceType: "research", sourceName: "SEC EDGAR", sourceUrl: fundamentalResult.data.sourceUrl, publishedAt: fundamentalResult.data.observedAt, fetchedAt: now.toISOString(), fact: `${ticker} revenue ${fundamentalResult.data.revenue ?? "unknown"}, FCF ${fundamentalResult.data.fcf ?? "unknown"}`, metric: "fundamentals", value: fundamentalResult.data.revenue, freshness: fundamentalResult.data.freshness });
@@ -63,9 +71,24 @@ export async function runDailyInvestmentResearch(now = new Date()): Promise<Inte
   } catch (error) {
     console.error("[investing/research] Research Structure構築に失敗（既存artifactは継続します）:", error);
   }
+  // PR-C: SHORT/MID/LONG Horizon Intelligence is additive per-opportunity and must never break
+  // the existing score/gate if it fails for a single ticker.
+  const opportunitiesWithHorizons = opportunities.map((opportunity) => {
+    try {
+      const bars = barsByTicker.get(opportunity.ticker) ?? null;
+      const shortTerm = buildShortTermAssessment(opportunity, bars, spyBars, now);
+      const midTerm = buildMidTermAssessment(opportunity, bars, spyBars, now);
+      const longTerm = buildLongTermAssessment(opportunity, research, now);
+      const tripleGate = deriveTripleGate(shortTerm.gate, midTerm.gate, longTerm.gate);
+      return { ...opportunity, shortTerm, midTerm, longTerm, tripleGate };
+    } catch (error) {
+      console.error(`[investing/research] Horizon評価に失敗（既存scoreは継続します）: ${opportunity.ticker}`, error);
+      return opportunity;
+    }
+  });
   const result: IntelligenceToday = { asOf: now.toISOString(), runId: `investment-${tokyoDateKey(now)}`, marketRegime, marketRegimeDetail, marketEvidence, macro: macroResult.macro, economicNews: newsResult.items, sectors, providerStatus, research,
     sectorStrength: sectors.map((item) => ({ name: item.name, score: item.score, reason: item.score === null ? "市場データ未取得" : `${item.proxy}: 20日momentum ${item.momentum20d?.toFixed(1) ?? "—"}%` })),
-    themeStrength, themeGraph, opportunities,
+    themeStrength, themeGraph, opportunities: opportunitiesWithHorizons,
     portfolioAlerts: opportunities.filter((item) => item.portfolioAction === "RECHECK_THESIS" && (item.relativeVolume ?? 0) >= 2).map((item) => ({ ticker: item.ticker, level: "warning" as const, message: `RVOL ${item.relativeVolume?.toFixed(2)}x。投資仮説を再確認してください` })), economicEvents: [],
     news: newsResult.items.map((item) => ({ id: item.id, sourceType: "news" as const, sourceName: item.source, sourceUrl: item.url, publishedAt: item.publishedAt, fetchedAt: item.fetchedAt, fact: item.factSummary, metric: "economic_news", value: item.impact, freshness: item.freshness })),
     summary: marketRegime === "DATA_INCOMPLETE" ? "市場データが不十分です。GO候補への昇格は停止しています。" : `市場は${marketRegime}。必須Evidenceと80%以上のcoverageを満たす場合のみGO候補になります。` };
