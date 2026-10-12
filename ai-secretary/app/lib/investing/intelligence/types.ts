@@ -71,6 +71,16 @@ export type InvestmentOpportunity = {
   evidence: InvestmentEvidence[];
   missingData: string[];
   generatedAt: string;
+
+  /**
+   * PR-C: SHORT/MID/LONG horizon assessments and their combined Triple Gate, additive and
+   * optional. The existing `score`/`gate` above remain the backward-compatible primary signal;
+   * these never replace them.
+   */
+  shortTerm?: import("./horizon/types").HorizonAssessment;
+  midTerm?: import("./horizon/types").HorizonAssessment;
+  longTerm?: import("./horizon/types").HorizonAssessment;
+  tripleGate?: import("./horizon/types").TripleGate;
 };
 
 export type IntelligenceToday = {
