@@ -92,6 +92,8 @@ export type IntelligenceToday = {
   runId: string;
   notificationDeliveries?: Array<{ eventId: string; channel: string; status: string; error?: string }>;
   summary: string;
+  thinkingModel?: { id: string; version: string };
+  researchArtifact?: import("./thinkingResearch").InvestmentResearchArtifact;
 };
 
 export type InvestmentDecisionRecord = {

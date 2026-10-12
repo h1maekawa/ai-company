@@ -13,6 +13,8 @@ import { buildInvestmentCandidates, discoverThemeGraphCandidates } from "./theme
 import { INVESTMENT_INTELLIGENCE_CONFIG } from "./config";
 import type { IntelligenceFreshness, IntelligenceToday, InvestmentEvidence, ProviderStatus } from "./types";
 import { buildThemeGraph, scoreTheme } from "./themeIntelligence";
+import { buildInvestmentResearchArtifact } from "./thinkingResearch";
+import { investmentThinkingModelRef } from "./thinkingModel";
 
 function freshnessOf(date: string | null, now: Date): IntelligenceFreshness { if (!date) return "unknown"; return now.getTime() - new Date(`${date}T23:59:59Z`).getTime() <= 4 * 86_400_000 ? "daily" : "stale"; }
 export { investmentIntelligenceEnabled } from "./flags";
@@ -39,24 +41,28 @@ export async function runDailyInvestmentResearch(now = new Date()): Promise<Inte
     if (fundamentalResult.data.sourceUrl) evidence.push({ id: `sec_${ticker}_${fundamentalResult.data.observedAt}`, sourceType: "research", sourceName: "SEC EDGAR", sourceUrl: fundamentalResult.data.sourceUrl, publishedAt: fundamentalResult.data.observedAt, fetchedAt: now.toISOString(), fact: `${ticker} revenue ${fundamentalResult.data.revenue ?? "unknown"}, FCF ${fundamentalResult.data.fcf ?? "unknown"}`, metric: "fundamentals", value: fundamentalResult.data.revenue, freshness: fundamentalResult.data.freshness });
     const relatedNews = newsResult.items.flatMap((entry) => entry.impacts.filter((impact) => impact.confidence >= INVESTMENT_INTELLIGENCE_CONFIG.minimumImpactConfidence && impact.direction !== "unknown" && (impact.targetType === "ticker" ? impact.targetId.toUpperCase() === ticker : item.themes.includes(impact.targetId))).map<InvestmentEvidence>((impact) => ({ id: `${entry.id}:${impact.role}:${impact.targetId}`, sourceType: "news", sourceName: entry.source, sourceUrl: entry.url, publishedAt: entry.publishedAt, fetchedAt: entry.fetchedAt, fact: `${entry.factSummary} (${impact.rationale})`, metric: `news:${impact.role}`, value: impact.direction, freshness: entry.freshness })));
     const sector = sectors.find((entry) => item.sectors.includes(entry.name) && !["stale", "unknown"].includes(entry.freshness));
-    return buildOpportunity({ ticker, name: item.name, theme: item.themes[0] ?? "Unclassified", bars, marketRegime, held: item.held, evidence: [...evidence, ...relatedNews], fundamental: fundamentalResult.data, sector, now });
+    return { candidate: item, fundamental: fundamentalResult.data, opportunity: buildOpportunity({ ticker, name: item.name, theme: item.themes[0] ?? "Unclassified", bars, marketRegime, held: item.held, evidence: [...evidence, ...relatedNews], fundamental: fundamentalResult.data, sector, now }) };
   }));
-  const baseOpportunities = await evaluateCandidates(candidates);
+  const baseEvaluations = await evaluateCandidates(candidates);
+  const baseOpportunities = baseEvaluations.map((item) => item.opportunity);
   const themeNames = [...new Set(candidates.flatMap((item) => item.themes))];
   const initialThemeStrength = themeNames.map((name) => scoreTheme(name, { news: newsResult.items, sectors, opportunities: baseOpportunities }));
   const graphCandidates = discoverThemeGraphCandidates({ strengths: initialThemeStrength, existingCandidates: candidates });
-  const graphOpportunities = await evaluateCandidates(graphCandidates);
-  const opportunities = [...baseOpportunities, ...graphOpportunities];
+  const graphEvaluations = await evaluateCandidates(graphCandidates);
+  const evaluations = [...baseEvaluations, ...graphEvaluations];
+  const opportunities = evaluations.map((item) => item.opportunity);
   opportunities.sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.ticker.localeCompare(b.ticker));
   const finalThemeNames = [...new Set([...candidates, ...graphCandidates].flatMap((item) => item.themes))];
   const themeStrength = finalThemeNames.map((name) => scoreTheme(name, { news: newsResult.items, sectors, opportunities }));
   const themeGraph = buildThemeGraph(themeStrength.filter((item) => item.hot).map((item) => item.name), themeStrength);
+  const researchArtifact = buildInvestmentResearchArtifact({ now, regime: marketRegime, candidates: evaluations.map((item) => item.candidate), opportunities, fundamentals: new Map(evaluations.map((item) => [item.candidate.ticker, item.fundamental])), graph: themeGraph, news: newsResult.items, marketEvidence });
   const providerStatus: ProviderStatus[] = [...macroResult.statuses, { provider: "SerpAPI", status: newsResult.status, checkedAt: now.toISOString() }, { provider: "SEC", status: !process.env.SEC_USER_AGENT ? "NOT_CONFIGURED" : secErrors > 0 && secOk === 0 ? "ERROR" : "OK", checkedAt: now.toISOString(), detail: `${secOk} symbols loaded` }];
   const result: IntelligenceToday = { asOf: now.toISOString(), runId: `investment-${tokyoDateKey(now)}`, marketRegime, marketRegimeDetail, marketEvidence, macro: macroResult.macro, economicNews: newsResult.items, sectors, providerStatus,
     sectorStrength: sectors.map((item) => ({ name: item.name, score: item.score, reason: item.score === null ? "市場データ未取得" : `${item.proxy}: 20日momentum ${item.momentum20d?.toFixed(1) ?? "—"}%` })),
     themeStrength, themeGraph, opportunities,
     portfolioAlerts: opportunities.filter((item) => item.portfolioAction === "RECHECK_THESIS" && (item.relativeVolume ?? 0) >= 2).map((item) => ({ ticker: item.ticker, level: "warning" as const, message: `RVOL ${item.relativeVolume?.toFixed(2)}x。投資仮説を再確認してください` })), economicEvents: [],
     news: newsResult.items.map((item) => ({ id: item.id, sourceType: "news" as const, sourceName: item.source, sourceUrl: item.url, publishedAt: item.publishedAt, fetchedAt: item.fetchedAt, fact: item.factSummary, metric: "economic_news", value: item.impact, freshness: item.freshness })),
+    thinkingModel: investmentThinkingModelRef(), researchArtifact,
     summary: marketRegime === "DATA_INCOMPLETE" ? "市場データが不十分です。GO候補への昇格は停止しています。" : `市場は${marketRegime}。必須Evidenceと80%以上のcoverageを満たす場合のみGO候補になります。` };
   await Promise.all([saveIntelligenceToday(result), saveThemeSnapshot(result)]); return result;
 }

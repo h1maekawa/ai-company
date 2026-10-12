@@ -103,3 +103,13 @@ test("未確認・他部門・noteなしのfeedbackはX Skill Candidateにしな
   ];
   assert.equal(subject.discoverSkillCandidates(value, []).length, 0);
 });
+
+test("Investment feedbackは専用adapterから非実行Thinking Model SkillCandidateになる", () => {
+  const feedback = [{ id: "fund-model-1", departmentId: "fund", note: "需要仮説の反証条件を先に確認する", actor: "ceo", confirmedByHuman: true, createdAt: "2026-10-12T00:00:00.000Z" }];
+  const candidates = subject.deriveInvestmentThinkingSkillCandidatesFromFeedback(feedback, []);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].departmentId, "fund");
+  assert.equal(candidates[0].status, "PROPOSED");
+  assert.equal(candidates[0].executable, false);
+  assert.equal(candidates[0].registryMutationAllowed, false);
+});

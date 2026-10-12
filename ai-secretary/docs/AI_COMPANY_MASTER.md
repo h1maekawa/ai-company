@@ -119,6 +119,7 @@ Departments exchange typed artifacts rather than unstructured copied prose.
 | `PlatformPerformance` | platform identity, measured metrics, availability, observed time | Implemented foundation; provider coverage partial |
 | `Learning` | observation, hypothesis, evidence, confidence, decision/effectiveness | Implemented foundation; operational feedback loops partial |
 | `CreativeSpec` | brand, platform, pillar, topic, products, slides, assets, visual rules, caption, CTA, commercial relation | Implemented as the typed Instagram domain artifact; persistence and rendering remain planned |
+| `InvestmentResearchArtifact` | thinking-model version, claim classes, market hypothesis/demand/structure, bottlenecks, company/fundamental/valuation/risk comparison, unknowns | Implemented inside the existing `IntelligenceToday` store; provider depth remains partial |
 
 New artifacts must state their canonical owner, source IDs, timestamps, availability semantics, and downstream consumers.
 
@@ -265,6 +266,7 @@ This section reports repository capability. It does not claim a live provider, C
 
 ### Phase C — Investment Business
 
+- [x] C0: establish the canonical versioned Investment Thinking Model and evidence-preserving research artifact without a second store
 - [ ] C1: audit providers and evidence gaps
 - [ ] C2–C3: complete macro and financial providers
 - [ ] C4–C6: complete news/sector intelligence, picks-and-shovels analysis, and opportunity scoring
@@ -298,6 +300,7 @@ This section reports repository capability. It does not claim a live provider, C
 | 2026-10-10 | Define Instagram CreativeSpec as a contract-only domain artifact with no new persistence or provider | establish product-image, evidence, rights, disclosure, and human-review boundaries before B3 rendering |
 | 2026-10-10 | Reuse canonical Research and existing Hot Score for an X Daily Research Agenda and fixed three-slot operation | expand autonomy without a parallel engine, LOW promotion, policy self-mutation, or publication-gate bypass |
 | 2026-10-11 | Add X Production Observability as a GET-only projection over existing stores | make runtime truth and evidence gaps inspectable without a second store, Production mutation, retry, or guessed success |
+| 2026-10-12 | Version the Investment Thinking Model and persist its research output in existing IntelligenceToday | separate facts, interpretations, hypotheses, and unknowns while preserving HUMAN_ONLY trade authority and avoiding a second SSOT |
 
 ## Protected Boundaries
 

@@ -8,6 +8,7 @@ import type { EmployeeReadModel } from "@/components/mobile-ceo/EmployeeWorkspac
 import type { WatchTheme } from "@/app/lib/investing/watchlist";
 import { displayStatus, formatRelativeTime } from "@/app/lib/mobile-ceo/controlCenter";
 import { latestRecommendations, useJson, type FundRecommendationView } from "../usePortfolio";
+import type { IntelligenceToday } from "@/app/lib/investing/intelligence/types";
 
 type ResearchItem = { id: string; topic: string; title: string; summary: string; sourceName?: string; sourceUrl?: string; fetchedAt: string; freshnessStatus: string; reliability: string };
 type ResearchResponse = { items: ResearchItem[] | null; health: Array<{ status: string; lastSuccessfulRun: string | null }> | null };
@@ -28,11 +29,13 @@ export default function InvestmentResearchPage() {
   const policy = useJson<{ policy: { themes: Record<string, string[]>; policyVersion: number } }>("/api/fund/policy");
   const watchlist = useJson<{ themes: WatchTheme[]; updatedAt: string | null }>("/api/investing/watchlist");
   const recommendations = useJson<{ recommendations: FundRecommendationView[] }>("/api/fund/recommendations");
+  const intelligence = useJson<{ today: IntelligenceToday | null }>("/api/investing/intelligence/today");
 
   const researcher = employees.data?.employees.find((employee) => employee.id === "fund-research");
   const candidates = latestRecommendations(recommendations.data?.recommendations).slice(0, 12);
   const items = (research.data?.items ?? []).slice().reverse();
   const policyThemes = Object.entries(policy.data?.policy.themes ?? {});
+  const artifact = intelligence.data?.today?.researchArtifact;
 
   return (
     <InvestingShell title="Research">
@@ -75,9 +78,25 @@ export default function InvestmentResearchPage() {
 
           <Card>
             <CardHeader title="Value Chain / Bottlenecks" hint="何が足りなくなる？ ボトルネックは？" />
-            <Unknown reason="Value Chain分析のInvestment Skillが未登録のため、構造化データがありません。推測で埋めずに未取得としています。" />
+            {intelligence.loading ? <Skeleton className="h-24" /> : !artifact ? <Unknown reason="Canonical Investment Research Artifactがありません。推測では補完しません。" /> : artifact.bottlenecks.length === 0 ? <Unknown reason={artifact.unknowns.find((item) => item.includes("bottleneck")) ?? "明示的な供給制約Evidenceがありません"} /> : (
+              <ul className="space-y-2 text-sm">{artifact.bottlenecks.map((item) => <li key={`${item.name}-${item.reason}`}><span className="font-medium text-white">{item.name}</span><p className="text-xs text-sub">{item.reason} · Evidence {item.evidenceIds.length}</p></li>)}</ul>
+            )}
           </Card>
         </div>
+
+        <Card>
+          <CardHeader title="Investment Thinking Research" hint="Why this market → Structure → Companies → Fundamental → Valuation → Risk" />
+          {intelligence.loading ? <Skeleton className="h-36" /> : !artifact ? <Unknown reason="Daily Investment Intelligence実行後に同じCanonical Storeへ保存されます" /> : (
+            <div className="space-y-4 text-sm">
+              <section><h3 className="font-medium text-white">Why this market</h3><p className="mt-1 text-slate-300">{artifact.whyThisMarket.hypothesis}</p><p className="text-[11px] text-sub">{artifact.whyThisMarket.status} · Evidence {artifact.whyThisMarket.confirmingEvidenceIds.length}</p></section>
+              <section><h3 className="font-medium text-white">Market Structure</h3><p className="mt-1 text-xs text-sub">{artifact.marketStructure.graph.nodes.length} nodes · {artifact.marketStructure.graph.edges.length} edges · {artifact.marketStructure.causalPaths.length} evidenced paths</p></section>
+              <section><h3 className="font-medium text-white">Companies / Fundamental / Valuation / Risk</h3><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{artifact.companies.map((company) => <Link key={company.ticker} href={`/investing/companies/${encodeURIComponent(company.ticker)}`} className="rounded-lg border border-hairline p-3 hover:bg-white/[0.03]"><div className="flex items-center gap-2"><Badge>{company.ticker}</Badge><span className="text-xs text-sub">{company.causalDistance}</span></div><p className="mt-2 line-clamp-2 text-xs text-slate-300">{company.whyIncluded}</p><p className="mt-2 text-[11px] text-sub">Valuation {company.valuation.status} · Risks {company.risks.length}</p></Link>)}</div></section>
+              <section><h3 className="font-medium text-white">Current View</h3><p className="mt-1 text-slate-300">{artifact.currentView.summary}</p><p className="text-[11px] text-sub">最終投資判断・売買・数量決定はHUMAN_ONLY</p></section>
+              <section><h3 className="font-medium text-white">Unknown</h3>{artifact.unknowns.length ? <ul className="mt-1 list-disc pl-5 text-xs text-sub">{artifact.unknowns.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="text-xs text-sub">なし</p>}</section>
+              <details><summary className="cursor-pointer text-xs text-sub">Advanced</summary><p className="mt-1 text-[11px] text-sub">Thinking Model v{artifact.model.version}</p></details>
+            </div>
+          )}
+        </Card>
 
         <Card padded={false}>
           <div className="px-5 pt-5"><CardHeader title="Candidate Companies" hint="Policy Engineの評価結果（最新・期間別）" /></div>

@@ -10,6 +10,44 @@ const { investmentIntelligenceEnabled } = await import(path.join(dist, "intel/in
 const { classifyNewsDirection, classifyNewsImpacts, newsTrustTier } = await import(path.join(dist, "intel/investing/intelligence/newsImpact.js"));
 const { buildInvestmentCandidates, discoverThemeGraphCandidates, normalizeTheme, sectorsForThemes } = await import(path.join(dist, "intel/investing/intelligence/themes.js"));
 const { buildThemeGraph, scoreTheme, detectMeaningfulThemeChanges } = await import(path.join(dist, "intel/investing/intelligence/themeIntelligence.js"));
+const { ACTIVE_INVESTMENT_THINKING_MODEL } = await import(path.join(dist, "intel/investing/intelligence/thinkingModel.js"));
+const { buildInvestmentResearchArtifact, validateResearchArtifact } = await import(path.join(dist, "intel/investing/intelligence/thinkingResearch.js"));
+
+const emptyFundamental = (ticker) => ({ ticker, revenue: null, revenueGrowth: null, eps: null, epsGrowth: null, operatingIncome: null, operatingMargin: null, operatingCashFlow: null, capex: null, fcf: null, equity: null, roic: null, per: null, pbr: null, sourceUrl: null, observedAt: null, filedAt: null, freshness: "unknown" });
+const researchOpportunity = (ticker, score) => ({ id:`o-${ticker}`, ticker, name:ticker, theme:"AI", gate:"WAIT", score, scoreCoverage:.5, coverage:.5, mandatoryEvidence:[], missingEvidence:[], riskFlags:[], breakdown:[], relativeVolume:null, priceChangePct:null, catalyst:null, whyNow:`${ticker} evidence`, portfolioImpact:"unknown", portfolioAction:"NO_ACTION", scenarios:[], evidence:[{ id:`e-${ticker}`, sourceType:"market", sourceName:"Yahoo", sourceUrl:null, publishedAt:"2026-10-12", fetchedAt:"2026-10-12T00:00:00Z", fact:`${ticker} observed`, metric:"ohlcv", value:100, freshness:"daily" }], missingData:[], generatedAt:"2026-10-12T00:00:00Z" });
+
+test("canonical investment thinking model is active, versioned, and keeps trade actions human-only", () => {
+  assert.equal(ACTIVE_INVESTMENT_THINKING_MODEL.status, "ACTIVE");
+  assert.match(ACTIVE_INVESTMENT_THINKING_MODEL.version, /^\d+\.\d+\.\d+$/);
+  assert.ok(ACTIVE_INVESTMENT_THINKING_MODEL.humanOnlyRules.join(" ").includes("Buy/Sell"));
+});
+
+test("thinking research separates claims, preserves unknowns, and never invents bottlenecks or valuation", () => {
+  const candidates = ["AAA","BBB","CCC"].map((ticker) => ({ ticker, name:ticker, held:false, watchlisted:false, themes:["AI"], sectors:["Technology"], aliases:[], candidateSources:["research"] }));
+  const artifact = buildInvestmentResearchArtifact({ now:new Date("2026-10-12T00:00:00Z"), regime:"NEUTRAL", candidates, opportunities:candidates.map((item,index)=>researchOpportunity(item.ticker, 80-index)), fundamentals:new Map(candidates.map((item)=>[item.ticker, emptyFundamental(item.ticker)])), graph:{nodes:[],edges:[]}, news:[], marketEvidence:[] });
+  assert.equal(artifact.companies.length, 3);
+  assert.equal(artifact.bottlenecks.length, 0);
+  assert.ok(artifact.companies.every((item) => item.valuation.status === "INSUFFICIENT" && item.fundamentals.revenue.value === null));
+  assert.ok(artifact.claims.some((item) => item.kind === "HYPOTHESIS"));
+  assert.ok(artifact.claims.some((item) => item.kind === "UNKNOWN"));
+  assert.deepEqual(validateResearchArtifact(artifact), []);
+});
+
+test("bottleneck requires explicit constraint evidence and keeps its evidence ids", () => {
+  const opportunity = researchOpportunity("AAA", 80);
+  const artifact = buildInvestmentResearchArtifact({ now:new Date("2026-10-12T00:00:00Z"), regime:"NEUTRAL", candidates:[{ ticker:"AAA", name:"AAA", held:false, watchlisted:false, themes:["AI"], sectors:[], aliases:[], candidateSources:["research"] }], opportunities:[opportunity], fundamentals:new Map([["AAA",emptyFundamental("AAA")]]), graph:{nodes:[],edges:[]}, news:[{ id:"n",title:"Capacity shortage",source:"Reuters",url:"https://example.com",publishedAt:"2026-10-12",fetchedAt:"2026-10-12T00:00:00Z",factSummary:"Capacity shortage constrains supply",interpretation:null,impact:"positive",impacts:[{targetType:"theme",targetId:"HBM",direction:"positive",confidence:.8,rationale:"explicit capacity constraint",evidenceIds:["n"],role:"future_demand"}],trustTier:"TIER_2",relatedSectors:[],relatedThemes:["HBM"],relatedTickers:[],freshness:"daily"}], marketEvidence:[] });
+  assert.equal(artifact.bottlenecks.length, 1);
+  assert.deepEqual(artifact.bottlenecks[0].evidenceIds, ["n"]);
+});
+
+test("valuation compares only when at least three fresh measured peers exist", () => {
+  const tickers = ["LOW","MID","HIGH"];
+  const candidates = tickers.map((ticker) => ({ ticker, name:ticker, held:false, watchlisted:false, themes:["AI"], sectors:[], aliases:[], candidateSources:["research"] }));
+  const fundamentals = new Map(tickers.map((ticker,index) => [ticker,{ ...emptyFundamental(ticker), per:[8,10,15][index], sourceUrl:`https://sec.gov/${ticker}`, observedAt:"2026-10-01", filedAt:"2026-10-01", freshness:"daily" }]));
+  const artifact = buildInvestmentResearchArtifact({ now:new Date("2026-10-12T00:00:00Z"), regime:"NEUTRAL", candidates, opportunities:tickers.map((ticker,index)=>({ ...researchOpportunity(ticker,80-index), evidence:[{ ...researchOpportunity(ticker,80-index).evidence[0], id:`f-${ticker}`, metric:"fundamentals", sourceUrl:`https://sec.gov/${ticker}` }] })), fundamentals, graph:{nodes:[],edges:[]}, news:[], marketEvidence:[] });
+  assert.deepEqual(artifact.companies.map((item) => item.valuation.status), ["FAIR","FAIR","HIGH"]);
+  assert.ok(artifact.companies.every((item) => /not a trade signal/.test(item.valuation.reason)));
+});
 
 test("theme graph expands HBM and Data Center at most two hops without duplicates", () => { for (const seed of ["HBM", "Data Center"]) { const graph = buildThemeGraph([seed], [], 2); assert.equal(new Set(graph.nodes.map((x) => x.id)).size, graph.nodes.length); assert.equal(new Set(graph.edges.map((x) => `${x.from}|${x.to}|${x.relation}`)).size, graph.edges.length); } const hbm = buildThemeGraph(["HBM"], [], 2); assert.ok(hbm.nodes.some((x) => x.id === "ticker:MU")); assert.ok(hbm.nodes.some((x) => x.id === "ticker:AMAT")); });
 test("hot theme graph discovers bounded deterministic candidates with provenance", () => {
