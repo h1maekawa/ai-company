@@ -40,6 +40,15 @@ test("bottleneck requires explicit constraint evidence and keeps its evidence id
   assert.deepEqual(artifact.bottlenecks[0].evidenceIds, ["n"]);
 });
 
+test("valuation compares only when at least three fresh measured peers exist", () => {
+  const tickers = ["LOW","MID","HIGH"];
+  const candidates = tickers.map((ticker) => ({ ticker, name:ticker, held:false, watchlisted:false, themes:["AI"], sectors:[], aliases:[], candidateSources:["research"] }));
+  const fundamentals = new Map(tickers.map((ticker,index) => [ticker,{ ...emptyFundamental(ticker), per:[8,10,15][index], sourceUrl:`https://sec.gov/${ticker}`, observedAt:"2026-10-01", filedAt:"2026-10-01", freshness:"daily" }]));
+  const artifact = buildInvestmentResearchArtifact({ now:new Date("2026-10-12T00:00:00Z"), regime:"NEUTRAL", candidates, opportunities:tickers.map((ticker,index)=>({ ...researchOpportunity(ticker,80-index), evidence:[{ ...researchOpportunity(ticker,80-index).evidence[0], id:`f-${ticker}`, metric:"fundamentals", sourceUrl:`https://sec.gov/${ticker}` }] })), fundamentals, graph:{nodes:[],edges:[]}, news:[], marketEvidence:[] });
+  assert.deepEqual(artifact.companies.map((item) => item.valuation.status), ["FAIR","FAIR","HIGH"]);
+  assert.ok(artifact.companies.every((item) => /not a trade signal/.test(item.valuation.reason)));
+});
+
 test("theme graph expands HBM and Data Center at most two hops without duplicates", () => { for (const seed of ["HBM", "Data Center"]) { const graph = buildThemeGraph([seed], [], 2); assert.equal(new Set(graph.nodes.map((x) => x.id)).size, graph.nodes.length); assert.equal(new Set(graph.edges.map((x) => `${x.from}|${x.to}|${x.relation}`)).size, graph.edges.length); } const hbm = buildThemeGraph(["HBM"], [], 2); assert.ok(hbm.nodes.some((x) => x.id === "ticker:MU")); assert.ok(hbm.nodes.some((x) => x.id === "ticker:AMAT")); });
 test("hot theme graph discovers bounded deterministic candidates with provenance", () => {
   const hot = (name, score = 90, coverage = .8) => ({ name, score, coverage, reason:"", evidenceRefs:["e1"], freshness:"daily", hot:true });

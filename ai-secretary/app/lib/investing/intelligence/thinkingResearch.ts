@@ -25,20 +25,24 @@ export type InvestmentResearchArtifact = {
 
 const metric = (value: number | null, snapshot: FundamentalSnapshot): MeasuredField => ({ value, period: snapshot.filedAt, sourceUrl: snapshot.sourceUrl, observedAt: snapshot.observedAt, freshness: snapshot.freshness, confidence: value === null ? "UNKNOWN" : snapshot.freshness === "stale" || snapshot.freshness === "unknown" ? "LOW" : "MEDIUM" });
 const distance = (candidate: InvestmentCandidate): CausalDistance => candidate.themeGraphDiscoveries?.some((item) => item.hopDistance === 0) ? "DIRECT" : candidate.themeGraphDiscoveries?.some((item) => item.hopDistance === 1) ? "ENABLER" : candidate.themeGraphDiscoveries?.some((item) => item.hopDistance === 2) ? "SECOND_ORDER" : candidate.themes.length ? "DIRECT" : "UNKNOWN";
+const median = (values: number[]) => { const sorted = [...values].sort((a, b) => a - b); const middle = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2; };
 
 export function buildInvestmentResearchArtifact(input: { now: Date; regime: MarketRegime; candidates: InvestmentCandidate[]; opportunities: InvestmentOpportunity[]; fundamentals: Map<string, FundamentalSnapshot>; graph: InvestmentThemeGraph; news: EconomicNewsItem[]; marketEvidence: InvestmentEvidence[] }): InvestmentResearchArtifact {
   const ranked = input.opportunities.filter((item) => item.evidence.length > 0).slice(0, 5);
   const selected = ranked.length >= 3 ? ranked : input.opportunities.slice(0, 5);
+  const comparablePer = selected.map((item) => input.fundamentals.get(item.ticker)).filter((item): item is FundamentalSnapshot => Boolean(item && item.per !== null && !["stale", "unknown"].includes(item.freshness))).map((item) => item.per as number);
+  const perMedian = comparablePer.length >= 3 ? median(comparablePer) : null;
   const evidenceIds = [...new Set([...input.marketEvidence.map((item) => item.id), ...input.news.flatMap((item) => item.impacts.flatMap((impact) => impact.evidenceIds))])];
   const demandNews = input.news.filter((item) => item.impacts.some((impact) => impact.role === "future_demand" && impact.direction !== "unknown"));
   const companies = selected.map<CompanyResearchComparison>((opportunity) => {
     const candidate = input.candidates.find((item) => item.ticker === opportunity.ticker);
     const fundamental = input.fundamentals.get(opportunity.ticker) ?? { ticker: opportunity.ticker, revenue: null, revenueGrowth: null, eps: null, epsGrowth: null, operatingIncome: null, operatingMargin: null, operatingCashFlow: null, capex: null, fcf: null, equity: null, roic: null, per: null, pbr: null, sourceUrl: null, observedAt: null, filedAt: null, freshness: "unknown" as const };
     const fundamentalEvidence = opportunity.evidence.filter((item) => item.metric === "fundamentals").map((item) => item.id);
+    const valuation = fundamental.per !== null && perMedian !== null ? { status: fundamental.per < perMedian * 0.8 ? "LOW" as const : fundamental.per > perMedian * 1.2 ? "HIGH" as const : "FAIR" as const, reason: `Current PER ${fundamental.per} compared with evidence-backed candidate median ${perMedian}. This is a relative observation, not a trade signal.`, evidenceIds: fundamentalEvidence } : { status: "INSUFFICIENT" as const, reason: "At least three fresh measured PER values are required for relative comparison.", evidenceIds: fundamentalEvidence };
     return {
       ticker: opportunity.ticker, name: opportunity.name, causalDistance: candidate ? distance(candidate) : "UNKNOWN", whyIncluded: opportunity.whyNow, evidenceIds: opportunity.evidence.map((item) => item.id),
       fundamentals: { revenue: metric(fundamental.revenue, fundamental), revenueGrowth: metric(fundamental.revenueGrowth, fundamental), eps: metric(fundamental.eps, fundamental), epsGrowth: metric(fundamental.epsGrowth, fundamental), operatingMargin: metric(fundamental.operatingMargin, fundamental), fcf: metric(fundamental.fcf, fundamental), roic: metric(fundamental.roic, fundamental), per: metric(fundamental.per, fundamental), pbr: metric(fundamental.pbr, fundamental) },
-      valuation: { status: "INSUFFICIENT", reason: "Peer/historical valuation comparison evidence is not available; current multiples alone are not classified.", evidenceIds: fundamentalEvidence },
+      valuation,
       risks: opportunity.riskFlags.map((risk) => ({ category: risk.code === "MACRO_CONFLICT" ? "MACRO" : risk.code === "FUNDAMENTAL_STALE" || risk.code === "SINGLE_SOURCE" ? "DATA" : risk.code === "NEGATIVE_DEMAND" ? "DEMAND" : "EXECUTION", description: risk.detail, probability: "UNKNOWN", evidenceIds: opportunity.evidence.map((item) => item.id) })),
     };
   });
