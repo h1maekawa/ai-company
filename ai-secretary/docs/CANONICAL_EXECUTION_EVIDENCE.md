@@ -28,4 +28,4 @@ The Slack delivery idempotency result also contains the final evidence. Delivery
 
 ## Reader contract
 
-PR #166 remains a separate, currently unmerged Observability change. Its follow-up may display PASS/FAIL/BLOCKED or AVAILABLE only when these persisted records exist. Missing evidence remains UNKNOWN/UNAVAILABLE. This PR does not import or modify PR #166.
+The read-only X Observability projection consumes these records without repairing or rewriting them. It displays PASS/FAIL/BLOCKED or AVAILABLE only when persisted evidence with exact lineage exists. Missing or mismatched evidence remains UNKNOWN/UNAVAILABLE, and publication state never implies a gate result.

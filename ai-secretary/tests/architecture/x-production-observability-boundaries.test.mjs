@@ -4,6 +4,7 @@ import fs from "node:fs";
 
 const read = (path) => fs.readFileSync(new URL("../../" + path, import.meta.url), "utf8");
 const reader = read("app/lib/company/observability/readXProjection.ts");
+const briefReader = read("app/lib/company/observability/morningBriefEvidenceReader.ts");
 const proxy = read("proxy.ts");
 const routes = [
   "app/api/company/runtime/observability/x/route.ts",
@@ -16,6 +17,10 @@ test("Observability readerはcanonical loaderのみでmutationをimportしない
   for (const loader of ["loadDailyXPlans", "loadSocialDrafts", "loadPerformance", "loadClusters"]) assert.match(reader, new RegExp(loader));
   const imports = reader.split("\n").filter((line) => line.startsWith("import ")).join("\n");
   assert.doesNotMatch(imports, /save|upsert|publish|execute|schedule|approve|reject/i);
+  const evidenceImports = briefReader.split("\n").filter((line) => line.startsWith("import ")).join("\n");
+  assert.doesNotMatch(evidenceImports, /save|upsert|append|publish|execute|schedule|approve|reject/i);
+  assert.doesNotMatch(briefReader, /\.(?:save|upsert|append|completeIdempotency|claimIdempotency|publish|execute|schedule|approve|reject)\s*\(/i);
+  assert.match(briefReader, /getIdempotencyResult/);
 });
 
 test("Observability APIはGETだけで書込methodを提供しない", () => {

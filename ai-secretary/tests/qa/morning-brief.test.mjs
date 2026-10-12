@@ -8,6 +8,7 @@ const { buildMorningBrief } = require(compiled("company/morningBrief/build.js"))
 const { absoluteDeepLink, morningBriefBlocks } = require(compiled("company/morningBrief/slack.js"));
 const { buildXGrowthInsight } = require(compiled("company/morningBrief/xGrowth.js"));
 const { isMorningBriefEvidence, loadMorningBriefEvidence, saveMorningBriefEvidence } = require(compiled("company/morningBrief/evidence.js"));
+const { readMorningBriefEvidence } = require(compiled("company/observability/morningBriefEvidenceReader.js"));
 const { safeSlackUrl } = require(compiled("integrations/slack/blocks.js"));
 
 const notification = (extra = {}) => ({ id: "n1", fingerprint: "approval:a", kind: "COMPANY_APPROVAL_REQUIRED", sourceType: "approval", sourceId: "a", title: "承認してください", summary: "R2 action", priority: "ACTION_REQUIRED", actionRequired: true, deepLink: "/ceo/approvals#a", createdAt: "2026-10-02T00:00:00Z", riskLevel: "R2", ...extra });
@@ -25,6 +26,26 @@ test("MorningBriefEvidenceは既存Execution Storeへ完全な件数とpost参�
   assert.equal(isMorningBriefEvidence(evidence), true);
   await saveMorningBriefEvidence(store, evidence);
   assert.deepEqual(await loadMorningBriefEvidence(store, evidence.briefId), evidence);
+});
+test("Observabilityは当日の正式Morning Brief Evidenceだけをread-onlyで取得する", async () => {
+  const evidence = {
+    briefId: "morning-brief:2026-10-12", briefDate: "2026-10-12", referencedPostIds: ["123"],
+    publishedCount: 1, successfulPostCount: 1, failedPostCount: 0, skippedPostCount: 0, performanceAvailableCount: 0,
+    generatedAt: "2026-10-11T22:00:00.000Z", status: "PARTIAL",
+  };
+  let reads = 0;
+  const store = { getIdempotencyResult: async (scope, key) => {
+    reads++;
+    assert.equal(scope, "morning-brief-evidence");
+    assert.equal(key, "morning-brief:2026-10-12");
+    return structuredClone(evidence);
+  } };
+  assert.deepEqual(await readMorningBriefEvidence(store, "2026-10-12"), evidence);
+  assert.equal(reads, 1);
+  const missingStore = { getIdempotencyResult: async () => null };
+  assert.equal(await readMorningBriefEvidence(missingStore, "2026-10-12"), null);
+  const mismatchStore = { getIdempotencyResult: async () => ({ ...evidence, briefDate: "2026-10-11" }) };
+  assert.equal(await readMorningBriefEvidence(mismatchStore, "2026-10-12"), null);
 });
 test("Morning Brief includes only actionable events and deduplicates fingerprints", () => {
   const brief = buildMorningBrief({ now: new Date("2026-10-02T00:00:00Z"), notifications: [notification(), notification({ id: "duplicate" }), notification({ id: "info", fingerprint: "info", priority: "INFO", actionRequired: false })], homeAttention: [], opportunities: [] });
