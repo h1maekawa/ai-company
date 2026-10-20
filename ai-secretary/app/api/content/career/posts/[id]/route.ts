@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, verifySessionToken } from "@/app/lib/auth/session";
+import { careerRequestAllowed } from "@/app/lib/content/career/auth";
 import { careerHash, careerId } from "@/app/lib/content/career/ids";
 import { checkCareerFactuality, checkCareerPrivacy } from "@/app/lib/content/career/privacy";
 import { loadCareerState, saveCareerState } from "@/app/lib/content/career/store";
 
 export const runtime = "nodejs";
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  if (!(await careerRequestAllowed(request, true))) return NextResponse.json({ error: "AUTH_ORIGIN_DENIED" }, { status: 403 });
   const secret = process.env.SESSION_SECRET;
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!secret || !token || !(await verifySessionToken(token, secret))) return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });

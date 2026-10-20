@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { careerId } from "@/app/lib/content/career/ids";
 import { loadCareerState, saveCareerState } from "@/app/lib/content/career/store";
 import { ingestCareerText } from "@/app/lib/content/career/workflow";
+import { careerRequestAllowed } from "@/app/lib/content/career/auth";
 
 export const runtime = "nodejs";
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (!(await careerRequestAllowed(request))) return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });
   try {
     const state = loadCareerState();
     return NextResponse.json({ divisionId: "career", brand: { publicName: "就活攻略ラボ", privacyPolicy: "内部音声・原稿は非公開。公開前に匿名性と事実性を人間が確認。" }, publishEnabled: false, state });
@@ -12,6 +14,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  if (!(await careerRequestAllowed(request, true))) return NextResponse.json({ error: "AUTH_ORIGIN_DENIED" }, { status: 403 });
   try {
     const body = await request.json();
     if (body?.action !== "ingest") return NextResponse.json({ error: "UNSUPPORTED_ACTION" }, { status: 400 });

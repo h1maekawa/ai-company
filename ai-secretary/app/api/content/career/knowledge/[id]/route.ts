@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { careerId } from "@/app/lib/content/career/ids";
 import { checkCareerPrivacy } from "@/app/lib/content/career/privacy";
 import { loadCareerState, saveCareerState } from "@/app/lib/content/career/store";
+import { careerRequestAllowed } from "@/app/lib/content/career/auth";
 
 export const runtime = "nodejs";
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  if (!(await careerRequestAllowed(request, true))) return NextResponse.json({ error: "AUTH_ORIGIN_DENIED" }, { status: 403 });
   try {
     const { id } = await context.params;
     const body = await request.json();
