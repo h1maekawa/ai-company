@@ -14,6 +14,7 @@
     "test:architecture": "bash scripts/test-architecture.sh",
     "smoke:production": "node scripts/smoke-personal-company-production.mjs",
     "test:content": "bash scripts/test-content.sh",
+    "test:career": "bash scripts/test-career.sh",
     "test:knowledge": "bash scripts/test-knowledge.sh",
     "test:grill": "bash scripts/test-grill.sh",
     "bench:grill": "bash scripts/bench-grill.sh",

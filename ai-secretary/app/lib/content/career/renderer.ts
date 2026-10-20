@@ -1,0 +1,10 @@
+import type { CareerPost, CareerSlide } from "./types";
+
+/** Escaped, deterministic HTML for 4:5 carousel previews; no remote assets or external renderer. */
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+function estimatedLines(text: string, columns: number) { return text.split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil(Array.from(line).length / columns)), 0); }
+export function careerSlideOverflow(slide: CareerSlide) { return estimatedLines(slide.headline, 17) > 3 || estimatedLines(slide.body, 22) > 12; }
+export function renderCareerCarouselSlide(slide: CareerSlide, total = 5): string {
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;background:#f6f1e9;color:#202a36;font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif}.slide{width:1080px;height:1350px;padding:112px 100px;display:flex;flex-direction:column;justify-content:space-between;background:linear-gradient(145deg,#fbf8f2,#ede4d7)}.brand{font-size:26px;letter-spacing:.16em;color:#53677d}.content{border-left:5px solid #cb8857;padding-left:34px}.headline{font-size:64px;line-height:1.25;font-weight:750;letter-spacing:.02em;overflow-wrap:anywhere}.body{font-size:37px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:42px}.footer{display:flex;justify-content:space-between;font-size:25px;color:#66717d}</style></head><body><main class="slide"><div class="brand">就活攻略ラボ</div><section class="content"><div class="headline">${escapeHtml(slide.headline)}</div><div class="body">${escapeHtml(slide.body)}</div></section><footer class="footer"><span>個人の経験メモ</span><span>${slide.position} / ${total}</span></footer></main></body></html>`;
+}
+export function careerCarouselHtml(post: CareerPost): string[] { return post.platform === "instagram" ? post.slides.map((slide) => renderCareerCarouselSlide(slide)) : []; }
