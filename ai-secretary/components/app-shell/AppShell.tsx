@@ -15,6 +15,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
+  if (pathname === "/career-lab") return <>{children}</>;
+
   const fullscreen = FULLSCREEN_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
   return (

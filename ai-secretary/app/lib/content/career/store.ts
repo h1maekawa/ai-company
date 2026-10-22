@@ -1,6 +1,7 @@
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { resolveVaultPath } from "@/app/lib/runtime/paths";
 import { CAREER_DIVISION_ID, type CareerState } from "./types";
 import { careerHash, careerId } from "./ids";

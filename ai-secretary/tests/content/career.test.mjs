@@ -7,6 +7,7 @@ const source = (name) => pathToFileURL(path.join(process.env.CAREER_SOURCE_DIR, 
 const workflow = await import(source("workflow"));
 const privacy = await import(source("privacy"));
 const renderer = await import(source("renderer"));
+const publicLinks = await import(source("publicLinks"));
 
 function knowledgeItems() {
   return Array.from({ length: 7 }, (_, index) => ({
@@ -52,4 +53,15 @@ test("carousel HTML escapes content and reports estimated text overflow", () => 
   assert.ok(html.includes("&lt;script&gt;"));
   assert.equal(renderer.careerSlideOverflow({ position: 1, headline: "短い見出し", body: "短い本文" }), false);
   assert.equal(renderer.careerSlideOverflow({ position: 1, headline: "長い見出し".repeat(30), body: "" }), true);
+});
+
+test("career LP only exposes validated HTTPS account URLs", () => {
+  assert.equal(publicLinks.validateCareerSocialUrl("instagram", "https://www.instagram.com/shukatsu.lab/"), "https://www.instagram.com/shukatsu.lab/");
+  assert.equal(publicLinks.validateCareerSocialUrl("x", "https://x.com/shukatsu_lab"), "https://x.com/shukatsu_lab/");
+  for (const value of ["http://instagram.com/handle", "https://instagram.com.evil.test/handle", "https://instagram.com/handle?next=evil", "https://instagram.com/explore/handle", "https://user@instagram.com/handle"]) {
+    assert.equal(publicLinks.validateCareerSocialUrl("instagram", value), null);
+  }
+  assert.deepEqual(publicLinks.careerSocialLinks({}), { instagram: null, x: null });
+  assert.equal(publicLinks.validateCareerSocialUrl("x", "https://x.com/intent/tweet"), null);
+  assert.equal(publicLinks.validateCareerSocialUrl("instagram", "https://instagram.com/explore/"), null);
 });

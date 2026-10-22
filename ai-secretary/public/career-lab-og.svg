@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">就活ラボ</title><desc id="desc">AIで、就活をもっと戦略的に。</desc>
+  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0b1220"/><stop offset="1" stop-color="#1d3c4a"/></linearGradient></defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <text x="90" y="130" fill="#a2f2d5" font-size="42" font-family="sans-serif" font-weight="700">SHUKATSU LAB</text>
+  <text x="90" y="300" fill="#f5f7ff" font-size="83" font-family="sans-serif" font-weight="800">AIで、就活を</text>
+  <text x="90" y="420" fill="#a2f2d5" font-size="83" font-family="sans-serif" font-weight="800">もっと戦略的に。</text>
+  <text x="94" y="530" fill="#b6c4d8" font-size="31" font-family="sans-serif">ES・自己分析・面接対策の実践ヒント</text>
+</svg>

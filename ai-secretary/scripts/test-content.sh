@@ -70,6 +70,8 @@ npx tsc \
 # コンパイル結果からnode_modules（@upstash/redis等）を解決できるようにする
 ln -s "$(pwd)/node_modules" "$DIST/node_modules"
 
-node --test tests/content/*.test.mjs
+CONTENT_TESTS=()
+while IFS= read -r test_file; do CONTENT_TESTS+=("$test_file"); done < <(find tests/content -maxdepth 1 -name '*.test.mjs' ! -name 'career.test.mjs' -print | sort)
+node --test "${CONTENT_TESTS[@]}"
 
 echo "✅ Content Business OSのテストが通りました"
