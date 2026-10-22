@@ -21,15 +21,22 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const post = state.posts[index];
     if (body.action === "approve" && post.status === "approved") return NextResponse.json({ error: "POST_ALREADY_APPROVED" }, { status: 409 });
     if (body.action === "edit") {
-      if (post.status === "approved" || post.status === "queued" || post.status === "published") return NextResponse.json({ error: "POST_IMMUTABLE_AFTER_APPROVAL" }, { status: 409 });
+      if (post.status === "queued" || post.status === "published") return NextResponse.json({ error: "POST_IMMUTABLE_AFTER_PUBLISH" }, { status: 409 });
+      const wasApproved = post.status === "approved";
       if (post.platform === "x" && typeof body.body === "string") post.body = body.body.slice(0, 20_000);
       if (post.platform === "instagram" && Array.isArray(body.slides) && body.slides.length === 5) post.slides = body.slides.map((slide: { headline?: string; body?: string }, position: number) => ({ position: position + 1, headline: String(slide.headline ?? "").slice(0, 100), body: String(slide.body ?? "").slice(0, 500) }));
       if (post.platform === "instagram" && typeof body.caption === "string") post.caption = body.caption.slice(0, 5_000);
       const content = post.platform === "x" ? post.body : `${post.caption}\n${post.slides.map((slide) => `${slide.headline}\n${slide.body}`).join("\n")}`;
       post.anonymityCheck = checkCareerPrivacy(content).risk;
       post.factualityCheck = checkCareerFactuality(content);
-      post.contentHash = careerHash(content); post.updatedAt = new Date().toISOString();
-      state.audit.unshift({ id: careerId("career_audit"), divisionId: "career", action: "draft_edited", at: post.updatedAt, details: { postId: post.id } });
+      post.contentHash = careerHash(content);
+      if (wasApproved) {
+        post.status = "review";
+        post.approvedBy = null;
+        post.approvedAt = null;
+      }
+      post.updatedAt = new Date().toISOString();
+      state.audit.unshift({ id: careerId("career_audit"), divisionId: "career", action: wasApproved ? "draft_edited_approval_revoked" : "draft_edited", at: post.updatedAt, details: { postId: post.id, wasApproved } });
     } else if (body.action === "approve") {
       const source = state.knowledgeItems.find((item) => item.id === post.knowledgeItemId && item.divisionId === "career");
       if (!source || source.verificationStatus !== "human_verified" || source.privacyRisk !== "clear") return NextResponse.json({ error: "KNOWLEDGE_VERIFICATION_REQUIRED" }, { status: 409 });
