@@ -11,7 +11,7 @@
 - `/career-lab` のNext.js LP、SNS URLの厳格な検証、未設定時の準備中表示、SEO/OGの設定、既存カルーセルHTMLプレビューを確認。
 - `npm run test:career` 5件成功、`npm run typecheck` 成功、`npm run build` 成功、`npm test` 成功（最終工程223件成功・0件失敗）。
 - 既存就活SNS下書きは非公開のまま。TikTok/X/Instagram投稿、予約、DB変更、本番デプロイは未実施。
-- Draft PR: 作成後に追記。
+- Draft PR: https://github.com/h1maekawa/ai-company/pull/181
 
 ## AI会社全体の現状（コード能力、運用健康度ではない）
 

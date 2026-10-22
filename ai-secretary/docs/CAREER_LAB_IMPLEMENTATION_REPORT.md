@@ -1,5 +1,7 @@
 # 就活ラボ実装結果 — 2026-10-22
 
+Draft PR: https://github.com/h1maekawa/ai-company/pull/181
+
 ## 要件と実装の境界
 
 - 対象: `feat/career-sns-draft-workflow`。開始時の `origin/main` は `c67699b`、既存就活SNS実装は `76b35eb` と `8dfcc18`。ほかの作業worktreeは検出されなかった。
