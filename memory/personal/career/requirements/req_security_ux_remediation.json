@@ -1,0 +1,11 @@
+{
+  "id": "req_security_ux_remediation",
+  "title": "就活攻略ラボ セキュリティ・堅牢性・UX改修要件書",
+  "rawRequest": "現在のコード内の脆弱性や使用しづらい部分を読み込んで改修要件を出す",
+  "markdownContent": "# 就活攻略ラボ セキュリティ・堅牢性・UX改修要件\n\n- REQ-SEC-001: store.tsのGITHUB環境変数による可用性ブロッキング解消\n- REQ-SEC-002: Ollama JSON抽出・パース堅牢化\n- REQ-SEC-003: 状態ファイルの安全なバックアップ保護\n- REQ-UX-001: window.prompt廃止とインライン編集モーダル導入\n- REQ-UX-002: 週次バッチ35枚一括レンダリング機能\n- REQ-UX-003: ナレッジ7件一括選択機能\n- REQ-UX-004: 画像Stale警告表示",
+  "status": "approved",
+  "approvedAt": "2026-10-23T00:51:30.000Z",
+  "approvedBy": "autonomous-lead-engineer",
+  "createdAt": "2026-10-23T00:51:30.000Z",
+  "updatedAt": "2026-10-23T00:51:30.000Z"
+}

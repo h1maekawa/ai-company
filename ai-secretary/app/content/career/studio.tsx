@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import type { CareerKnowledgeItem, CareerPost, CareerState } from "@/app/lib/content/career/types";
+import type { CareerKnowledgeItem, CareerPost, CareerSlide, CareerState } from "@/app/lib/content/career/types";
 import { careerCarouselHtml, careerSlideOverflow } from "@/app/lib/content/career/renderer";
 import type { BufferDryRunReport } from "@/app/lib/content/career/bufferGate";
 
@@ -32,7 +32,14 @@ export default function CareerStudio() {
   const [preview, setPreview] = useState<CareerPost | null>(null);
   const [dryRunReport, setDryRunReport] = useState<BufferDryRunReport | null>(null);
   const [renderingImages, setRenderingImages] = useState<string | null>(null);
+  const [batchRendering, setBatchRendering] = useState<string | null>(null);
   const [renderedPostImages, setRenderedPostImages] = useState<Record<string, number>>({});
+
+  // 編集モーダル用状態
+  const [editingPost, setEditingPost] = useState<CareerPost | null>(null);
+  const [editBody, setEditBody] = useState("");
+  const [editCaption, setEditCaption] = useState("");
+  const [editSlides, setEditSlides] = useState<CareerSlide[]>([]);
 
   // 要件定義AI用
   const [showReqModal, setShowReqModal] = useState(false);
@@ -44,7 +51,7 @@ export default function CareerStudio() {
   const refresh = async () => {
     const response = await fetch("/api/content/career");
     if (!response.ok) throw new Error((await response.json()).error ?? "Career store unavailable");
-    const data = await response.json() as Data;
+    const data = (await response.json()) as Data;
     setState(data.state);
   };
 
@@ -84,11 +91,29 @@ export default function CareerStudio() {
     setError("");
     setSuccessMsg("");
     try {
-      const result = await submit("/api/content/career/seed", {});
-      setSuccessMsg(`初週コンテンツ14件（X 7本・Instagram 7本×5スライド）をインポートしました。`);
+      await submit("/api/content/career/seed", {});
+      setSuccessMsg("初週コンテンツ14件（X 7本・Instagram 7本×5スライド）をインポートしました。");
       await refresh();
     } catch (reason) {
       setError(String(reason));
+    }
+  }
+
+  function autoSelect7Knowledge() {
+    const valid = knowledge.filter((it) => it.privacyRisk === "clear" && it.verificationStatus === "human_verified");
+    const uniqueTopics = new Map<string, string>();
+    for (const item of valid) {
+      if (!uniqueTopics.has(item.topic.toLowerCase())) {
+        uniqueTopics.set(item.topic.toLowerCase(), item.id);
+      }
+      if (uniqueTopics.size === 7) break;
+    }
+    const chosen = Array.from(uniqueTopics.values());
+    setSelected(chosen);
+    if (chosen.length === 7) {
+      setSuccessMsg("7テーマのナレッジを自動選択しました。");
+    } else {
+      setError(`適格なナレッジが ${chosen.length}/7 件しか見つかりませんでした。先に経験を取り込むか「初週インポート」を実行してください。`);
     }
   }
 
@@ -131,34 +156,32 @@ export default function CareerStudio() {
     }
   }
 
-  async function editPost(post: CareerPost) {
-    let payload: { body: string } | { caption: string; slides: Array<{ headline: string; body: string }> };
-    if (post.platform === "x") {
-      const body = window.prompt("X本文を編集（編集すると承認は失効します）", post.body);
-      if (body === null) return;
-      payload = { body };
-    } else {
-      const caption = window.prompt("Instagramキャプションを編集", post.caption);
-      if (caption === null) return;
-      payload = {
-        caption,
-        slides: post.slides.map((slide) => ({
-          headline: window.prompt(`スライド${slide.position} 見出し`, slide.headline) ?? slide.headline,
-          body: window.prompt(`スライド${slide.position} 本文`, slide.body) ?? slide.body,
-        })),
-      };
-    }
+  function startEdit(post: CareerPost) {
+    setEditingPost(post);
+    setEditBody(post.body);
+    setEditCaption(post.caption);
+    setEditSlides(post.slides.map((s) => ({ ...s })));
+  }
+
+  async function saveEdit() {
+    if (!editingPost) return;
     setError("");
     setSuccessMsg("");
+    const payload =
+      editingPost.platform === "x"
+        ? { body: editBody }
+        : { caption: editCaption, slides: editSlides.map((s) => ({ headline: s.headline, body: s.body })) };
+
     try {
-      const response = await fetch(`/api/content/career/posts/${post.id}`, {
+      const response = await fetch(`/api/content/career/posts/${editingPost.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "edit", ...payload }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      setSuccessMsg("投稿を更新しました（承認状態はリセットされました）。");
+      setSuccessMsg("投稿を更新しました（承認状態は安全のため自動的にリセットされました）。");
+      setEditingPost(null);
       await refresh();
     } catch (reason) {
       setError(String(reason));
@@ -172,11 +195,26 @@ export default function CareerStudio() {
     try {
       const res = await submit(`/api/content/career/posts/${postId}/images`, {});
       setRenderedPostImages((prev) => ({ ...prev, [postId]: res.result.images.length }));
-      setSuccessMsg(`1080x1350 PNG画像 5枚のレンダリングが完了しました。`);
+      setSuccessMsg("1080x1350 PNG画像 5枚のレンダリングが完了しました。");
     } catch (reason) {
       setError(String(reason));
     } finally {
       setRenderingImages(null);
+    }
+  }
+
+  async function renderBatchImages(batchId: string) {
+    setError("");
+    setSuccessMsg("");
+    setBatchRendering(batchId);
+    try {
+      const res = await submit(`/api/content/career/batches/${batchId}/images`, {});
+      setSuccessMsg(`バッチ内のInstagram全投稿（計 ${res.renderedImagesCount} 枚）のPNGレンダリングが完了しました！`);
+      await refresh();
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBatchRendering(null);
     }
   }
 
@@ -289,6 +327,79 @@ export default function CareerStudio() {
       {error && <p role="alert" className="rounded-xl border border-loss/40 bg-loss/10 p-3 text-sm text-loss">{error}</p>}
       {successMsg && <p role="status" className="rounded-xl border border-gain/40 bg-gain/10 p-3 text-sm text-gain">{successMsg}</p>}
 
+      {/* 編集モーダル（window.promptを廃止したWeb標準フォーム） */}
+      {editingPost && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 overflow-auto bg-black/80 p-4">
+          <div className="mx-auto max-w-2xl rounded-2xl bg-ink-card p-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold">下書きの編集 · {editingPost.platform.toUpperCase()}</h2>
+              <button className={smallButton} onClick={() => setEditingPost(null)}>キャンセル</button>
+            </div>
+            <p className="mt-2 text-xs text-yellow-400">
+              ※ 内容を変更して保存すると、承認状態は自動的に「要レビュー」へ失効し、再承認が必要になります。
+            </p>
+
+            {editingPost.platform === "x" ? (
+              <div className="mt-4 space-y-3">
+                <div className="flex justify-between text-xs text-sub">
+                  <span>X本文（推奨120〜200文字）</span>
+                  <span className={editBody.length > 280 ? "text-loss font-bold" : ""}>{editBody.length} / 280文字</span>
+                </div>
+                <textarea className={`${input} min-h-48 font-sans leading-relaxed`} value={editBody} onChange={(e) => setEditBody(e.target.value)} />
+              </div>
+            ) : (
+              <div className="mt-4 space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+                <div>
+                  <div className="flex justify-between text-xs text-sub">
+                    <span>Instagramキャプション</span>
+                    <span className={editCaption.length > 2200 ? "text-loss font-bold" : ""}>{editCaption.length} / 2200文字</span>
+                  </div>
+                  <textarea className={`${input} min-h-24 font-sans text-xs mt-1`} value={editCaption} onChange={(e) => setEditCaption(e.target.value)} />
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-brand">スライド5枚（見出し・本文）</p>
+                  {editSlides.map((slide, idx) => {
+                    const overflow = careerSlideOverflow(slide);
+                    return (
+                      <div key={slide.position} className="rounded-xl border border-hairline/60 bg-black/20 p-3 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-sub">Slide {slide.position}</span>
+                          {overflow && <span className="text-[11px] text-loss font-bold">文字溢れ警告（短縮してください）</span>}
+                        </div>
+                        <input
+                          className={input}
+                          placeholder={`スライド${slide.position} 見出し`}
+                          value={slide.headline}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditSlides((prev) => prev.map((s, i) => (i === idx ? { ...s, headline: val } : s)));
+                          }}
+                        />
+                        <textarea
+                          className={`${input} min-h-16 text-xs`}
+                          placeholder={`スライド${slide.position} 本文`}
+                          value={slide.body}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditSlides((prev) => prev.map((s, i) => (i === idx ? { ...s, body: val } : s)));
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3 border-t border-hairline pt-4">
+              <button className={smallButton} onClick={() => setEditingPost(null)}>閉じる</button>
+              <button className={button} onClick={saveEdit}>保存して承認をリセット</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 要件定義AIモーダル */}
       {showReqModal && (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 overflow-auto bg-black/80 p-4">
@@ -374,6 +485,7 @@ export default function CareerStudio() {
             <p className="mt-1 text-xs text-sub">異なる7テーマを選択。X 7本 ＋ Instagram 7本（各5枚＝35枚）を一括生成します。</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <button className={smallButton} onClick={autoSelect7Knowledge}>適格7件を自動選択</button>
             <label className="text-xs text-sub flex items-center gap-2">
               生成エンジン:
               <select className={input} value={generationModel} onChange={(e) => setGenerationModel(e.target.value as "template" | "ollama")}>
@@ -443,12 +555,21 @@ export default function CareerStudio() {
           <div className="mt-4 space-y-6">
             {postsByBatch.map(({ batch, posts }) => (
               <div key={batch.id} className="rounded-xl border border-hairline p-4">
-                <div className="flex flex-wrap justify-between gap-2 border-b border-hairline pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline pb-3">
                   <div>
                     <strong className="text-base">{batch.weekStartDate} 開始週バッチ ({posts.length} 投稿)</strong>
                     <span className="ml-3 text-xs text-sub">タイムゾーン: {batch.timezone} · モデル: {batch.generationModel}</span>
                   </div>
-                  <Pill>{batch.status}</Pill>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className={`${smallButton} border-brand/50 text-brand hover:bg-brand/10`}
+                      onClick={() => renderBatchImages(batch.id)}
+                      disabled={batchRendering === batch.id}
+                    >
+                      {batchRendering === batch.id ? "35枚一括レンダリング中..." : "週次Instagram 35枚を一括PNG出力"}
+                    </button>
+                    <Pill>{batch.status}</Pill>
+                  </div>
                 </div>
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -501,7 +622,7 @@ export default function CareerStudio() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button className={smallButton} onClick={() => editPost(post)}>編集</button>
+                          <button className={smallButton} onClick={() => startEdit(post)}>編集</button>
                           {post.status !== "approved" ? (
                             <button className={`${smallButton} border-gain/50 text-gain hover:bg-gain/10`} onClick={() => approve(post)}>
                               本人確認・承認
@@ -556,7 +677,7 @@ export default function CareerStudio() {
                     <div className="flex justify-between items-center px-1">
                       <span className="text-[11px] text-sub">スライド {index + 1} / 5</span>
                       {overflow ? (
-                        <span className="text-[11px] text-loss">文字溢れ警告（要短縮）</span>
+                        <span className="text-[11px] text-loss font-semibold">文字溢れ警告（要短縮）</span>
                       ) : (
                         <span className="text-[11px] text-gain">レイアウトOK</span>
                       )}

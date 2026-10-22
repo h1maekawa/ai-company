@@ -14,6 +14,34 @@ export type OllamaGenerationResult = {
 };
 
 /**
+ * LLM出力からコードフェンスや前後テキストを除去し純粋なJSONオブジェクトを抽出する
+ */
+export function extractJsonObject(rawText: string): unknown {
+  const trimmed = rawText.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // ```json ... ``` の抽出
+    const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/iu);
+    if (fenceMatch?.[1]) {
+      try {
+        return JSON.parse(fenceMatch[1].trim());
+      } catch {}
+    }
+
+    // 最外層の { ... } を抽出
+    const firstBrace = trimmed.indexOf("{");
+    const lastBrace = trimmed.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const candidate = trimmed.slice(firstBrace, lastBrace + 1);
+      return JSON.parse(candidate);
+    }
+
+    throw new Error("NO_JSON_OBJECT_FOUND");
+  }
+}
+
+/**
  * ローカルOllama (qwen3:8b) 専用の就活SNS投稿生成器。
  * 外部有料APIへの無断フォールバックは行わない。
  */
@@ -123,15 +151,26 @@ export async function generateCareerWeekWithOllama(
 内容：${item.bodyPrivate}
 就活初心者が今日10分で実践できるノウハウに昇華させて作成してください。`;
 
-    const rawJson = await callOllamaForCareer(userPrompt, SYSTEM_PROMPT);
     let parsed: OllamaGenerationResult;
     try {
-      parsed = JSON.parse(rawJson);
-      if (!parsed.xBody || !parsed.slides || parsed.slides.length !== 5) {
+      const rawJson = await callOllamaForCareer(userPrompt, SYSTEM_PROMPT);
+      const extracted = extractJsonObject(rawJson) as Partial<OllamaGenerationResult>;
+      if (!extracted.xBody || !extracted.slides || !Array.isArray(extracted.slides) || extracted.slides.length !== 5) {
         throw new Error("Invalid structure");
       }
+      parsed = extracted as OllamaGenerationResult;
     } catch {
-      throw new Error(`OLLAMA_OUTPUT_MALFORMED: Failed to parse generated content for topic ${item.topic}`);
+      // 1回だけ安全リトライ
+      try {
+        const retryRaw = await callOllamaForCareer(userPrompt, SYSTEM_PROMPT);
+        const extracted = extractJsonObject(retryRaw) as Partial<OllamaGenerationResult>;
+        if (!extracted.xBody || !extracted.slides || !Array.isArray(extracted.slides) || extracted.slides.length !== 5) {
+          throw new Error("Invalid retry structure");
+        }
+        parsed = extracted as OllamaGenerationResult;
+      } catch (retryErr) {
+        throw new Error(`OLLAMA_OUTPUT_MALFORMED: Failed to parse generated content for topic ${item.topic}: ${(retryErr as Error).message}`);
+      }
     }
 
     const xBody = parsed.xBody.trim();
@@ -200,7 +239,7 @@ export async function generateCareerWeekWithOllama(
     divisionId: CAREER_DIVISION_ID,
     weekStartDate,
     timezone: "Asia/Tokyo",
-    generationModel: "local-template-v1", // Batch type allows "local-template-v1"
+    generationModel: "local-template-v1",
     promptVersion: "career-v1",
     status: posts.some((p) => p.anonymityCheck !== "clear" || p.factualityCheck !== "clear") ? "review" : "draft",
     generatedAt: at,

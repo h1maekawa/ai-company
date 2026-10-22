@@ -12,6 +12,7 @@ const brand = await import(source("brand"));
 const seedWeek1 = await import(source("seedWeek1"));
 const bufferGate = await import(source("bufferGate"));
 const imageRenderer = await import(source("imageRenderer"));
+const ollamaGenerator = await import(source("ollamaGenerator"));
 
 function knowledgeItems() {
   return Array.from({ length: 7 }, (_, index) => ({
@@ -221,4 +222,21 @@ test("stale image detection flags hash mismatch when post is edited", () => {
   const { isStale } = imageRenderer.getExistingSlideImages(postId, "expected-hash-value");
   // Non-existent directory returns isStale false safely
   assert.equal(isStale, false);
+});
+
+test("extractJsonObject extracts clean JSON from raw text and markdown fences", () => {
+  // Plain JSON
+  const plain = '{"xBody": "hello", "slides": []}';
+  assert.deepEqual(ollamaGenerator.extractJsonObject(plain), { xBody: "hello", slides: [] });
+
+  // Markdown fenced JSON
+  const fenced = 'Here is the output:\n```json\n{"xBody": "fenced", "slides": []}\n```\nHope it helps!';
+  assert.deepEqual(ollamaGenerator.extractJsonObject(fenced), { xBody: "fenced", slides: [] });
+
+  // Embedded object in conversational text
+  const embedded = '思考過程...\n{"xBody": "embedded", "slides": []}\n以上です。';
+  assert.deepEqual(ollamaGenerator.extractJsonObject(embedded), { xBody: "embedded", slides: [] });
+
+  // Invalid JSON throws cleanly
+  assert.throws(() => ollamaGenerator.extractJsonObject("no json here"), /NO_JSON_OBJECT_FOUND/);
 });
