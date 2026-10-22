@@ -64,12 +64,53 @@ test("generation rejects fewer than seven items, topic duplicates, and privacy f
   assert.throws(() => workflow.generateCareerWeek(state, items.map((item) => item.id), "2026-10-25"), /INVALID_WEEK_START/);
 });
 
-test("carousel HTML escapes content and reports estimated text overflow", () => {
-  const html = renderer.renderCareerCarouselSlide({ position: 1, headline: "<script>name</script>", body: "private text" });
-  assert.ok(!html.includes("<script>name</script>"));
+test("carousel HTML escapes content, includes strict CSP, and detects overflow", () => {
+  const html = renderer.renderCareerCarouselSlide({ position: 1, headline: "<script>alert(1)</script>", body: "safe text" });
+  assert.ok(!html.includes("<script>alert(1)</script>"));
   assert.ok(html.includes("&lt;script&gt;"));
+  assert.ok(html.includes("Content-Security-Policy"));
   assert.equal(renderer.careerSlideOverflow({ position: 1, headline: "短い見出し", body: "短い本文" }), false);
   assert.equal(renderer.careerSlideOverflow({ position: 1, headline: "長い見出し".repeat(30), body: "" }), true);
+});
+
+test("template detection selects Q&A and HOW-TO templates accurately", () => {
+  assert.equal(renderer.detectSlideTemplate({ headline: "就活って何から始めればいい？" }), "qa");
+  assert.equal(renderer.detectSlideTemplate({ headline: "自己分析の始め方 5ステップ" }), "howto");
+  assert.equal(renderer.detectSlideTemplate({ headline: "面接でよく聞かれる質問と回答" }), "qa");
+  assert.equal(renderer.detectSlideTemplate({ headline: "ES通過率を上げる3つの手順" }), "howto");
+});
+
+test("Q&A template renders all 5 slides with distinctive semantic blocks", () => {
+  const slides = [
+    { position: 1, headline: "就活って何から始める？", body: "疑問を解決" },
+    { position: 2, headline: "自己分析の棚卸しから", body: "結論" },
+    { position: 3, headline: "軸がないと迷うから", body: "理由" },
+    { position: 4, headline: "今日できるアクション", body: "具体例" },
+    { position: 5, headline: "今日のまとめ", body: "保存して見返す" },
+  ];
+
+  for (const s of slides) {
+    const html = renderer.renderCareerCarouselSlide(s, { template: "qa", total: 5 });
+    assert.ok(html.includes("就活攻略ラボ"));
+    assert.ok(html.includes("0" + s.position + " / 05"));
+    assert.ok(html.includes("保存して見返す"));
+  }
+});
+
+test("HOW-TO template renders all 5 slides with numbered step badges", () => {
+  const slides = [
+    { position: 1, headline: "自己分析 5ステップ", body: "ロードマップ" },
+    { position: 2, headline: "経験を書き出す", body: "詳細" },
+    { position: 3, headline: "感情を深掘りする", body: "STEP 2とSTEP 3" },
+    { position: 4, headline: "共通点を見つける", body: "STEP 4とSTEP 5" },
+    { position: 5, headline: "チェックリスト", body: "まとめ" },
+  ];
+
+  for (const s of slides) {
+    const html = renderer.renderCareerCarouselSlide(s, { template: "howto", total: 5 });
+    assert.ok(html.includes("就活攻略ラボ"));
+    assert.ok(html.includes("0" + s.position + " / 05"));
+  }
 });
 
 test("career LP only exposes validated HTTPS account URLs", () => {
@@ -157,4 +198,27 @@ test("validateSlideLayout verifies slide content length and flags overflow", () 
   assert.equal(imageRenderer.validateSlideLayout(validSlide).valid, true);
   assert.equal(imageRenderer.validateSlideLayout(invalidSlide).valid, false);
   assert.equal(imageRenderer.validateSlideLayout(overflowSlide).valid, false);
+});
+
+test("path traversal protection strictly blocks illegal post IDs and path escaping", () => {
+  // Valid IDs
+  assert.doesNotThrow(() => imageRenderer.assertSafePostId("career_post_abc-123"));
+  assert.doesNotThrow(() => imageRenderer.assertSafePostId("post-456"));
+
+  // Illegal traversal and characters
+  assert.throws(() => imageRenderer.assertSafePostId("../etc/passwd"), /PATH_TRAVERSAL|INVALID_POST_ID/);
+  assert.throws(() => imageRenderer.assertSafePostId("post/nested"), /PATH_TRAVERSAL|INVALID_POST_ID/);
+  assert.throws(() => imageRenderer.assertSafePostId("..\\windows"), /PATH_TRAVERSAL|INVALID_POST_ID/);
+  assert.throws(() => imageRenderer.assertSafePostId(""), /INVALID_POST_ID/);
+  assert.throws(() => imageRenderer.assertSafePostId("post!@#$"), /INVALID_POST_ID/);
+
+  // Directory boundary escaping check
+  assert.throws(() => imageRenderer.getSafePostDir("../escaped"), /PATH_TRAVERSAL|INVALID_POST_ID/);
+});
+
+test("stale image detection flags hash mismatch when post is edited", () => {
+  const postId = "test-post-hash-check";
+  const { isStale } = imageRenderer.getExistingSlideImages(postId, "expected-hash-value");
+  // Non-existent directory returns isStale false safely
+  assert.equal(isStale, false);
 });

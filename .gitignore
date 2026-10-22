@@ -20,3 +20,7 @@ build/
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 .obsidian/plugins/obsidian-git/data.json
+
+# Career generated images and samples
+memory/personal/career/images/
+memory/personal/career/samples/

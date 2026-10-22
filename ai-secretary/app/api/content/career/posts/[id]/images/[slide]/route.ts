@@ -2,10 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { careerRequestAllowed } from "@/app/lib/content/career/auth";
+import { assertSafePostId, getSafePostDir } from "@/app/lib/content/career/imageRenderer";
 
 export const runtime = "nodejs";
-
-const OUTPUT_DIR = path.resolve(process.cwd(), "memory/personal/career/images");
 
 export async function GET(
   request: NextRequest,
@@ -17,12 +16,16 @@ export async function GET(
 
   try {
     const { id, slide } = await context.params;
+    assertSafePostId(id);
+
     const pos = parseInt(slide, 10);
     if (isNaN(pos) || pos < 1 || pos > 5) {
       return NextResponse.json({ error: "INVALID_SLIDE_NUMBER" }, { status: 400 });
     }
 
-    const filePath = path.join(OUTPUT_DIR, id, `slide-${pos}.png`);
+    const postDir = getSafePostDir(id);
+    const filePath = path.join(postDir, `slide-${pos}.png`);
+
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({ error: "IMAGE_NOT_FOUND" }, { status: 404 });
     }
@@ -36,6 +39,8 @@ export async function GET(
       },
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "GET_IMAGE_FAILED" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "GET_IMAGE_FAILED";
+    const status = message.includes("PATH_TRAVERSAL") || message.includes("INVALID_POST_ID") ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
