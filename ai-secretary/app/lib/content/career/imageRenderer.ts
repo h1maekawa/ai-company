@@ -86,7 +86,7 @@ export async function renderSlideToPng(
   slide: CareerSlide,
   outputPath: string,
   options?: { template?: "qa" | "howto"; total?: number; postTitle?: string }
-): Promise<{ sizeBytes: number }> {
+): Promise<{ sizeBytes: number; width: number; height: number }> {
   if (!fs.existsSync(CHROME_PATH)) {
     throw new Error(`CHROME_NOT_FOUND: Headless renderer requires Google Chrome at ${CHROME_PATH}`);
   }
@@ -119,8 +119,15 @@ export async function renderSlideToPng(
       throw new Error(`Screenshot failed to produce output at ${outputPath}`);
     }
 
-    const stat = fs.statSync(outputPath);
-    return { sizeBytes: stat.size };
+    const image = fs.readFileSync(outputPath);
+    if (image.length < 24 || image.toString("hex", 0, 8) !== "89504e470d0a1a0a") {
+      throw new Error("INVALID_PNG_OUTPUT");
+    }
+    return {
+      sizeBytes: image.length,
+      width: image.readUInt32BE(16),
+      height: image.readUInt32BE(20),
+    };
   } finally {
     if (fs.existsSync(tempHtmlPath)) {
       try { fs.unlinkSync(tempHtmlPath); } catch {}
@@ -152,7 +159,7 @@ export async function renderCareerPostImages(
     const overflow = careerSlideOverflow(slide);
 
     try {
-      const { sizeBytes } = await renderSlideToPng(slide, filePath, {
+      const { sizeBytes, width, height } = await renderSlideToPng(slide, filePath, {
         template,
         total: post.slides.length,
         postTitle: post.title,
@@ -162,8 +169,8 @@ export async function renderCareerPostImages(
         postId: post.id,
         position: slide.position,
         filePath,
-        width: 1080,
-        height: 1350,
+        width,
+        height,
         sizeBytes,
         hasOverflow: overflow,
       });
