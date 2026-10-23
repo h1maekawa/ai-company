@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -13,6 +14,9 @@ const seedWeek1 = await import(source("seedWeek1"));
 const bufferGate = await import(source("bufferGate"));
 const imageRenderer = await import(source("imageRenderer"));
 const ollamaGenerator = await import(source("ollamaGenerator"));
+const week1Csv = await import(source("week1Csv"));
+const careerStore = await import(source("store"));
+const week1CsvText = fs.readFileSync(path.join(process.cwd(), "../shukatsu_lab_ready_v1/03_week1_posts.csv"), "utf8");
 
 function knowledgeItems() {
   return Array.from({ length: 7 }, (_, index) => ({
@@ -96,6 +100,25 @@ test("Q&A template renders all 5 slides with distinctive semantic blocks", () =>
     assert.ok(html.includes("0" + s.position + " / 05"));
     assert.ok(html.includes("保存して見返す"));
   }
+  const issue = renderer.renderCareerCarouselSlide(
+    { position: 2, headline: "課題", body: "困りごとの例／先に経験を思い出そう" },
+    { template: "qa", total: 5 },
+  );
+  assert.ok(issue.includes("課題 / 解決策"));
+  assert.ok(!issue.includes("ANSWER / 結論"));
+});
+
+test("cover slide uses the post title and never presents an unconfirmed Instagram handle as official", () => {
+  for (const template of ["qa", "howto"]) {
+    const html = renderer.renderCareerCarouselSlide(
+      { position: 1, headline: "表紙", body: "自己分析の始め方" },
+      { template, total: 5, postTitle: "自己分析はこの5ステップで始めよう" },
+    );
+    assert.match(html, /<h1[^>]*>\s*自己分析はこの5ステップで始めよう\s*<\/h1>/);
+    assert.match(html, /<h1[^>]*font-size: 54px/);
+    assert.match(html, /Instagram ID 未確認/);
+    assert.doesNotMatch(html, /公式インスタ|@shukatsu\.lab/);
+  }
 });
 
 test("HOW-TO template renders all 5 slides with numbered step badges", () => {
@@ -112,6 +135,14 @@ test("HOW-TO template renders all 5 slides with numbered step badges", () => {
     assert.ok(html.includes("就活攻略ラボ"));
     assert.ok(html.includes("0" + s.position + " / 05"));
   }
+  const practice = renderer.renderCareerCarouselSlide(
+    { position: 3, headline: "実践", body: "1つ選んで「なぜ頑張れた？」「何を工夫した？」を3回掘り下げる" },
+    { template: "howto", total: 5 },
+  );
+  assert.ok(practice.includes("1つ選んで"));
+  assert.ok(practice.includes("なぜ頑張れた"));
+  assert.ok(!practice.includes("STEP 02 アクション"));
+  assert.ok(!practice.includes("STEP 03 アクション"));
 });
 
 test("career LP only exposes validated HTTPS account URLs", () => {
@@ -135,7 +166,7 @@ test("brand configuration enforces anonymity and unconfirmed accounts", () => {
 
 test("seedWeek1Batch generates exactly 14 posts (7 X, 7 IG x 5 slides) and preserves career scope", () => {
   const state = { sources: [], knowledgeItems: [], batches: [], posts: [], audit: [] };
-  const { batch, posts, source, items } = seedWeek1.seedWeek1Batch(state);
+  const { batch, posts, source, items } = seedWeek1.seedWeek1Batch(state, week1CsvText);
 
   assert.equal(batch.divisionId, "career");
   assert.equal(source.divisionId, "career");
@@ -154,17 +185,105 @@ test("seedWeek1Batch generates exactly 14 posts (7 X, 7 IG x 5 slides) and prese
 
   assert.ok(posts.every((p) => p.divisionId === "career" && p.status === "review" && p.approvedAt === null));
 
-  // Idempotency check: repeated call returns existing batch without duplicating
+  // A repeated request fails closed without mutating existing records.
   state.batches.push(batch);
   state.posts.push(...posts);
-  const second = seedWeek1.seedWeek1Batch(state);
-  assert.equal(second.batch.id, batch.id);
-  assert.equal(second.posts.length, 14);
+  const before = structuredClone(state);
+  assert.throws(() => seedWeek1.seedWeek1Batch(state, week1CsvText), /WEEK1_BATCH_ALREADY_EXISTS/);
+  assert.deepEqual(state, before);
+});
+
+test("week 1 CSV is parsed from the official 11-column, 14-row file and matches all imported copy", () => {
+  const rows = week1Csv.parseWeek1Csv(week1CsvText);
+  assert.equal(week1Csv.WEEK1_CSV_HEADERS.length, 11);
+  assert.equal(rows.length, 14);
+  assert.equal(rows.filter((row) => row.platform === "x").length, 7);
+  assert.equal(rows.filter((row) => row.platform === "instagram").length, 7);
+  assert.equal(rows.filter((row) => row.platform === "instagram").reduce((n, row) => n + row.slides.length, 0), 35);
+
+  const { posts } = seedWeek1.seedWeek1Batch({ sources: [], knowledgeItems: [], batches: [], posts: [], audit: [] }, week1CsvText);
+  for (const row of rows) {
+    const post = posts.find((candidate) => candidate.platform === row.platform && candidate.title === row.title);
+    assert.ok(post, `missing ${row.platform} post ${row.title}`);
+    assert.equal(post.body, row.platform === "x" ? row.body : "");
+    assert.equal(post.caption, row.platform === "instagram" ? row.caption : "");
+    assert.equal(post.status, "review");
+    if (row.platform === "instagram") {
+      assert.equal(post.slides.length, 5);
+      for (let i = 0; i < 5; i += 1) {
+        const separator = row.slides[i].search(/[：:]/u);
+        assert.equal(post.slides[i].headline, separator < 0 ? `Slide ${i + 1}` : row.slides[i].slice(0, separator).trim());
+        assert.equal(post.slides[i].body, separator < 0 ? row.slides[i].trim() : row.slides[i].slice(separator + 1).trim());
+      }
+    }
+  }
+});
+
+test("invalid CSV and duplicate or partial existing imports stop without changing state", () => {
+  const emptyState = () => ({ sources: [], knowledgeItems: [], batches: [], posts: [], audit: [] });
+  for (const [input, code] of [
+    [week1CsvText.replace("slide_5", "slide_6"), "CSV_INVALID_HEADERS"],
+    [week1CsvText.replace("review_required", "approved"), "CSV_INVALID_STATUS"],
+    [week1CsvText.replace(",review_required", ""), "CSV_INVALID_ROW_COUNT_OR_WIDTH"],
+    [week1CsvText.replace(",x,", ",youtube,"), "CSV_INVALID_PLATFORM"],
+    [`${week1CsvText}\n"unclosed`, "CSV_UNCLOSED_QUOTE"],
+  ]) {
+    const state = emptyState();
+    const before = structuredClone(state);
+    assert.throws(() => seedWeek1.seedWeek1Batch(state, input), new RegExp(code));
+    assert.deepEqual(state, before);
+  }
+
+  const partial = emptyState();
+  partial.posts.push(seedWeek1.seedWeek1Batch(emptyState(), week1CsvText).posts[0]);
+  const beforePartial = structuredClone(partial);
+  assert.throws(() => seedWeek1.seedWeek1Batch(partial, week1CsvText), /WEEK1_DUPLICATE_POST_CONTENT/);
+  assert.deepEqual(partial, beforePartial);
+
+  const generated = seedWeek1.seedWeek1Batch(emptyState(), week1CsvText);
+  const partialKnowledge = emptyState();
+  partialKnowledge.knowledgeItems.push(generated.items[0]);
+  const beforeKnowledge = structuredClone(partialKnowledge);
+  assert.throws(() => seedWeek1.seedWeek1Batch(partialKnowledge, week1CsvText), /WEEK1_DUPLICATE_KNOWLEDGE_ITEM/);
+  assert.deepEqual(partialKnowledge, beforeKnowledge);
+
+  const partialSource = emptyState();
+  partialSource.sources.push(generated.source);
+  const beforeSource = structuredClone(partialSource);
+  assert.throws(() => seedWeek1.seedWeek1Batch(partialSource, week1CsvText), /WEEK1_SOURCE_ALREADY_IMPORTED/);
+  assert.deepEqual(partialSource, beforeSource);
+});
+
+test("Career state saves and reloads through the existing store in an isolated Vault", () => {
+  const { batch, posts, source: importedSource, items } = seedWeek1.seedWeek1Batch(
+    { sources: [], knowledgeItems: [], batches: [], posts: [], audit: [] }, week1CsvText,
+  );
+  const state = { sources: [importedSource], knowledgeItems: items, batches: [batch], posts, audit: [] };
+  const file = path.join(process.env.VAULT_ROOT, "memory/personal/career/career-state.json");
+  careerStore.saveCareerState(state);
+  const reloaded = careerStore.loadCareerState();
+  assert.deepEqual(reloaded, state);
+  assert.equal(reloaded.posts.length, 14);
+  assert.ok(reloaded.posts.every((post) => post.status === "review" && post.approvedAt === null));
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.equal(fs.existsSync(`${file}.bak`), false);
+});
+
+test("seed API keeps authentication ahead of Vault reads and contains no Buffer send path", () => {
+  const route = fs.readFileSync(path.join(process.cwd(), "app/api/content/career/seed/route.ts"), "utf8");
+  assert.ok(route.indexOf("careerRequestAllowed(request, true)") < route.indexOf("resolveVaultPath(WEEK1_CSV_VAULT_PATH)"));
+  assert.match(route, /openSync\(lockPath, "wx", 0o600\)/);
+  assert.ok(route.indexOf("existsSync(backupPath)") < route.indexOf("loadCareerState()"));
+  assert.match(route, /errorCode === "EEXIST"/);
+  assert.match(route, /errorCode === "ENOENT"/);
+  assert.match(route, /readFileSync\(csvPath, "utf8"\)/);
+  assert.doesNotMatch(route, /buffer\.publish|publishToBuffer|scheduleToBuffer/i);
+  assert.match(route, /Cache-Control.*no-store/);
 });
 
 test("dryRunCareerBuffer fails closed when channels are unconfirmed", () => {
   const state = { sources: [], knowledgeItems: [], batches: [], posts: [], audit: [] };
-  const { posts } = seedWeek1.seedWeek1Batch(state);
+  const { posts } = seedWeek1.seedWeek1Batch(state, week1CsvText);
   state.posts = posts;
 
   const report = bufferGate.dryRunCareerBuffer(state);
@@ -176,7 +295,7 @@ test("dryRunCareerBuffer fails closed when channels are unconfirmed", () => {
 
 test("dryRunCareerBuffer excludes unapproved posts and checks slide count", () => {
   const state = { sources: [], knowledgeItems: [], batches: [], posts: [], audit: [] };
-  const { posts } = seedWeek1.seedWeek1Batch(state);
+  const { posts } = seedWeek1.seedWeek1Batch(state, week1CsvText);
   state.posts = posts;
 
   // With mock verified channels, posts are still excluded because status !== "approved"
@@ -189,6 +308,20 @@ test("dryRunCareerBuffer excludes unapproved posts and checks slide count", () =
   state.posts[0].status = "approved";
   const approvedReport = bufferGate.dryRunCareerBuffer(state, { mockVerifiedChannels: true });
   assert.equal(approvedReport.eligibleCount, 1);
+
+  const xPost = state.posts.find((post) => post.platform === "x");
+  assert.ok(xPost);
+  xPost.status = "approved";
+  xPost.body = "x".repeat(280);
+  const atLimit = bufferGate.dryRunCareerBuffer(state, { mockVerifiedChannels: true });
+  const atLimitItem = atLimit.items.find((item) => item.postId === xPost.id);
+  assert.equal(atLimitItem?.status, "eligible");
+
+  xPost.body += "x";
+  const overLimit = bufferGate.dryRunCareerBuffer(state, { mockVerifiedChannels: true });
+  const overLimitItem = overLimit.items.find((item) => item.postId === xPost.id);
+  assert.equal(overLimitItem?.status, "blocked");
+  assert.ok(overLimitItem?.blockReasons.some((reason) => reason.startsWith("X_CHARACTER_LIMIT_EXCEEDED")));
 });
 
 test("validateSlideLayout verifies slide content length and flags overflow", () => {

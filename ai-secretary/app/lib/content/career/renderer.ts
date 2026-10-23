@@ -53,6 +53,10 @@ export function renderCareerCarouselSlide(
 
   const escapedHeadline = escapeHtml(slide.headline);
   const escapedBody = escapeHtml(slide.body);
+  const coverHeadline = options.postTitle?.trim() || slide.headline;
+  const escapedCoverHeadline = escapeHtml(coverHeadline);
+  const howToCoverFontSize = Array.from(coverHeadline).length > 12 ? 54 : 68;
+  const qaCoverFontSize = Array.from(coverHeadline).length > 12 ? 54 : 74;
 
   // 共通のベースCSS
   const baseCss = `
@@ -174,8 +178,8 @@ export function renderCareerCarouselSlide(
             <span style="background: #152A48; color: #F59E0B; font-size: 96px; font-weight: 900; line-height: 1; padding: 12px 28px; border-radius: 24px; display: inline-block;">5</span>
             <span style="font-size: 44px; font-weight: 800; color: #152A48; letter-spacing: 0.05em;">STEP</span>
           </div>
-          <h1 style="font-size: 68px; line-height: 1.28; font-weight: 900; color: #152A48; letter-spacing: -0.01em; margin-bottom: 36px;">
-            ${escapedHeadline}
+          <h1 style="font-size: ${howToCoverFontSize}px; line-height: 1.28; font-weight: 900; color: #152A48; letter-spacing: -0.01em; margin-bottom: 36px;">
+            ${escapedCoverHeadline}
           </h1>
           <div style="background: #E8F1FA; border-left: 8px solid #2563EB; padding: 24px 28px; border-radius: 0 20px 20px 0; font-size: 30px; line-height: 1.6; color: #1B2738; font-weight: 600;">
             ${escapedBody}
@@ -212,19 +216,19 @@ export function renderCareerCarouselSlide(
             <div style="display: inline-block; background: #2563EB; color: #FFFFFF; font-size: 22px; font-weight: 800; padding: 6px 18px; border-radius: 10px; margin-bottom: 16px;">
               STEP 02
             </div>
-            <h3 style="font-size: 40px; font-weight: 800; color: #152A48; line-height: 1.35; margin-bottom: 16px;">
+            <h3 style="font-size: ${parts[0].headline.length > 26 ? 32 : 40}px; font-weight: 800; color: #152A48; line-height: 1.35; margin-bottom: 16px;">
               ${escapeHtml(parts[0].headline || escapedHeadline)}
             </h3>
-            <p style="font-size: 28px; line-height: 1.7; color: #374151; white-space: pre-wrap;">${escapeHtml(parts[0].body)}</p>
+            ${parts[0].body !== parts[0].headline ? `<p style="font-size: 28px; line-height: 1.7; color: #374151; white-space: pre-wrap;">${escapeHtml(parts[0].body)}</p>` : ""}
           </div>
           <div style="background: #FFFFFF; border-radius: 28px; padding: 44px 44px; border: 2.5px solid #E2E8F0; box-shadow: 0 8px 24px rgba(21,42,72,0.04);">
             <div style="display: inline-block; background: #152A48; color: #FFFFFF; font-size: 22px; font-weight: 800; padding: 6px 18px; border-radius: 10px; margin-bottom: 16px;">
               STEP 03
             </div>
-            <h3 style="font-size: 40px; font-weight: 800; color: #152A48; line-height: 1.35; margin-bottom: 16px;">
+            <h3 style="font-size: ${parts[1]?.headline.length > 26 ? 32 : 40}px; font-weight: 800; color: #152A48; line-height: 1.35; margin-bottom: 16px;">
               ${escapeHtml(parts[1]?.headline || "感情と工夫をセットで記録")}
             </h3>
-            <p style="font-size: 28px; line-height: 1.7; color: #374151; white-space: pre-wrap;">${escapeHtml(parts[1]?.body || parts[0].body)}</p>
+            ${parts[1]?.body !== parts[1]?.headline ? `<p style="font-size: 28px; line-height: 1.7; color: #374151; white-space: pre-wrap;">${escapeHtml(parts[1]?.body || parts[0].body)}</p>` : ""}
           </div>
         </div>
       `;
@@ -237,19 +241,19 @@ export function renderCareerCarouselSlide(
             <div style="display: inline-block; background: #152A48; color: #FFFFFF; font-size: 22px; font-weight: 800; padding: 6px 18px; border-radius: 10px; margin-bottom: 16px;">
               STEP 04
             </div>
-            <h3 style="font-size: 40px; font-weight: 800; color: #152A48; line-height: 1.35; margin-bottom: 16px;">
+            <h3 style="font-size: ${parts[0].headline.length > 26 ? 32 : 40}px; font-weight: 800; color: #152A48; line-height: 1.35; margin-bottom: 16px;">
               ${escapeHtml(parts[0].headline || escapedHeadline)}
             </h3>
-            <p style="font-size: 28px; line-height: 1.7; color: #374151; white-space: pre-wrap;">${escapeHtml(parts[0].body)}</p>
+            ${parts[0].body !== parts[0].headline ? `<p style="font-size: 28px; line-height: 1.7; color: #374151; white-space: pre-wrap;">${escapeHtml(parts[0].body)}</p>` : ""}
           </div>
           <div style="background: #FFFFFF; border-radius: 28px; padding: 44px 44px; border: 2.5px solid #E2E8F0; box-shadow: 0 8px 24px rgba(21,42,72,0.04);">
             <div style="display: inline-block; background: #F59E0B; color: #FFFFFF; font-size: 22px; font-weight: 800; padding: 6px 18px; border-radius: 10px; margin-bottom: 16px;">
               STEP 05
             </div>
-            <h3 style="font-size: 40px; font-weight: 800; color: #152A48; line-height: 1.35; margin-bottom: 16px;">
+            <h3 style="font-size: ${parts[1]?.headline.length > 26 ? 32 : 40}px; font-weight: 800; color: #152A48; line-height: 1.35; margin-bottom: 16px;">
               ${escapeHtml(parts[1]?.headline || "共通点を見出して言語化")}
             </h3>
-            <p style="font-size: 28px; line-height: 1.7; color: #374151; white-space: pre-wrap;">${escapeHtml(parts[1]?.body || parts[0].body)}</p>
+            ${parts[1]?.body !== parts[1]?.headline ? `<p style="font-size: 28px; line-height: 1.7; color: #374151; white-space: pre-wrap;">${escapeHtml(parts[1]?.body || parts[0].body)}</p>` : ""}
           </div>
         </div>
       `;
@@ -289,8 +293,8 @@ export function renderCareerCarouselSlide(
             <span>？</span><span>就活初心者 Q&A</span>
           </div>
           <div style="color: #F59E0B; font-size: 80px; font-weight: 900; line-height: 1; margin-bottom: 12px;">Q.</div>
-          <h1 style="font-size: 74px; line-height: 1.25; font-weight: 900; color: #152A48; letter-spacing: -0.02em; margin-bottom: 36px;">
-            ${escapedHeadline}
+          <h1 style="font-size: ${qaCoverFontSize}px; line-height: 1.25; font-weight: 900; color: #152A48; letter-spacing: -0.02em; margin-bottom: 36px;">
+            ${escapedCoverHeadline}
           </h1>
           <div style="background: #E8F1FA; border-left: 8px solid #2563EB; padding: 24px 28px; border-radius: 0 20px 20px 0; font-size: 32px; line-height: 1.6; color: #1B2738; font-weight: 600;">
             ${escapedBody}
@@ -306,7 +310,7 @@ export function renderCareerCarouselSlide(
       slideContent = `
         <div style="background: #FFFFFF; border-radius: 36px; padding: 68px 52px; border: 2.5px solid #E2E8F0; box-shadow: 0 12px 32px rgba(21,42,72,0.05);">
           <div style="display: inline-block; background: #2563EB; color: #FFFFFF; font-size: 24px; font-weight: 800; padding: 8px 22px; border-radius: 12px; margin-bottom: 32px;">
-            ANSWER / 結論
+            ${slide.headline.trim() === "課題" ? "課題 / 解決策" : "ANSWER / 結論"}
           </div>
           <h2 style="font-size: 54px; font-weight: 900; line-height: 1.32; color: #152A48; margin-bottom: 36px;">
             ${escapedHeadline}
@@ -406,7 +410,7 @@ export function renderCareerCarouselSlide(
   </main>
 
   <footer class="footer">
-    <span>公式インスタ ｜ @shukatsu.lab</span>
+    <span>Instagram ID 未確認</span>
     <div class="save-cta">
       <span class="save-icon"></span>
       <span>保存して見返す</span>
@@ -417,17 +421,29 @@ export function renderCareerCarouselSlide(
 }
 
 function splitStepContent(text: string, baseStep: number): Array<{ headline: string; body: string }> {
-  const lines = text.split("\n").filter((l) => l.trim().length > 0);
-  if (lines.length >= 2) {
-    return [
-      { headline: lines[0], body: lines.slice(1, Math.ceil(lines.length / 2) + 1).join("\n") },
-      { headline: lines[Math.ceil(lines.length / 2) + 1] ?? `STEP 0${baseStep + 1}の実践`, body: lines.slice(Math.ceil(lines.length / 2) + 2).join("\n") || lines[0] },
-    ];
-  }
-  return [
-    { headline: `STEP 0${baseStep} アクション`, body: text },
-    { headline: `STEP 0${baseStep + 1} アクション`, body: "次のステップへ進み、整理した内容を定着させよう。" },
-  ];
+  const clauses = text
+    .split(/[\n／→。！？；;、]|\s+・/u)
+    .map((part) => part.trim().replace(/^[「『①-⑤\s]+|[」』\s]+$/gu, ""))
+    .filter(Boolean);
+  const source = clauses.length >= 2 ? clauses : [text.trim()];
+  const splitAt = Math.max(1, Math.ceil(source.length / 2));
+  const groups = clauses.length >= 2
+    ? [source.slice(0, splitAt), source.slice(splitAt)]
+    : (() => {
+        const characters = [...(text.trim() || `STEP 0${baseStep}を実行する`)];
+        const midpoint = Math.ceil(characters.length / 2);
+        return [characters.slice(0, midpoint).join(""), characters.slice(midpoint).join("")]
+          .map((part) => [part.trim()]);
+      })();
+  const makePart = (parts: string[], index: number) => {
+    const body = parts.join("／") || source.at(-1) || text.trim();
+    const headline = body;
+    return {
+      headline: headline || `STEP 0${baseStep + index}を進める`,
+      body,
+    };
+  };
+  return [makePart(groups[0], 0), makePart(groups[1], 1)];
 }
 
 /**
