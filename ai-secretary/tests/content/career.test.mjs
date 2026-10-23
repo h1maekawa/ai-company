@@ -16,6 +16,7 @@ const imageRenderer = await import(source("imageRenderer"));
 const ollamaGenerator = await import(source("ollamaGenerator"));
 const week1Csv = await import(source("week1Csv"));
 const careerStore = await import(source("store"));
+const requestProtection = await import(source("requestProtection"));
 const week1CsvText = fs.readFileSync(path.join(process.cwd(), "../shukatsu_lab_ready_v1/03_week1_posts.csv"), "utf8");
 
 function knowledgeItems() {
@@ -193,6 +194,30 @@ test("seedWeek1Batch generates exactly 14 posts (7 X, 7 IG x 5 slides) and prese
   assert.deepEqual(state, before);
 });
 
+test("audit-only initial state imports once, retains history, and produces the complete review batch", () => {
+  const dryRunAudit = { id: "career_audit_existing", divisionId: "career", action: "buffer_dry_run_executed", at: "2026-10-23T10:00:07.219Z", details: { totalPosts: 0, eligible: 0, blocked: 0, excluded: 0 } };
+  const initial = { sources: [], knowledgeItems: [], batches: [], posts: [], audit: [dryRunAudit] };
+  const before = structuredClone(initial);
+  const imported = seedWeek1.importWeek1CsvIntoState(initial, week1CsvText, undefined, new Date("2026-10-23T11:00:00.000Z"));
+
+  assert.deepEqual(initial, before);
+  assert.equal(imported.sources.length, 1);
+  assert.equal(imported.knowledgeItems.length, 7);
+  assert.equal(imported.batches.length, 1);
+  assert.equal(imported.posts.length, 14);
+  assert.equal(imported.posts.filter((post) => post.platform === "x").length, 7);
+  const carousels = imported.posts.filter((post) => post.platform === "instagram");
+  assert.equal(carousels.length, 7);
+  assert.equal(carousels.reduce((count, post) => count + post.slides.length, 0), 35);
+  assert.ok(imported.posts.every((post) => post.status === "review" && post.approvedAt === null));
+  assert.equal(imported.audit.length, 2);
+  assert.deepEqual(imported.audit[1], dryRunAudit);
+
+  const afterFirstImport = structuredClone(imported);
+  assert.throws(() => seedWeek1.importWeek1CsvIntoState(imported, week1CsvText), /WEEK1_EXISTING_CAREER_DATA/);
+  assert.deepEqual(imported, afterFirstImport);
+});
+
 test("week 1 CSV is parsed from the official 11-column, 14-row file and matches all imported copy", () => {
   const rows = week1Csv.parseWeek1Csv(week1CsvText);
   assert.equal(week1Csv.WEEK1_CSV_HEADERS.length, 11);
@@ -219,7 +244,7 @@ test("week 1 CSV is parsed from the official 11-column, 14-row file and matches 
   }
 });
 
-test("invalid CSV and duplicate or partial existing imports stop without changing state", () => {
+test("invalid CSV and any pre-existing source, knowledge, batch, or post stop without changing state", () => {
   const emptyState = () => ({ sources: [], knowledgeItems: [], batches: [], posts: [], audit: [] });
   for (const [input, code] of [
     [week1CsvText.replace("slide_5", "slide_6"), "CSV_INVALID_HEADERS"],
@@ -234,51 +259,118 @@ test("invalid CSV and duplicate or partial existing imports stop without changin
     assert.deepEqual(state, before);
   }
 
-  const partial = emptyState();
-  partial.posts.push(seedWeek1.seedWeek1Batch(emptyState(), week1CsvText).posts[0]);
-  const beforePartial = structuredClone(partial);
-  assert.throws(() => seedWeek1.seedWeek1Batch(partial, week1CsvText), /WEEK1_DUPLICATE_POST_CONTENT/);
-  assert.deepEqual(partial, beforePartial);
-
   const generated = seedWeek1.seedWeek1Batch(emptyState(), week1CsvText);
-  const partialKnowledge = emptyState();
-  partialKnowledge.knowledgeItems.push(generated.items[0]);
-  const beforeKnowledge = structuredClone(partialKnowledge);
-  assert.throws(() => seedWeek1.seedWeek1Batch(partialKnowledge, week1CsvText), /WEEK1_DUPLICATE_KNOWLEDGE_ITEM/);
-  assert.deepEqual(partialKnowledge, beforeKnowledge);
+  const existingRecords = [
+    ["sources", generated.source],
+    ["knowledgeItems", generated.items[0]],
+    ["batches", generated.batch],
+    ["posts", generated.posts[0]],
+  ];
+  for (const [key, record] of existingRecords) {
+    const state = emptyState();
+    state[key].push(record);
+    const before = structuredClone(state);
+    assert.throws(() => seedWeek1.importWeek1CsvIntoState(state, week1CsvText), /WEEK1_EXISTING_CAREER_DATA/);
+    assert.deepEqual(state, before);
+  }
 
-  const partialSource = emptyState();
-  partialSource.sources.push(generated.source);
-  const beforeSource = structuredClone(partialSource);
-  assert.throws(() => seedWeek1.seedWeek1Batch(partialSource, week1CsvText), /WEEK1_SOURCE_ALREADY_IMPORTED/);
-  assert.deepEqual(partialSource, beforeSource);
+  const auditOnlyJson = JSON.stringify({ ...emptyState(), audit: [{ id: "a", divisionId: "career", action: "buffer_dry_run_executed", at: "2026-10-23T10:00:07.219Z", details: {} }] });
+  assert.equal(seedWeek1.parseInitialCareerStateJson(auditOnlyJson).audit.length, 1);
+  for (const invalidJson of ["{", "null", "[]", "{}", JSON.stringify({ ...emptyState(), posts: {} }), JSON.stringify({ ...emptyState(), audit: [{ id: "bad", divisionId: "other" }] })]) {
+    assert.throws(() => seedWeek1.parseInitialCareerStateJson(invalidJson), /WEEK1_EXISTING_STATE_UNREADABLE/);
+  }
 });
 
 test("Career state saves and reloads through the existing store in an isolated Vault", () => {
-  const { batch, posts, source: importedSource, items } = seedWeek1.seedWeek1Batch(
-    { sources: [], knowledgeItems: [], batches: [], posts: [], audit: [] }, week1CsvText,
-  );
-  const state = { sources: [importedSource], knowledgeItems: items, batches: [batch], posts, audit: [] };
+  const dryRunAudit = { id: "audit-old", divisionId: "career", action: "buffer_dry_run_executed", at: "2026-10-23T10:00:07.219Z", details: {} };
+  const auditOnly = careerStore.loadCareerState();
+  auditOnly.audit.push(dryRunAudit);
   const file = path.join(process.env.VAULT_ROOT, "memory/personal/career/career-state.json");
+  careerStore.saveCareerState(auditOnly);
+  const reloadedAuditOnly = careerStore.loadCareerState();
+  assert.equal(reloadedAuditOnly.posts.length, 0);
+  assert.equal(reloadedAuditOnly.audit.length, 1);
+  assert.equal(fs.existsSync(`${file}.bak`), false);
+
+  const state = seedWeek1.importWeek1CsvIntoState(reloadedAuditOnly, week1CsvText);
   careerStore.saveCareerState(state);
   const reloaded = careerStore.loadCareerState();
   assert.deepEqual(reloaded, state);
   assert.equal(reloaded.posts.length, 14);
   assert.ok(reloaded.posts.every((post) => post.status === "review" && post.approvedAt === null));
+  assert.equal(reloaded.audit.length, 2);
+  assert.equal(reloaded.audit[1].id, "audit-old");
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
-  assert.equal(fs.existsSync(`${file}.bak`), false);
+  assert.equal(fs.existsSync(`${file}.bak`), true);
+  const backup = JSON.parse(fs.readFileSync(`${file}.bak`, "utf8"));
+  assert.equal(backup.posts.length, 0);
+  assert.equal(backup.audit.length, 1);
+  assert.equal(backup.audit[0].id, "audit-old");
 });
 
 test("seed API keeps authentication ahead of Vault reads and contains no Buffer send path", () => {
   const route = fs.readFileSync(path.join(process.cwd(), "app/api/content/career/seed/route.ts"), "utf8");
   assert.ok(route.indexOf("careerRequestAllowed(request, true)") < route.indexOf("resolveVaultPath(WEEK1_CSV_VAULT_PATH)"));
+  assert.match(route, /parseInitialCareerStateJson\(fs\.readFileSync\(statePath, "utf8"\)\)/);
+  assert.match(route, /importWeek1CsvIntoState\(state, csvText\)/);
   assert.match(route, /openSync\(lockPath, "wx", 0o600\)/);
   assert.ok(route.indexOf("existsSync(backupPath)") < route.indexOf("loadCareerState()"));
   assert.match(route, /errorCode === "EEXIST"/);
   assert.match(route, /errorCode === "ENOENT"/);
+  assert.match(route, /finally \{[\s\S]*?closeSync\(lockFd\)[\s\S]*?unlinkSync\(lockPath\)/);
   assert.match(route, /readFileSync\(csvPath, "utf8"\)/);
   assert.doesNotMatch(route, /buffer\.publish|publishToBuffer|scheduleToBuffer/i);
   assert.match(route, /Cache-Control.*no-store/);
+});
+
+test("Buffer Dry-Run records only a local audit event and writes no Career content", () => {
+  const route = fs.readFileSync(path.join(process.cwd(), "app/api/content/career/dry-run/route.ts"), "utf8");
+  assert.match(route, /action: "buffer_dry_run_executed"/);
+  assert.match(route, /state\.audit\.unshift/);
+  assert.match(route, /saveCareerState\(state\)/);
+  assert.doesNotMatch(route, /state\.(sources|knowledgeItems|batches|posts)\.(push|unshift)/);
+  assert.doesNotMatch(route, /publish|schedule/i);
+});
+
+test("same-origin mutations accept exact local Host in development and reject spoofed or untrusted origins", () => {
+  const priorNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "development";
+  const request = (url, origin, host, forwardedHost) => ({
+    nextUrl: new URL(url),
+    headers: new Headers({ ...(origin ? { origin } : {}), ...(host ? { host } : {}), ...(forwardedHost ? { "x-forwarded-host": forwardedHost } : {}) }),
+  });
+  try {
+    const requestToNormalizedUrl = request("http://localhost:3000/api/content/career", "http://127.0.0.1:3000", "127.0.0.1:3000");
+    assert.equal(requestProtection.isSameOriginMutation(requestToNormalizedUrl, { allowDevelopmentHostMatch: true }), true);
+    assert.equal(requestProtection.isSameOriginMutation(requestToNormalizedUrl), false);
+    assert.equal(requestProtection.isSameOriginMutation(request("http://127.0.0.1:3000/api/content/career", "http://localhost:3000", "localhost:3000"), { allowDevelopmentHostMatch: true }), true);
+    assert.equal(requestProtection.isSameOriginMutation(request("http://localhost:3000/api/content/career", "https://evil.example", "127.0.0.1:3000", "evil.example"), { allowDevelopmentHostMatch: true }), false);
+    assert.equal(requestProtection.isSameOriginMutation(request("http://localhost:3001/api/content/career", "http://127.0.0.1:3001", "127.0.0.1:3001"), { allowDevelopmentHostMatch: true }), false);
+    assert.equal(requestProtection.isSameOriginMutation(request("https://localhost:3000/api/content/career", "https://127.0.0.1:3000", "127.0.0.1:3000"), { allowDevelopmentHostMatch: true }), false);
+    assert.equal(requestProtection.isSameOriginMutation(request("http://localhost:3000/api/content/career", "http://localhost:3000/path", "localhost:3000"), { allowDevelopmentHostMatch: true }), false);
+    assert.equal(requestProtection.isSameOriginMutation(request("http://localhost:3000/api/content/career", undefined, "localhost:3000"), { allowDevelopmentHostMatch: true }), false);
+    // Forwarded host is not trusted to turn a cross-origin Origin into an allowed one.
+    assert.equal(requestProtection.isSameOriginMutation(request("http://localhost:3000/api/content/career", "http://localhost:3000", "127.0.0.1:3000", "localhost:3000"), { allowDevelopmentHostMatch: true }), false);
+    process.env.NODE_ENV = "production";
+    assert.equal(requestProtection.isSameOriginMutation(requestToNormalizedUrl, { allowDevelopmentHostMatch: true }), false);
+  } finally {
+    if (priorNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = priorNodeEnv;
+  }
+});
+
+test("Career GET remains session-authenticated and every Career POST retains the same-origin mutation gate", () => {
+  const careerRoute = fs.readFileSync(path.join(process.cwd(), "app/api/content/career/route.ts"), "utf8");
+  const seedRoute = fs.readFileSync(path.join(process.cwd(), "app/api/content/career/seed/route.ts"), "utf8");
+  assert.match(careerRoute, /GET\(request: NextRequest\)[\s\S]*?careerRequestAllowed\(request\)/);
+  assert.match(careerRoute, /POST\(request: NextRequest\)[\s\S]*?careerRequestAllowed\(request, true\)/);
+  const careerAuth = fs.readFileSync(path.join(process.cwd(), "app/lib/content/career/auth.ts"), "utf8");
+  assert.match(careerAuth, /isSameOriginMutation\(request, \{ allowDevelopmentHostMatch: true \}\)/);
+  assert.match(seedRoute, /POST\(request: NextRequest\)[\s\S]*?careerRequestAllowed\(request, true\)/);
+  const login = fs.readFileSync(path.join(process.cwd(), "app/api/auth/login/route.ts"), "utf8");
+  assert.match(login, /httpOnly: true/);
+  assert.match(login, /secure: true/);
+  assert.match(login, /sameSite: "lax"/);
 });
 
 test("dryRunCareerBuffer fails closed when channels are unconfirmed", () => {

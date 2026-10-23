@@ -13,5 +13,6 @@ for file in app/lib/content/career/*.ts; do
   sed -E 's/from "@\/app\/lib\/runtime\/paths"/from ".\/paths"/; /^import "server-only";$/d; s/from "(\.\/[^"]+)"/from "\1.ts"/g' "$file" > "$SOURCE/$name"
 done
 sed -E 's/from "(\.\/[^"]+)"/from "\1.ts"/g' app/lib/runtime/paths.ts > "$SOURCE/paths.ts"
+sed -E 's/from "(\.\/[^"]+)"/from "\1.ts"/g' app/lib/company/execution/requestProtection.ts > "$SOURCE/requestProtection.ts"
 node --experimental-strip-types --test tests/content/career.test.mjs
 echo "Career content tests passed"

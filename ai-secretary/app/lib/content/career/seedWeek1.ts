@@ -6,6 +6,31 @@ import { parseWeek1Csv } from "./week1Csv";
 export const WEEK1_START_DATE = "2026-10-26";
 export const WEEK1_CSV_VAULT_PATH = "shukatsu_lab_ready_v1/03_week1_posts.csv";
 
+const CAREER_STATE_GROUPS = ["sources", "knowledgeItems", "batches", "posts", "audit"] as const;
+
+/** Allow the initial CSV import only when the state contains audit history and no Career data. */
+export function assertInitialWeek1ImportState(value: unknown): asserts value is CareerState {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("WEEK1_EXISTING_STATE_UNREADABLE");
+  const state = value as Record<string, unknown>;
+  for (const key of CAREER_STATE_GROUPS) {
+    const group = state[key];
+    if (!Array.isArray(group) || group.some((item) => !item || typeof item !== "object" || Array.isArray(item) || (item as { divisionId?: unknown }).divisionId !== CAREER_DIVISION_ID)) {
+      throw new Error("WEEK1_EXISTING_STATE_UNREADABLE");
+    }
+  }
+  if (["sources", "knowledgeItems", "batches", "posts"].some((key) => (state[key] as unknown[]).length > 0)) {
+    throw new Error("WEEK1_EXISTING_CAREER_DATA");
+  }
+}
+
+export function parseInitialCareerStateJson(raw: string): CareerState {
+  let value: unknown;
+  try { value = JSON.parse(raw); }
+  catch { throw new Error("WEEK1_EXISTING_STATE_UNREADABLE"); }
+  assertInitialWeek1ImportState(value);
+  return value;
+}
+
 function parseSlide(rawText: string, position: number): CareerSlide {
   const separator = rawText.search(/[：:]/u);
   if (separator >= 0) return { position, headline: rawText.slice(0, separator).trim(), body: rawText.slice(separator + 1).trim() };
@@ -103,4 +128,24 @@ export function seedWeek1Batch(
   }
 
   return { batch, posts, source, items };
+}
+
+export function importWeek1CsvIntoState(
+  state: CareerState,
+  csvText: string,
+  weekStartDate = WEEK1_START_DATE,
+  now = new Date(),
+): CareerState {
+  assertInitialWeek1ImportState(state);
+  const { batch, posts, source, items } = seedWeek1Batch(state, csvText, weekStartDate, now);
+  return {
+    sources: [source, ...state.sources],
+    knowledgeItems: [...items, ...state.knowledgeItems],
+    batches: [batch, ...state.batches],
+    posts: [...posts, ...state.posts],
+    audit: [{
+      id: careerId("career_audit"), divisionId: CAREER_DIVISION_ID, action: "week1_posts_seeded",
+      at: now.toISOString(), details: { batchId: batch.id, postCount: posts.length },
+    }, ...state.audit],
+  };
 }

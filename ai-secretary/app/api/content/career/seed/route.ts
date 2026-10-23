@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import { careerRequestAllowed } from "@/app/lib/content/career/auth";
 import { loadCareerState, saveCareerState } from "@/app/lib/content/career/store";
-import { seedWeek1Batch, WEEK1_CSV_VAULT_PATH } from "@/app/lib/content/career/seedWeek1";
+import { importWeek1CsvIntoState, parseInitialCareerStateJson, WEEK1_CSV_VAULT_PATH } from "@/app/lib/content/career/seedWeek1";
 import { parseWeek1Csv } from "@/app/lib/content/career/week1Csv";
-import { careerId } from "@/app/lib/content/career/ids";
 import { resolveVaultPath } from "@/app/lib/runtime/paths";
 
 export const runtime = "nodejs";
@@ -17,6 +16,7 @@ const SAFE_IMPORT_ERRORS = new Set([
   "WEEK1_BATCH_ALREADY_EXISTS", "WEEK1_SOURCE_ALREADY_IMPORTED", "WEEK1_DUPLICATE_POST_ID",
   "WEEK1_DUPLICATE_POST_CONTENT", "WEEK1_DUPLICATE_KNOWLEDGE_ITEM", "WEEK1_IMPORT_IN_PROGRESS",
   "WEEK1_EXISTING_BACKUP", "WEEK1_EXISTING_STATE_UNREADABLE",
+  "WEEK1_EXISTING_CAREER_DATA",
 ]);
 
 function safeError(error: unknown): string {
@@ -46,45 +46,21 @@ export async function POST(request: NextRequest) {
     const statePath = resolveVaultPath("memory/personal/career/career-state.json");
     const backupPath = resolveVaultPath("memory/personal/career/career-state.json.bak");
     if (fs.existsSync(backupPath)) throw new Error("WEEK1_EXISTING_BACKUP");
-    if (fs.existsSync(statePath)) {
-      try {
-        const saved = JSON.parse(fs.readFileSync(statePath, "utf8")) as Record<string, unknown>;
-        for (const key of ["sources", "knowledgeItems", "batches", "posts", "audit"]) {
-          const group = saved[key];
-          if (group !== undefined && (!Array.isArray(group) || group.some((item) => !item || typeof item !== "object" || (item as { divisionId?: unknown }).divisionId !== "career"))) {
-            throw new Error("INVALID_CAREER_STATE");
-          }
-        }
-      }
-      catch { throw new Error("WEEK1_EXISTING_STATE_UNREADABLE"); }
-    }
+    if (fs.existsSync(statePath)) parseInitialCareerStateJson(fs.readFileSync(statePath, "utf8"));
 
     const state = loadCareerState();
-    const { batch, posts, source, items } = seedWeek1Batch(state, csvText);
-
-    state.batches.unshift(batch);
-    state.posts.unshift(...posts);
-    state.sources.unshift(source);
-    state.knowledgeItems.unshift(...items);
-
-    state.audit.unshift({
-      id: careerId("career_audit"),
-      divisionId: "career",
-      action: "week1_posts_seeded",
-      at: new Date().toISOString(),
-      details: { batchId: batch.id, postCount: posts.length },
-    });
-
-    saveCareerState(state);
-    return NextResponse.json({ success: true, seeded: true, batch, postsCount: posts.length }, { status: 201, headers: { "Cache-Control": "no-store" } });
+    const imported = importWeek1CsvIntoState(state, csvText);
+    const batch = imported.batches[0];
+    saveCareerState(imported);
+    return NextResponse.json({ success: true, seeded: true, batch, postsCount: batch.postIds.length }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const code = safeError(error);
     const status = code.startsWith("CSV_") ? 422 : code.startsWith("WEEK1_") ? 409 : 500;
     return NextResponse.json({ error: code }, { status, headers: { "Cache-Control": "no-store" } });
   } finally {
     if (lockFd !== null && lockPath !== null) {
-      fs.closeSync(lockFd);
-      fs.unlinkSync(lockPath);
+      try { fs.closeSync(lockFd); }
+      finally { fs.unlinkSync(lockPath); }
     }
   }
 }
