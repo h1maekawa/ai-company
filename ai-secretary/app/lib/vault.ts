@@ -62,6 +62,8 @@ function getGitHubPath(filePath: string): string {
 export interface VaultFile {
   content: string;
   sha?: string;
+  /** Optional for backwards compatibility; distinguishes a confirmed missing file from an empty file. */
+  exists?: boolean;
 }
 
 /**
@@ -85,7 +87,7 @@ export async function getVaultFile(filePath: string): Promise<VaultFile> {
 
     if (response.status === 404) {
       await assertRepositoryAccessible(filePath);
-      return { content: '', sha: undefined };
+      return { content: '', sha: undefined, exists: false };
     }
 
     if (!response.ok) {
@@ -99,17 +101,17 @@ export async function getVaultFile(filePath: string): Promise<VaultFile> {
     }
 
     const content = Buffer.from(data.content, 'base64').toString('utf-8');
-    return { content, sha: data.sha };
+    return { content, sha: data.sha, exists: true };
   } else {
     // Local filesystem fallback
     try {
       const localPath = resolveRawPath(filePath);
       if (fs.existsSync(localPath)) {
         const content = fs.readFileSync(localPath, 'utf-8');
-        return { content, sha: undefined };
+        return { content, sha: undefined, exists: true };
       }
     } catch (e) { throw e; }
-    return { content: '', sha: undefined };
+    return { content: '', sha: undefined, exists: false };
   }
 }
 
