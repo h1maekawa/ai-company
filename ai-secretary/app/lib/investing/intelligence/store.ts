@@ -8,7 +8,8 @@ const THEME_HISTORY_PATH = "memory/personal/fund/theme-history/index.json";
 export type IntelligenceTodayRead =
   | { status: "AVAILABLE"; data: IntelligenceToday }
   | { status: "NOT_FOUND"; data: null }
-  | { status: "UNAVAILABLE"; data: null; reason: "READ_FAILED" | "INVALID_DATA" };
+  | { status: "UNAVAILABLE"; data: null; reason: "READ_FAILED" }
+  | { status: "INVALID_DATA"; data: null };
 
 export async function readIntelligenceToday(): Promise<IntelligenceTodayRead> {
   let file;
@@ -23,11 +24,11 @@ export async function readIntelligenceToday(): Promise<IntelligenceTodayRead> {
   try {
     const data = JSON.parse(file.content) as IntelligenceToday;
     if (!data || typeof data !== "object" || typeof data.asOf !== "string" || !Number.isFinite(Date.parse(data.asOf))) {
-      return { status: "UNAVAILABLE", data: null, reason: "INVALID_DATA" };
+      return { status: "INVALID_DATA", data: null };
     }
     return { status: "AVAILABLE", data };
   } catch {
-    return { status: "UNAVAILABLE", data: null, reason: "INVALID_DATA" };
+    return { status: "INVALID_DATA", data: null };
   }
 }
 
