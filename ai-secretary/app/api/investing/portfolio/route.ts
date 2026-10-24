@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadPortfolio } from "@/app/lib/investing/portfolio";
-import { computeTodayChange, recordSnapshot } from "@/app/lib/investing/history";
+import { computeTodayChange, loadHistory } from "@/app/lib/investing/history";
 
 // 保有状況はリクエストごとにVaultから読む
 export const dynamic = "force-dynamic";
@@ -8,12 +8,12 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/investing/portfolio
  * 保有ポートフォリオ・サマリー・資産推移履歴を返す。
- * 併せて当日の総評価額をスナップショットとして記録する（1日1点）。
+ * GETはVaultの読み取りのみ。スナップショット記録は明示的なcron writerが担う。
  */
 export async function GET(): Promise<NextResponse> {
   try {
     const portfolio = await loadPortfolio();
-    const history = await recordSnapshot(portfolio.summary.totalValueJpy);
+    const history = await loadHistory();
     const { todayPnlJpy, todayPnlPct } = computeTodayChange(history);
 
     return NextResponse.json({
