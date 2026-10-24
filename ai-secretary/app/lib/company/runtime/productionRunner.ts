@@ -52,6 +52,16 @@ export async function runProductionMission(input: {
     const state = snapshot.state;
     const mission = state.missions.find((item) => item.id === input.missionId);
     if (!mission) throw new Error("MISSION_NOT_FOUND");
+    if (mission.businessId) {
+      const runLimit = mission.delegationRunLimit;
+      const runCount = mission.delegationRunCount ?? 0;
+      if (!Number.isSafeInteger(runLimit) || runLimit! < 1 || !Number.isSafeInteger(runCount) || runCount < 0) {
+        throw new Error("BUSINESS_MISSION_RUN_LIMIT_INVALID");
+      }
+      if (runCount >= runLimit!) throw new Error("BUSINESS_MISSION_RUN_LIMIT_REACHED");
+      mission.delegationRunCount = runCount + 1;
+      snapshot = await store.save(state, { expectedVersion: snapshot.version, lease: guard });
+    }
     let recovered = false;
     const run = state.runtime?.runs[input.missionId];
     for (const history of run?.history ?? []) {

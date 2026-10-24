@@ -9,6 +9,7 @@
  */
 
 import type { PersonalMission, MissionStatus } from "../missions";
+import type { MicroBusinessId } from "../businessManager";
 
 /** Phase 6 で追加する実行中の状態 */
 export type ExecutionMissionStatus =
@@ -46,6 +47,14 @@ export type ExecutionMission = Omit<PersonalMission, "status"> & {
   /** 紐づくActionRequestのID */
   actionRequestIds: string[];
   executionPlanId?: string;
+  /** Optional business scope for Micro Business OS delegated work. */
+  businessId?: MicroBusinessId;
+  delegatedByAgentId?: string;
+  delegationRequestId?: string;
+  /** Budget reservation in yen, counted against the rolling 24-hour business cap. */
+  delegationBudgetYen?: number;
+  delegationRunLimit?: number;
+  delegationRunCount?: number;
 };
 
 /**
