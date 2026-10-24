@@ -10,7 +10,6 @@ const execFileAsync = promisify(execFile);
 const sourceDir = process.env.CAREER_SOURCE_DIR;
 if (!sourceDir) throw new Error("CAREER_SOURCE_DIR is required");
 
-const workflow = await import(pathToFileURL(path.join(sourceDir, "workflow.ts")));
 const seedWeek1 = await import(pathToFileURL(path.join(sourceDir, "seedWeek1.ts")));
 const imageRenderer = await import(pathToFileURL(path.join(sourceDir, "imageRenderer.ts")));
 const renderer = await import(pathToFileURL(path.join(sourceDir, "renderer.ts")));
@@ -19,6 +18,8 @@ const ollamaGenerator = await import(pathToFileURL(path.join(sourceDir, "ollamaG
 const privacy = await import(pathToFileURL(path.join(sourceDir, "privacy.ts")));
 const store = await import(pathToFileURL(path.join(sourceDir, "store.ts")));
 
+const week1CsvPath = path.resolve(process.cwd(), "../shukatsu_lab_ready_v1/03_week1_posts.csv");
+const week1CsvText = fs.readFileSync(week1CsvPath, "utf8");
 const RESULTS = {};
 
 async function run() {
@@ -51,7 +52,7 @@ async function run() {
   // 3. Pure in-memory workflow simulation. This does not invoke the authenticated UI or API.
   console.log("3. Xの下書き編集・保存ロジック（メモリ上のシミュレーション）...");
   const testState = { sources: [], knowledgeItems: [], batches: [], posts: [], audit: [] };
-  const { batch, posts } = seedWeek1.seedWeek1Batch(testState);
+  const { batch, posts } = seedWeek1.seedWeek1Batch(testState, week1CsvText);
   testState.batches.push(batch);
   testState.posts.push(...posts);
 
@@ -227,14 +228,19 @@ async function run() {
     // 8-C: 重複実行時の冪等性（重複バッチの生成防止）
     const weekStartDate = "2026-10-26";
     const dupState = { sources: [], knowledgeItems: [], batches: [], posts: [], audit: [] };
-    const firstSeed = seedWeek1.seedWeek1Batch(dupState, weekStartDate);
+    const firstSeed = seedWeek1.seedWeek1Batch(dupState, week1CsvText, weekStartDate);
     dupState.batches.push(firstSeed.batch);
     dupState.posts.push(...firstSeed.posts);
 
-    const secondSeed = seedWeek1.seedWeek1Batch(dupState, weekStartDate);
-    assert.equal(secondSeed.batch.id, firstSeed.batch.id, "Batch must be idempotent");
+    assert.throws(
+      () => seedWeek1.seedWeek1Batch(dupState, week1CsvText, weekStartDate),
+      /WEEK1_BATCH_ALREADY_EXISTS/,
+      "Domain seeding must reject an already-created weekly batch",
+    );
     assert.equal(dupState.batches.length, 1, "Must not create duplicate batch");
-    console.log("   ✔ 重複実行時の冪等性と二重生成防止を確認");
+    const batchesRoute = fs.readFileSync(path.join(process.cwd(), "app/api/content/career/batches/route.ts"), "utf8");
+    assert.match(batchesRoute, /if \(existing\)[\s\S]*?idempotent: true/);
+    console.log("   ✔ Domain seeding rejects duplicate batches and the API returns the existing batch idempotently");
 
     // 8-D: 二重投稿（重複ハッシュ）のBuffer Dry-run検知
     dupState.posts.push({ ...dupState.posts[0], id: "career_post_dup" });
