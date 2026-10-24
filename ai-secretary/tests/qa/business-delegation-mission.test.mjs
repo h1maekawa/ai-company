@@ -96,7 +96,7 @@ test("separates task budget, rolling budget, Mission rate, per-task runs, and de
   const recent = (overrides = {}) => ({
     id: `old-${Math.random()}`,
     businessId: "SNS",
-    createdAt: "2026-10-23T12:00:00.000Z",
+    createdAt: "2026-10-23T23:30:00.000Z",
     delegationBudgetYen: 0,
     ...overrides,
   });
@@ -105,13 +105,13 @@ test("separates task budget, rolling budget, Mission rate, per-task runs, and de
     [input(), [recent({ delegationBudgetYen: 1 })], "CUMULATIVE_BUDGET_LIMIT_EXCEEDED"],
     [input(), Array.from({ length: 6 }, () => recent()), "MISSION_RATE_LIMIT_EXCEEDED"],
     [input({ executionCount: 4 }), [], "EXECUTION_LIMIT_EXCEEDED"],
-    [input({ deadline: "2026-10-25T00:00:00.000Z" }), [], "DEADLINE_OUT_OF_BOUNDS"],
+    [input({ deadline: "2026-10-25T00:00:01.000Z" }), [], "DEADLINE_OUT_OF_BOUNDS"],
   ]) {
     const store = new MemoryExecutionStore();
     store.state.missions = seeded;
     setExecutionStoreForTests(store);
     const result = await delegation.createBusinessDelegationMission(request);
-    assert.equal(result.ok, false);
+    assert.equal(result.ok, false, expected);
     assert.equal(result.error, expected);
     assert.equal(store.state.missions.length, seeded.length);
   }

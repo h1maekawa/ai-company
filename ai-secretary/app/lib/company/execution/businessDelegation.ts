@@ -49,6 +49,7 @@ function findDuplicate(state: Awaited<ReturnType<typeof loadExecutionState>>, bu
 export async function createBusinessDelegationMission(input: BusinessDelegationInput): Promise<BusinessDelegationResult> {
   const business = getBusinessManagerContract(input.businessId);
   if (!business || !business.managerAgentId || business.status !== "ready") return fail(404, "BUSINESS_MANAGER_UNASSIGNED");
+  const managerAgentId = business.managerAgentId;
 
   const validated = validateManualMissionInput({ title: input.title, description: input.description });
   if (!validated.ok) return fail(400, validated.error);
@@ -65,7 +66,9 @@ export async function createBusinessDelegationMission(input: BusinessDelegationI
   const store = getExecutionStore();
 
   const cached = await store.getIdempotencyResult<BusinessDelegationResult>(IDEMPOTENCY_SCOPE, storeKey);
-  if (cached) return cached;
+  if (cached) {
+    return cached.ok ? { ...cached, data: { ...cached.data, replayed: true } } : cached;
+  }
 
   // Recover a saved Mission if the snapshot write succeeded but idempotency result persistence failed.
   const existingState = await loadExecutionState();
@@ -122,7 +125,7 @@ export async function createBusinessDelegationMission(input: BusinessDelegationI
       const decision = authorizeBusinessDelegation({
         businessId: business.id,
         // Principal is resolved from the server-side Business Registry, never the model/body.
-        actorAgentId: business.managerAgentId,
+        actorAgentId: managerAgentId,
         workerAgentId: input.workerAgentId,
         actionType: "ANALYSIS",
         budgetYen,
