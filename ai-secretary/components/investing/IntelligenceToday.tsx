@@ -6,13 +6,33 @@ import { AlertTriangle, ArrowRight, CheckCircle2, ShieldAlert } from "lucide-rea
 import type { IntelligenceToday, OpportunityGate } from "@/app/lib/investing/intelligence/types";
 import { Card, CardHeader, EmptyState, Skeleton } from "./ui";
 
+type SemiconductorResearch = {
+  generatedAt: string | null;
+  semiconductors: Array<{
+    ticker: string;
+    company: string;
+    price: { value: number; currency: string; asOf: string | null; fetchedAt: string; freshness: string } | null;
+    causes: { market: Array<{ id: string; fact: string; sourceName: string; sourceUrl: string | null; freshness: string }>; industry: Array<{ id: string; fact: string; sourceName: string; sourceUrl: string | null; freshness: string }>; company: Array<{ id: string; fact: string; sourceName: string; sourceUrl: string | null; freshness: string }> };
+    financialEvidence: Array<{ id: string; fact: string; sourceName: string; sourceUrl: string | null; freshness: string }>;
+    scenarios: Array<{ kind: string; trigger: string; whatToWatch: string; invalidation: string; evidenceIds: string[] }>;
+    risks: string[];
+    missing: string[];
+  }>;
+  semiconductorIndex: { momentum20d: number | null; freshness: string; evidenceRefs: string[] } | null;
+  review: string[];
+};
+
 const GATE_LABEL: Record<OpportunityGate, string> = { GO_CANDIDATE: "GO候補", WAIT: "WAIT", PASS: "PASS", DATA_INCOMPLETE: "DATA INCOMPLETE" };
 const GATE_STYLE: Record<OpportunityGate, string> = { GO_CANDIDATE: "text-gain border-gain/30 bg-gain/10", WAIT: "text-warning border-warning/30 bg-warning/10", PASS: "text-sub border-hairline bg-white/[0.03]", DATA_INCOMPLETE: "text-loss border-loss/30 bg-loss/10" };
 
 export function IntelligenceTodayPanel() {
   const [today, setToday] = useState<IntelligenceToday | null>(null);
+  const [semiconductorResearch, setSemiconductorResearch] = useState<SemiconductorResearch | null>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { fetch("/api/investing/intelligence/today").then((response) => response.json()).then((data) => setToday(data.today ?? null)).catch(() => setToday(null)).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    fetch("/api/investing/intelligence/today").then((response) => response.json()).then((data) => setToday(data.today ?? null)).catch(() => setToday(null)).finally(() => setLoading(false));
+    fetch("/api/investing/semiconductor-research").then((response) => response.ok ? response.json() : null).then((data) => setSemiconductorResearch(data)).catch(() => setSemiconductorResearch(null));
+  }, []);
   if (loading) return <Skeleton className="mb-4 h-80 rounded-2xl" />;
   if (!today) return <Card><EmptyState icon={<ShieldAlert className="h-7 w-7" />} title="Investment Intelligenceはまだありません" description="日次Intelligence Cron実行後に、Evidenceに基づく市場・機会情報を表示します。" /></Card>;
 
@@ -20,6 +40,7 @@ export function IntelligenceTodayPanel() {
   const wait = today.opportunities.filter((item) => item.gate === "WAIT" || item.gate === "DATA_INCOMPLETE").slice(0, 5);
   return (
     <div className="mb-5 space-y-3">
+      <SemiconductorResearchPanel research={semiconductorResearch} />
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><p className="text-[10px] font-semibold tracking-[0.16em] text-sub">MARKET REGIME</p><p className={`mt-1 text-2xl font-bold ${today.marketRegime === "RISK_ON" ? "text-gain" : today.marketRegime === "RISK_OFF" ? "text-loss" : "text-warning"}`}>{today.marketRegime.replace("_", " ")}</p></div>
@@ -37,6 +58,28 @@ export function IntelligenceTodayPanel() {
       {today.portfolioAlerts.length > 0 ? <Card><CardHeader title="Portfolio Alert" hint="保有株への重要変化" /><ul className="space-y-2">{today.portfolioAlerts.map((alert) => <li key={`${alert.ticker}-${alert.message}`} className="rounded-xl border border-warning/25 bg-warning/5 p-3 text-xs"><strong className="text-warning">{alert.ticker}</strong><span className="ml-2 text-slate-300">{alert.message}</span></li>)}</ul></Card> : null}
     </div>
   );
+}
+
+function SemiconductorResearchPanel({ research }: { research: SemiconductorResearch | null }) {
+  if (!research) return null;
+  const causeRows = (title: string, evidence: SemiconductorResearch["semiconductors"][number]["causes"]["market"]) => (
+    <div><p className="mb-1 text-[10px] font-semibold text-sub">{title}</p>{evidence.length ? <ul className="space-y-1">{evidence.slice(0, 3).map((item) => <li key={item.id} className="text-xs text-slate-300">{item.sourceUrl && /^https?:\/\//.test(item.sourceUrl) ? <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-brand">{item.sourceName}</a> : item.sourceName}: {item.fact} · {item.freshness}</li>)}</ul> : <p className="text-xs text-sub">未取得</p>}</div>
+  );
+  return <Card>
+    <CardHeader title="保有半導体株 Research" hint="保有数量などは表示・保存しません" />
+    {research.semiconductors.length === 0 ? <p className="text-xs text-sub">Theme Universeで半導体と明示された米国株の保有はありません。未知の銘柄分類は推測していません。</p> : <div className="space-y-3">
+      {research.semiconductorIndex ? <p className="text-xs text-sub">SOXX業界指標: 20日変化 {research.semiconductorIndex.momentum20d === null ? "未取得" : `${research.semiconductorIndex.momentum20d.toFixed(2)}%`} · {research.semiconductorIndex.freshness}</p> : <p className="text-xs text-sub">半導体業界指標: 未取得</p>}
+      {research.semiconductors.map((item) => <section key={item.ticker} className="rounded-xl border border-hairline p-3">
+        <div className="flex flex-wrap items-baseline gap-2"><strong className="text-sm text-white">{item.ticker}</strong><span className="text-xs text-sub">{item.company}</span><span className="text-xs text-slate-300">価格 {item.price ? `${item.price.value} ${item.price.currency}` : "未取得"} · 観測 {item.price?.asOf ?? "未取得"} · 取得 {item.price?.fetchedAt ?? "未取得"} · 鮮度 {item.price?.freshness ?? "不明"}</span></div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">{causeRows("市場要因", item.causes.market)}{causeRows("業界要因", item.causes.industry)}{causeRows("個社要因 / 決算", item.causes.company)}</div>
+        {item.scenarios.length ? <div className="mt-3"><p className="mb-1 text-[10px] font-semibold text-sub">シナリオ（既存Evidence）</p><div className="grid gap-2 sm:grid-cols-3">{item.scenarios.map((scenario) => <div key={scenario.kind} className="rounded-lg bg-white/[0.03] p-2 text-xs"><strong>{scenario.kind}</strong><p className="mt-1 text-slate-300">{scenario.trigger}</p><p className="mt-1 text-sub">注視: {scenario.whatToWatch}</p><p className="mt-1 text-sub">無効化: {scenario.invalidation}</p></div>)}</div></div> : <p className="mt-2 text-xs text-sub">Evidence条件を満たすシナリオは未取得です。</p>}
+        {item.risks.length > 0 ? <p className="mt-2 text-xs text-warning">リスク: {item.risks.join(" / ")}</p> : null}
+        {item.missing.length > 0 ? <p className="mt-2 text-xs text-sub">未取得項目: {item.missing.join("、")}</p> : null}
+      </section>)}
+      <p className="text-xs text-sub">追加購入の検討は、価格の鮮度・通貨、決算/業績、評価、業界需要と供給、反対Evidenceを揃えてから行ってください。価格下落だけを買いシグナルにしません。</p>
+      <p className="text-[10px] text-sub">{research.review.join(" ")}</p>
+    </div>}
+  </Card>;
 }
 
 function OpportunityList({ title, items, empty }: { title: string; items: IntelligenceToday["opportunities"]; empty: string }) {

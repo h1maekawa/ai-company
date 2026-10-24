@@ -29,6 +29,10 @@ export type InvestmentEvidence = {
   metric: string | null;
   value: number | string | null;
   freshness: IntelligenceFreshness;
+  /** Market quote currency, retained from the provider instead of inferred downstream. */
+  currency?: "USD" | "JPY" | "UNKNOWN";
+  /** Explicit scope for classifying an evidence-backed cause. */
+  scope?: "MARKET" | "INDUSTRY" | "COMPANY";
 };
 
 export type ScoreFactor = {
