@@ -67,5 +67,5 @@ test("IntelligenceToday save propagates a read failure without overwriting the s
 test("invalid saved JSON is unavailable rather than an empty result", async () => {
   file.content = "{";
   file.exists = true;
-  assert.deepEqual(await readIntelligenceToday(), { status: "UNAVAILABLE", data: null, reason: "INVALID_DATA" });
+  assert.deepEqual(await readIntelligenceToday(), { status: "INVALID_DATA", data: null });
 });
