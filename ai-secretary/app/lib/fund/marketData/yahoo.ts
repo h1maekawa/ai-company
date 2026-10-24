@@ -15,7 +15,7 @@
  */
 
 import { DailyBar } from "./calc";
-import { LastPrice, MarketDataProvider } from "./provider";
+import { LastPrice, MarketCurrency, MarketDataProvider } from "./provider";
 
 const CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart";
 const USER_AGENT = "Mozilla/5.0 (compatible; ai-company-fund/1.0)";
@@ -97,6 +97,8 @@ export function parseChartBars(result: ChartResult): DailyBar[] | null {
   const gmtOffset = result.meta?.gmtoffset ?? 0;
   const adj = result.indicators?.adjclose?.[0]?.adjclose;
   const bars: DailyBar[] = [];
+  const currency = normalizeCurrency(result.meta?.currency);
+  const fetchedAt = new Date().toISOString();
 
   for (let i = 0; i < stamps.length; i++) {
     const open = quote.open?.[i];
@@ -125,6 +127,8 @@ export function parseChartBars(result: ChartResult): DailyBar[] | null {
       low: (low as number) * ratio,
       close: (close as number) * ratio,
       volume: typeof volume === "number" && Number.isFinite(volume) ? volume : 0,
+      currency,
+      fetchedAt,
     });
   }
 
@@ -140,12 +144,18 @@ export function parseChartLastPrice(result: ChartResult): LastPrice | null {
   const asOf =
     typeof epoch === "number" && epoch > 0
       ? new Date(epoch * 1000).toISOString()
-      : new Date().toISOString();
+      : null;
   return {
     price,
-    currency: (meta?.currency as string | undefined) ?? null,
+    currency: normalizeCurrency(meta?.currency),
     asOf,
+    fetchedAt: new Date().toISOString(),
   };
+}
+
+function normalizeCurrency(value: string | undefined): MarketCurrency {
+  if (value === "USD" || value === "JPY") return value;
+  return "UNKNOWN";
 }
 
 export const yahooProvider: MarketDataProvider = {
@@ -172,7 +182,7 @@ export const yahooProvider: MarketDataProvider = {
     if (!result) return null;
     const last = parseChartLastPrice(result);
     if (!last) return null;
-    return { rate: last.price, asOf: last.asOf };
+    return { rate: last.price, asOf: last.asOf, fetchedAt: last.fetchedAt };
   },
 
   async getQuote() {

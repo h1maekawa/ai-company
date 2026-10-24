@@ -11,6 +11,10 @@ export interface DailyBar {
   low: number;
   close: number;
   volume: number;
+  /** Trading currency from the provider; UNKNOWN prevents unsafe conversion. */
+  currency?: "USD" | "JPY" | "UNKNOWN";
+  /** When this response was fetched; separate from the bar's trading date. */
+  fetchedAt?: string;
 }
 
 /**

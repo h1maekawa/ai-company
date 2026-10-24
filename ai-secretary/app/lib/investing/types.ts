@@ -75,7 +75,7 @@ export type Portfolio = {
   /** 現在値で再評価した時刻（ISO）。再評価していなければ null */
   revaluedAt?: string | null;
   /** 円換算に使ったUSD/JPY */
-  fx?: { rate: number; asOf: string; source: string } | null;
+  fx?: { rate: number; asOf: string | null; fetchedAt?: string; source: string } | null;
   /** ポートフォリオ全体の価格鮮度（一番古い銘柄に合わせる） */
   freshness?: DataFreshness | null;
 };

@@ -14,7 +14,8 @@
  */
 
 import { DataFreshness, worstFreshness } from "../freshness";
-import { getProvider } from "../fund/marketData/provider";
+import { getProvider, MarketDataProvider } from "../fund/marketData/provider";
+import { classifyMarketTimestamp } from "../fund/marketData/trust";
 import { AssetClass, Position } from "./types";
 
 /** CSV由来の据え置き値であることを示す出所ラベル */
@@ -24,7 +25,7 @@ const MANUAL_SOURCE = "positions.md";
 export interface RevaluationResult {
   positions: Position[];
   /** 円換算に使ったUSD/JPY（取得できなければ null） */
-  fx: { rate: number; asOf: string; source: string } | null;
+  fx: { rate: number; asOf: string | null; fetchedAt: string; source: string } | null;
   /** 再評価を実行した時刻（ISO） */
   revaluedAt: string;
   /** 全ポジションを束ねた鮮度（一番古いものに合わせる） */
@@ -47,8 +48,12 @@ export function toMarketSymbol(position: Position): string | null {
   return null; // 投信・現金・その他は日足ソースを持たない
 }
 
-/** YYYY-MM-DD / ISO の値が「今日（JST）」かどうか */
-function isTodayJst(asOf: string): boolean {
+/** 時刻不明はUNKNOWN、7日より古い価格はSTALEとする。 */
+function priceFreshness(asOf: string | null): "delayed" | "daily" | "stale" | "none" {
+  if (!asOf) return "none";
+  const trust = classifyMarketTimestamp(asOf);
+  if (trust === "UNKNOWN") return "none";
+  if (trust === "STALE") return "stale";
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Tokyo",
     year: "numeric",
@@ -61,7 +66,7 @@ function isTodayJst(asOf: string): boolean {
     month: "2-digit",
     day: "2-digit",
   }).format(/^\d{4}-\d{2}-\d{2}$/.test(asOf) ? new Date(`${asOf}T00:00:00+09:00`) : new Date(asOf));
-  return today === asOfJst;
+  return today === asOfJst ? "delayed" : "daily";
 }
 
 /** CSV/手動の値を据え置く場合の鮮度 */
@@ -88,7 +93,7 @@ function fallbackFreshness(
  */
 export async function revaluePositions(
   positions: Position[],
-  options: { source: "holdings_csv" | "positions_md" | "none"; importedAt: string | null }
+  options: { source: "holdings_csv" | "positions_md" | "none"; importedAt: string | null; provider?: MarketDataProvider }
 ): Promise<RevaluationResult> {
   const baseSource = options.source === "holdings_csv" ? CSV_SOURCE : MANUAL_SOURCE;
   const revaluedAt = new Date().toISOString();
@@ -116,7 +121,7 @@ export async function revaluePositions(
     };
   }
 
-  const provider = getProvider();
+  const provider = options.provider ?? getProvider();
   const needsFx = targets.some((t) => t.symbol && t.position.assetClass === "us_stock");
 
   const [fxRaw, prices] = await Promise.all([
@@ -128,7 +133,10 @@ export async function revaluePositions(
     ),
   ]);
 
-  const fx = fxRaw ? { ...fxRaw, source: provider.name } : null;
+  const fx = fxRaw && Number.isFinite(fxRaw.rate) && fxRaw.rate > 0 &&
+    priceFreshness(fxRaw.asOf) !== "stale" && priceFreshness(fxRaw.asOf) !== "none"
+    ? { ...fxRaw, source: provider.name }
+    : null;
   let repriced = 0;
 
   const result = targets.map(({ position, symbol }, index) => {
@@ -140,6 +148,32 @@ export async function revaluePositions(
       return {
         ...position,
         freshness: fallbackFreshness(position.assetClass, baseSource, options.importedAt, reason),
+      };
+    }
+
+    const expectedCurrency = position.assetClass === "jp_stock" ? "JPY" : "USD";
+    if (last.currency !== expectedCurrency || position.currency !== expectedCurrency) {
+      return {
+        ...position,
+        freshness: fallbackFreshness(
+          position.assetClass,
+          baseSource,
+          options.importedAt,
+          `価格通貨を確認できないため${baseSource}の値を表示中`
+        ),
+      };
+    }
+
+    const freshnessLevel = priceFreshness(last.asOf);
+    if (freshnessLevel === "stale" || freshnessLevel === "none") {
+      return {
+        ...position,
+        freshness: {
+          level: freshnessLevel,
+          asOf: last.asOf,
+          source: provider.name,
+          note: freshnessLevel === "none" ? "価格の基準時刻が不明です" : "価格が7日より古いため保有記録の値を表示中",
+        },
       };
     }
 
@@ -183,10 +217,10 @@ export async function revaluePositions(
       pnlJpy: pnlJpy ?? position.pnlJpy,
       pnlPct,
       freshness: {
-        level: isTodayJst(last.asOf) ? ("delayed" as const) : ("daily" as const),
+        level: freshnessLevel,
         asOf: last.asOf,
         source: provider.name === "null" ? baseSource : "Yahoo Finance",
-        note: isTodayJst(last.asOf) ? null : "前営業日の終値",
+        note: freshnessLevel === "delayed" ? null : "前営業日の終値",
       },
     };
   });

@@ -14,7 +14,8 @@ import {
   marketEnv,
   spreadPct,
 } from "./calc";
-import { getProvider } from "./provider";
+import { getProvider, MarketCurrency } from "./provider";
+import { classifyMarketTimestamp } from "./trust";
 
 export interface MarketSnapshot {
   provider: string;
@@ -22,7 +23,13 @@ export interface MarketSnapshot {
   priceUsd: number | null;
   priceJpy: number | null;
   usdJpy: number | null;
+  usdJpyAsOf: string | null;
+  usdJpyFetchedAt: string | null;
+  usdJpyFreshness: "FRESH" | "STALE" | "UNKNOWN";
   priceAsOf: string | null;
+  priceFetchedAt: string | null;
+  currency: MarketCurrency;
+  priceFreshness: "FRESH" | "STALE" | "UNKNOWN";
   rvol20: number | null;
   adtv20Usd: number | null;
   spreadPct: number | null;
@@ -30,6 +37,35 @@ export interface MarketSnapshot {
   changePct: number | null;
   daysToEarnings: number | null;
   missingData: string[];
+}
+
+export function convertMarketValue(
+  localPrice: number | null,
+  currency: MarketCurrency,
+  usdJpy: number | null
+): { priceUsd: number | null; priceJpy: number | null } {
+  if (localPrice === null || !Number.isFinite(localPrice)) return { priceUsd: null, priceJpy: null };
+  if (currency === "USD") return { priceUsd: localPrice, priceJpy: usdJpy === null || !Number.isFinite(usdJpy) || usdJpy <= 0 ? null : Math.round(localPrice * usdJpy) };
+  if (currency === "JPY") return { priceUsd: usdJpy && usdJpy > 0 ? localPrice / usdJpy : null, priceJpy: localPrice };
+  return { priceUsd: null, priceJpy: null };
+}
+
+export const classifyPriceFreshness = classifyMarketTimestamp;
+
+export function trustedMarketValues(
+  localPrice: number | null,
+  currency: MarketCurrency,
+  usdJpy: number | null,
+  basisAt: string | null,
+  now = new Date()
+) {
+  const freshness = classifyPriceFreshness(basisAt, now);
+  const converted = convertMarketValue(localPrice, currency, usdJpy);
+  return {
+    freshness,
+    priceUsd: freshness === "FRESH" ? converted.priceUsd : null,
+    priceJpy: freshness === "FRESH" ? converted.priceJpy : null,
+  };
 }
 
 const MARKET_INDEX_SYMBOL = "SPY";
@@ -47,6 +83,9 @@ export async function getMarketSnapshot(ticker: string): Promise<MarketSnapshot>
 
   let priceUsd: number | null = null;
   let priceAsOf: string | null = null;
+  let priceFetchedAt: string | null = null;
+  let currency: MarketCurrency = "UNKNOWN";
+  let priceFreshness: MarketSnapshot["priceFreshness"] = "UNKNOWN";
   let rvol: number | null = null;
   let adtv: number | null = null;
   let atr: number | null = null;
@@ -54,8 +93,11 @@ export async function getMarketSnapshot(ticker: string): Promise<MarketSnapshot>
 
   if (bars && bars.length > 0) {
     const last = bars[bars.length - 1];
-    priceUsd = last.close;
+    currency = last.currency ?? "UNKNOWN";
     priceAsOf = last.date;
+    priceFetchedAt = last.fetchedAt ?? null;
+    priceFreshness = classifyPriceFreshness(priceAsOf);
+    if (priceFreshness !== "FRESH") missing.push(priceFreshness === "STALE" ? "stale_price" : "unknown_price_time");
     rvol = rvol20(bars);
     adtv = adtv20(bars);
     atr = atr14(bars);
@@ -66,12 +108,22 @@ export async function getMarketSnapshot(ticker: string): Promise<MarketSnapshot>
   if (rvol === null) missing.push("rvol20");
   if (adtv === null) missing.push("adtv20");
 
-  const usdJpy = fx?.rate ?? null;
-  if (usdJpy === null) missing.push("usd_jpy");
+  const usdJpyFreshness = classifyPriceFreshness(fx?.asOf ?? null);
+  const usdJpy = fx && usdJpyFreshness === "FRESH" && Number.isFinite(fx.rate) && fx.rate > 0 ? fx.rate : null;
+  if (usdJpy === null) missing.push(usdJpyFreshness === "STALE" ? "stale_usd_jpy" : "unknown_usd_jpy");
 
-  const priceJpy =
-    priceUsd !== null && usdJpy !== null
-      ? Math.round(priceUsd * usdJpy)
+  const lastClose = bars?.at(-1)?.close ?? null;
+  // A known but old price remains visible only through its basis timestamp/status.
+  // Do not pass it into a current evaluation as if it were fresh.
+  const trusted = trustedMarketValues(lastClose, currency, usdJpy, priceAsOf);
+  priceUsd = trusted.priceUsd;
+  const priceJpy = trusted.priceJpy;
+  if (currency === "UNKNOWN") missing.push("price_currency");
+  const adtvLocal = bars ? adtv20(bars) : null;
+  const adtvUsd = currency === "USD"
+    ? adtvLocal
+    : currency === "JPY" && adtvLocal !== null && usdJpy !== null && Number.isFinite(usdJpy) && usdJpy > 0
+      ? Math.round(adtvLocal / usdJpy)
       : null;
 
   const spread =
@@ -87,9 +139,15 @@ export async function getMarketSnapshot(ticker: string): Promise<MarketSnapshot>
     priceUsd,
     priceJpy,
     usdJpy,
+    usdJpyAsOf: fx?.asOf ?? null,
+    usdJpyFetchedAt: fx?.fetchedAt ?? null,
+    usdJpyFreshness,
     priceAsOf,
+    priceFetchedAt,
+    currency,
+    priceFreshness,
     rvol20: rvol,
-    adtv20Usd: adtv,
+    adtv20Usd: adtvUsd,
     spreadPct: spread,
     atr14: atr,
     changePct: chg,
