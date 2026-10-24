@@ -80,6 +80,7 @@ export function DepartmentOverview() {
 
   const cards = new Map(summary?.departments.map((card) => [card.id, card]) ?? []);
   const attention = [...(summary?.attention ?? []), ...connectionAttention].sort((a, b) => (a.order ?? (a.priority === "critical" ? 0 : 5)) - (b.order ?? (b.priority === "critical" ? 0 : 5)) || priorityRank[a.priority] - priorityRank[b.priority]);
+  const todayPriorities = attention.slice(0, 3);
   const selectedDepartment = DEPARTMENT_NAV_BY_ID[selected];
   const summaryLoading = !summary && !summaryError;
 
@@ -92,13 +93,13 @@ export function DepartmentOverview() {
       </div>
       {(summaryError || Boolean(summary?.unavailable?.length)) && <p role="status" className="mt-3 text-sm text-amber-200">{summary?.unavailable?.join("・")}の確認事項を取得できません。しばらくしてから再読み込みしてください。</p>}
       {connectionError && <p role="status" className="mt-2 text-sm text-slate-400">接続状態は未取得です。</p>}
-      {attention.length ? <ul className="mt-4 flex snap-x gap-3 overflow-x-auto pb-3" aria-label="確認が必要な項目">
-        {attention.map((item) => <li key={item.id} className="w-[min(78vw,17rem)] shrink-0 snap-start"><article className="flex h-full min-h-44 flex-col rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4">
+      {attention.length ? <><ul className="mt-4 grid gap-3 md:grid-cols-3" aria-label="今日の優先事項">
+        {todayPriorities.map((item) => <li key={item.id}><article className="flex h-full min-h-44 flex-col rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4">
           <div className="flex items-center justify-between gap-2 text-xs"><span className="text-amber-200">{item.source}</span><span className="rounded-full border border-amber-400/30 px-2 py-0.5 text-amber-200">{priorityText[item.priority]}</span></div>
           <h3 className="mt-3 line-clamp-3 flex-1 font-semibold text-white">{item.title}</h3>
           <Link href={item.href} className="mt-4 flex min-h-11 items-center justify-center rounded-xl bg-amber-300 px-3 text-sm font-semibold text-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200">確認する</Link>
         </article></li>)}
-      </ul> : summary && !summary.unavailable?.length && connectionsLoaded && !connectionError ? <p className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4 text-sm text-emerald-200">現在、確認が必要な項目はありません。</p> : null}
+      </ul>{attention.length > todayPriorities.length && <p className="mt-2 text-xs text-slate-500">ほか {attention.length - todayPriorities.length} 件は各画面で確認できます。</p>}</> : summary && !summary.unavailable?.length && connectionsLoaded && !connectionError ? <p className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4 text-sm text-emerald-200">現在、確認が必要な項目はありません。</p> : null}
     </section>
 
     <section aria-labelledby="status-title"><div className="flex items-start justify-between gap-3"><div><h2 id="status-title" className="text-xl font-semibold text-white">現在の状況</h2><p className="mt-1 text-sm text-slate-400">カードを選ぶとチームの状態を表示します。</p></div><p className="shrink-0 pt-1 text-xs text-slate-500">{updatedAtLabel(summary, summaryLoading)}</p></div>

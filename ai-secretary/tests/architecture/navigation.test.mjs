@@ -68,7 +68,8 @@ test("mobile shell uses the same four destinations and keeps the floating AI", (
 test("Home shows action cards and the selected department team without duplicate sections", () => {
   const home = read("components/mobile-ceo/DepartmentOverview.tsx");
   const summary = read("app/api/company/home-summary/route.ts");
-  assert.match(home, /overflow-x-auto/);
+  assert.match(home, /todayPriorities = attention\.slice\(0, 3\)/);
+  assert.match(home, /aria-label="今日の優先事項"/);
   assert.match(home, /aria-pressed=\{selected === id\}/);
   assert.match(home, /チーム/);
   assert.match(home, /部署の詳細/);
@@ -76,6 +77,17 @@ test("Home shows action cards and the selected department team without duplicate
   assert.doesNotMatch(home, /AIエージェント稼働状況/);
   assert.match(summary, /loadExecutionState\(\)/);
   assert.doesNotMatch(summary, /callAI|generateText|method:\s*"POST"/);
+});
+
+test("Health exposes Skills registry counts without claiming a real execution probe", () => {
+  const api = read("app/api/skills/route.ts");
+  const health = read("components/connections/ConnectionsDashboard.tsx");
+  for (const field of ["registered", "implemented", "handlerAvailable", "availabilityReason", "registeredCount", "implementedCount", "handlerAvailableCount"]) {
+    assert.ok(api.includes(field), `Skills API must expose ${field}`);
+  }
+  assert.match(health, /fetch\("\/api\/skills"\)/);
+  assert.match(health, /ハンドラー登録/);
+  assert.match(health, /外部接続や実行成功を保証しません/);
 });
 
 test("admin holds the non-daily areas instead of the sidebar", () => {

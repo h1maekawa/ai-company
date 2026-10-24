@@ -27,11 +27,11 @@ test("Home status labels are explicit and never use 未取得 as a department st
   assert.match(overview, /最終更新/);
 });
 
-test("Home keeps horizontal Attention and the selected team path", () => {
+test("Home shows the top three priorities and keeps the selected team path", () => {
   const overview = read("components/mobile-ceo/DepartmentOverview.tsx");
-  for (const className of ["overflow-x-auto", "snap-x", "shrink-0"]) {
-    assert.match(overview, new RegExp(className));
-  }
+  assert.match(overview, /todayPriorities = attention\.slice\(0, 3\)/);
+  assert.match(overview, /aria-label="今日の優先事項"/);
+  assert.match(overview, /ほか \{attention\.length - todayPriorities\.length\} 件/);
   for (const marker of ["チーム", "部署の詳細", "employees"]) {
     assert.match(overview, new RegExp(marker));
   }
