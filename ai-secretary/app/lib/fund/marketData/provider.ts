@@ -15,12 +15,21 @@ import { DailyBar } from "./calc";
 import { BARS_TTL_MS, QUOTE_TTL_MS, cached } from "./cache";
 import { yahooProvider } from "./yahoo";
 
-/** 直近値（遅延クオート）。asOf は取引所が返した約定時刻のISO文字列 */
+export type MarketCurrency = "USD" | "JPY" | "UNKNOWN";
+
+function currencyForSymbol(symbol: string): MarketCurrency {
+  const normalized = symbol.trim();
+  if (/(?:\.jp|^\d{4}[A-Z]?$)/i.test(normalized)) return "JPY";
+  if (/\.us$/i.test(normalized) || /^[A-Z][A-Z0-9-]{0,6}$/i.test(normalized)) return "USD";
+  return "UNKNOWN";
+}
+
+/** 直近値（遅延クオート）。asOf は価格の基準時刻で、不明なら null。 */
 export interface LastPrice {
   price: number;
-  /** 値段の通貨（判別できなければ null） */
-  currency: string | null;
-  asOf: string;
+  currency: MarketCurrency;
+  asOf: string | null;
+  fetchedAt: string;
 }
 
 export interface MarketDataProvider {
@@ -30,7 +39,7 @@ export interface MarketDataProvider {
   /** 直近値。取得不可はnull（呼び出し側は日足終値へフォールバックする） */
   getLastPrice(symbol: string): Promise<LastPrice | null>;
   /** USD/JPY為替レート。取得不可はnull */
-  getUsdJpy(): Promise<{ rate: number; asOf: string } | null>;
+  getUsdJpy(): Promise<{ rate: number; asOf: string | null; fetchedAt: string } | null>;
   /** bid/ask。無料ソースでは通常null */
   getQuote(
     symbol: string
@@ -97,7 +106,8 @@ export const stooqProvider: MarketDataProvider = {
       const bars = parseStooqCsv(csv);
       if (!bars || bars.length < minBars) return null;
       // 直近300本に制限（メモリ・キャッシュ節約。200日線判定に十分）
-      return bars.slice(-300);
+      const fetchedAt = new Date().toISOString();
+      return bars.slice(-300).map((bar) => ({ ...bar, currency: currencyForSymbol(symbol), fetchedAt }));
     });
   },
 
@@ -106,7 +116,7 @@ export const stooqProvider: MarketDataProvider = {
     const bars = await stooqProvider.getDailyBars(symbol, 1);
     if (!bars || bars.length === 0) return null;
     const last = bars[bars.length - 1];
-    return { price: last.close, currency: null, asOf: last.date };
+    return { price: last.close, currency: currencyForSymbol(symbol), asOf: last.date, fetchedAt: new Date().toISOString() };
   },
 
   async getUsdJpy() {
@@ -116,7 +126,7 @@ export const stooqProvider: MarketDataProvider = {
       const bars = parseStooqCsv(csv);
       if (!bars || bars.length === 0) return null;
       const last = bars[bars.length - 1];
-      return { rate: last.close, asOf: last.date };
+      return { rate: last.close, asOf: last.date, fetchedAt: new Date().toISOString() };
     });
   },
 

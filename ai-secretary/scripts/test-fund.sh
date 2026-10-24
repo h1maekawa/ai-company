@@ -11,6 +11,10 @@ export FUND_DIST="$DIST"
 npx tsc app/lib/fund/policy.ts app/lib/fund/engine.ts app/lib/fund/rakutenCsv.ts app/lib/fund/marketData/calc.ts app/lib/fund/analyst.ts app/lib/fund/learning/types.ts app/lib/fund/learning/engine.ts app/lib/fund/transactions/types.ts app/lib/fund/transactions/accounting.ts \
   --outDir "$DIST" --module commonjs --target es2020 --esModuleInterop --skipLibCheck
 
+# Investment market data trust + portfolio valuation (network providers are mocked in tests)
+npx tsc app/lib/fund/marketData/snapshot.ts app/lib/fund/marketData/provider.ts app/lib/fund/marketData/yahoo.ts app/lib/fund/marketData/cache.ts app/lib/fund/marketData/calc.ts app/lib/fund/policy.ts app/lib/investing/revalue.ts app/lib/investing/types.ts app/lib/freshness.ts \
+  --outDir "$DIST/market" --rootDir app/lib --module commonjs --target es2021 --esModuleInterop --skipLibCheck
+
 # Investment Intelligence pure parsers / gate engine
 npx tsc app/lib/fund/marketData/calc.ts app/lib/fund/policy.ts app/lib/fund/rakutenCsv.ts app/lib/fund/analyst.ts app/lib/note/tokyoDate.ts app/lib/investing/intelligence/types.ts app/lib/investing/intelligence/flags.ts app/lib/investing/intelligence/config.ts app/lib/investing/intelligence/themes.ts app/lib/investing/intelligence/themeIntelligence.ts app/lib/investing/intelligence/newsImpact.ts app/lib/investing/intelligence/engine.ts app/lib/investing/intelligence/providers/fred.ts app/lib/investing/intelligence/providers/sec.ts app/lib/investing/intelligence/readinessProjection.ts \
   app/lib/investing/intelligence/research/types.ts app/lib/investing/intelligence/research/marketHypothesis.ts app/lib/investing/intelligence/research/marketStructure.ts app/lib/investing/intelligence/research/picksAndShovels.ts app/lib/investing/intelligence/research/bottleneck.ts app/lib/investing/intelligence/research/causalDistance.ts app/lib/investing/intelligence/research/candidateDiscovery.ts app/lib/investing/intelligence/research/companyComparison.ts app/lib/investing/intelligence/research/orchestrator.ts \
