@@ -76,6 +76,7 @@ export function InvestmentResearchSnapshot() {
   const store = response?.store;
   const evidence = new Map<string, InvestmentEvidence>([
     ...(today?.marketEvidence ?? []), ...(today?.news ?? []),
+    ...(today?.opportunities.flatMap((item) => item.evidence) ?? []),
   ].map((item) => [item.id, item]));
   const artifacts = today?.research?.artifacts ?? [];
 
