@@ -96,7 +96,7 @@ export type DelegationDecision =
   | { allowed: true; requiresHumanApproval: boolean; riskLevel: RiskLevel; businessId: MicroBusinessId; managerAgentId: string; workerAgentId: string }
   | { allowed: false; reason: string };
 
-function findBusiness(id: MicroBusinessId) {
+export function getBusinessManagerContract(id: string): MicroBusinessManagerContract | undefined {
   return MICRO_BUSINESS_REGISTRY.find((business) => business.id === id);
 }
 
@@ -119,7 +119,7 @@ export function authorizeBusinessDelegation(
   request: DelegationRequest,
   now: Date = new Date()
 ): DelegationDecision {
-  const business = findBusiness(request.businessId);
+  const business = getBusinessManagerContract(request.businessId);
   if (!business || business.status !== "ready" || !business.managerAgentId) {
     return { allowed: false, reason: "BUSINESS_MANAGER_UNASSIGNED" };
   }
