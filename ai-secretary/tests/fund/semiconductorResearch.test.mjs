@@ -7,7 +7,7 @@ const { buildSemiconductorPortfolioResearch } = require(`${process.env.FUND_DIST
 
 const evidence = (overrides = {}) => ({
   id: "e1", sourceType: "market", sourceName: "Yahoo", sourceUrl: null,
-  publishedAt: "2026-10-23", fetchedAt: "2026-10-24T00:00:00.000Z",
+  publishedAt: "2026-10-23", fetchedAt: "2026-10-24T00:00:00.000Z", providerFetchedAt: "2026-10-24T00:01:00.000Z",
   fact: "NVDA close 100", metric: "ohlcv", value: 100, freshness: "daily", currency: "USD", scope: "COMPANY", ...overrides,
 });
 
@@ -24,6 +24,7 @@ test("projects known held semiconductor research without position sizing fields"
   assert.deepEqual(result.semiconductors.map((item) => item.ticker), ["NVDA"]);
   assert.equal(result.semiconductors[0].price.currency, "USD");
   assert.equal(result.semiconductors[0].price.asOf, "2026-10-23");
+  assert.equal(result.semiconductors[0].price.fetchedAt, "2026-10-24T00:01:00.000Z");
   assert.equal(result.semiconductors[0].causes.industry[0].id, "e3");
   assert.equal(result.semiconductors[0].financialEvidence[0].id, "e2");
   assert.equal(result.semiconductors[0].scenarios[0].kind, "BASE");
@@ -51,4 +52,13 @@ test("does not infer price currency when old saved evidence lacks it", () => {
   );
   assert.equal(result.semiconductors[0].price.currency, "UNKNOWN");
   assert.ok(result.semiconductors[0].missing.includes("株価通貨"));
+});
+
+test("does not present the Research generatedAt as a provider fetch time", () => {
+  const result = buildSemiconductorPortfolioResearch(
+    [{ code: "NVDA", name: "NVIDIA", assetClass: "us_stock", quantity: 1, avgCost: 1, marketValueJpy: 1, currency: "USD" }],
+    { asOf: "2026-10-24T00:00:00.000Z", opportunities: [{ ticker: "NVDA", evidence: [evidence({ providerFetchedAt: null })], scenarios: [], riskFlags: [], missingEvidence: [] }], sectors: [] },
+  );
+  assert.equal(result.semiconductors[0].price.fetchedAt, null);
+  assert.ok(result.semiconductors[0].missing.includes("プロバイダー取得日時"));
 });

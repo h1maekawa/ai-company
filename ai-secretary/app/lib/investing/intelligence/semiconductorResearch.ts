@@ -10,7 +10,7 @@ const SEMICONDUCTOR_TICKERS = new Set(
 export type SemiconductorHoldingResearch = {
   ticker: string;
   company: string;
-  price: { value: number; currency: "USD" | "JPY" | "UNKNOWN"; asOf: string | null; fetchedAt: string; freshness: InvestmentEvidence["freshness"] } | null;
+  price: { value: number; currency: "USD" | "JPY" | "UNKNOWN"; asOf: string | null; fetchedAt: string | null; freshness: InvestmentEvidence["freshness"] } | null;
   causes: { market: InvestmentEvidence[]; industry: InvestmentEvidence[]; company: InvestmentEvidence[] };
   financialEvidence: InvestmentEvidence[];
   scenarios: InvestmentOpportunity["scenarios"];
@@ -55,6 +55,7 @@ export function buildSemiconductorPortfolioResearch(
     const quoteFreshness = marketQuote ? classifyMarketTimestamp(marketQuote.publishedAt) : "UNKNOWN";
     const quoteFreshnessLabel: IntelligenceFreshness = quoteFreshness === "FRESH" ? "daily" : quoteFreshness === "STALE" ? "stale" : "unknown";
     if (marketQuote && quoteFreshness !== "FRESH") missing.push(quoteFreshness === "STALE" ? "最新株価（鮮度超過）" : "株価観測日時");
+    if (marketQuote && !marketQuote.providerFetchedAt) missing.push("プロバイダー取得日時");
     if (financialEvidence.length === 0) missing.push("決算・業績Evidence");
     if (!today) missing.push("Investment Intelligence snapshot");
     if (!causes.industry.length && !today?.sectors.some((sector) => sector.name === "Semiconductors" && sector.score !== null)) missing.push("半導体業界Evidence");
@@ -62,7 +63,7 @@ export function buildSemiconductorPortfolioResearch(
       value: marketQuote.value as number,
       currency: marketQuote.currency ?? "UNKNOWN" as const,
       asOf: marketQuote.publishedAt,
-      fetchedAt: marketQuote.fetchedAt,
+      fetchedAt: marketQuote.providerFetchedAt ?? null,
       freshness: quoteFreshnessLabel,
     } : null;
     return {

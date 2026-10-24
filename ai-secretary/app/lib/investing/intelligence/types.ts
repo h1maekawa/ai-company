@@ -31,6 +31,8 @@ export type InvestmentEvidence = {
   freshness: IntelligenceFreshness;
   /** Market quote currency, retained from the provider instead of inferred downstream. */
   currency?: "USD" | "JPY" | "UNKNOWN";
+  /** Provider response time; distinct from when the Research artifact was generated. */
+  providerFetchedAt?: string | null;
   /** Explicit scope for classifying an evidence-backed cause. */
   scope?: "MARKET" | "INDUSTRY" | "COMPANY";
 };
