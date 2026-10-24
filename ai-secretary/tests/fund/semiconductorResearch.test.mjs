@@ -15,6 +15,7 @@ test("projects known held semiconductor research without position sizing fields"
   const positions = [
     { code: "NVDA", name: "NVIDIA", assetClass: "us_stock", quantity: 3, avgCost: 10, marketValueJpy: 300, currency: "USD" },
     { code: "7203", name: "Toyota", assetClass: "jp_stock", quantity: 5, avgCost: 20, marketValueJpy: 100, currency: "JPY" },
+    { code: "NVDA", name: "Misclassified JP position", assetClass: "jp_stock", quantity: 1, avgCost: 1, marketValueJpy: 1, currency: "JPY" },
   ];
   const opportunity = {
     ticker: "NVDA", evidence: [evidence(), evidence({ id: "e2", sourceType: "research", metric: "fundamentals", sourceUrl: "https://www.sec.gov/example", scope: "COMPANY" }), evidence({ id: "e3", sourceType: "news", metric: "news:catalyst", scope: "INDUSTRY" })],

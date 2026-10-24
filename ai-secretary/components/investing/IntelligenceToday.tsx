@@ -68,6 +68,7 @@ function SemiconductorResearchPanel({ research }: { research: SemiconductorResea
   return <Card>
     <CardHeader title="保有半導体株 Research" hint="保有数量などは表示・保存しません" />
     {research.semiconductors.length === 0 ? <p className="text-xs text-sub">Theme Universeで半導体と明示された米国株の保有はありません。未知の銘柄分類は推測していません。</p> : <div className="space-y-3">
+      <p className="text-[10px] text-sub">Research生成: {research.generatedAt ? new Date(research.generatedAt).toLocaleString("ja-JP") : "未取得"}</p>
       {research.semiconductorIndex ? <p className="text-xs text-sub">SOXX業界指標: 20日変化 {research.semiconductorIndex.momentum20d === null ? "未取得" : `${research.semiconductorIndex.momentum20d.toFixed(2)}%`} · {research.semiconductorIndex.freshness}</p> : <p className="text-xs text-sub">半導体業界指標: 未取得</p>}
       {research.semiconductors.map((item) => <section key={item.ticker} className="rounded-xl border border-hairline p-3">
         <div className="flex flex-wrap items-baseline gap-2"><strong className="text-sm text-white">{item.ticker}</strong><span className="text-xs text-sub">{item.company}</span><span className="text-xs text-slate-300">価格 {item.price ? `${item.price.value} ${item.price.currency}` : "未取得"} · 観測 {item.price?.asOf ?? "未取得"} · Provider取得 {item.price?.fetchedAt ?? "未取得"} · 鮮度 {item.price?.freshness ?? "不明"}</span></div>
