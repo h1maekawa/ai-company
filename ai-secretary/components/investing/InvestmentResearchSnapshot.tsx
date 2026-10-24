@@ -8,7 +8,7 @@ import type { InvestmentResearchArtifact } from "@/app/lib/investing/intelligenc
 type SnapshotResponse = {
   today: IntelligenceToday | null;
   store?: {
-    status: "AVAILABLE" | "NOT_FOUND" | "UNAVAILABLE";
+    status: "AVAILABLE" | "NOT_FOUND" | "UNAVAILABLE" | "INVALID_DATA";
     storage: string;
     path: string;
     lastSuccessfulAt: string | null;
@@ -86,6 +86,8 @@ export function InvestmentResearchSnapshot() {
       <div className="px-5 pb-5"><p className="text-sm text-amber-300">保存データを読み込めませんでした。</p><p className="mt-1 text-xs text-sub">空データとして扱わず、Vaultの読取状態を確認してください。{store?.reason ? ` (${store.reason})` : ""}</p></div>
     ) : store?.status === "NOT_FOUND" ? (
       <div className="px-5 pb-5"><EmptyState title="保存データがありません" description={`${store.storage}: ${store.path}`} /></div>
+    ) : store?.status === "INVALID_DATA" ? (
+      <div className="px-5 pb-5"><p className="text-sm text-amber-300">保存データの形式が不正です。</p><p className="mt-1 text-xs text-sub">Vaultファイルを正常なResearchデータとして表示していません。</p></div>
     ) : !today ? (
       <div className="px-5 pb-5"><p className="text-sm text-sub">保存状態を確認できませんでした。</p></div>
     ) : !today.research ? (
