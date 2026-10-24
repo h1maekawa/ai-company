@@ -66,6 +66,27 @@ export type Department = {
 };
 
 export const DEPARTMENTS: Department[] = [
+  {
+    id: "career",
+    name: "Career / 就活SNS",
+    icon: "💼",
+    company: "personal",
+    secretaries: [{
+      id: "career-content",
+      name: "Career Content",
+      kind: "employee",
+      riskLevel: "R2",
+      permissions: permissions({ vault: { read: true, write: true }, publish: { draft: true } }),
+      role: "就活経験のナレッジ化とSNS下書き",
+      departmentRole: "execution",
+      knowledgeAccess: { mode: "read", domains: ["career"] },
+      prompt: "就活経験を事実と一般助言に分け、下書きだけを作成します。氏名・学校・企業などの匿名性確認を優先し、外部公開や予約投稿は行いません。",
+      memoryScope: ["memory/personal/career/"],
+      saveCategory: "career",
+      priority: 1,
+      skillIds: [],
+    }],
+  },
   // ─── Shared / Executive ───────────────────────────────────────
   {
     id: "executive",

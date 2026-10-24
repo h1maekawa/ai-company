@@ -20,3 +20,10 @@ build/
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 .obsidian/plugins/obsidian-git/data.json
+
+# Career generated images and samples
+memory/personal/career/images/
+memory/personal/career/samples/
+# Career Store is private local Vault data, including its backup, lock, and temp files.
+memory/personal/career/career-state.json*
+memory/personal/career/.week1-import.lock
