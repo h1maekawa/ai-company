@@ -8,6 +8,7 @@ import type { EmployeeReadModel } from "@/components/mobile-ceo/EmployeeWorkspac
 import type { WatchTheme } from "@/app/lib/investing/watchlist";
 import { displayStatus, formatRelativeTime } from "@/app/lib/mobile-ceo/controlCenter";
 import { latestRecommendations, useJson, type FundRecommendationView } from "../usePortfolio";
+import { InvestmentResearchSnapshot } from "@/components/investing/InvestmentResearchSnapshot";
 
 type ResearchItem = { id: string; topic: string; title: string; summary: string; sourceName?: string; sourceUrl?: string; fetchedAt: string; freshnessStatus: string; reliability: string };
 type ResearchResponse = { items: ResearchItem[] | null; health: Array<{ status: string; lastSuccessfulRun: string | null }> | null };
@@ -119,6 +120,7 @@ export default function InvestmentResearchPage() {
             </ul>
           )}
         </Card>
+        <InvestmentResearchSnapshot />
       </div>
     </InvestingShell>
   );
