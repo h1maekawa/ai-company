@@ -15,6 +15,7 @@ import {
   spreadPct,
 } from "./calc";
 import { getProvider, MarketCurrency } from "./provider";
+import { classifyMarketTimestamp } from "./trust";
 
 export interface MarketSnapshot {
   provider: string;
@@ -49,17 +50,7 @@ export function convertMarketValue(
   return { priceUsd: null, priceJpy: null };
 }
 
-export function classifyPriceFreshness(
-  basisAt: string | null,
-  now = new Date()
-): "FRESH" | "STALE" | "UNKNOWN" {
-  if (!basisAt) return "UNKNOWN";
-  const basisDate = /^\d{4}-\d{2}-\d{2}$/.test(basisAt)
-    ? new Date(`${basisAt}T00:00:00+09:00`)
-    : new Date(basisAt);
-  if (Number.isNaN(basisDate.getTime())) return "UNKNOWN";
-  return now.getTime() - basisDate.getTime() > 7 * 24 * 60 * 60 * 1000 ? "STALE" : "FRESH";
-}
+export const classifyPriceFreshness = classifyMarketTimestamp;
 
 export function trustedMarketValues(
   localPrice: number | null,

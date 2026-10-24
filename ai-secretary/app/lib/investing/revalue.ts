@@ -15,6 +15,7 @@
 
 import { DataFreshness, worstFreshness } from "../freshness";
 import { getProvider, MarketDataProvider } from "../fund/marketData/provider";
+import { classifyMarketTimestamp } from "../fund/marketData/trust";
 import { AssetClass, Position } from "./types";
 
 /** CSV由来の据え置き値であることを示す出所ラベル */
@@ -47,16 +48,12 @@ export function toMarketSymbol(position: Position): string | null {
   return null; // 投信・現金・その他は日足ソースを持たない
 }
 
-const MAX_MARKET_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-
 /** 時刻不明はUNKNOWN、7日より古い価格はSTALEとする。 */
 function priceFreshness(asOf: string | null): "delayed" | "daily" | "stale" | "none" {
   if (!asOf) return "none";
-  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(asOf)
-    ? new Date(`${asOf}T00:00:00+09:00`)
-    : new Date(asOf);
-  if (Number.isNaN(parsed.getTime())) return "none";
-  if (Date.now() - parsed.getTime() > MAX_MARKET_AGE_MS) return "stale";
+  const trust = classifyMarketTimestamp(asOf);
+  if (trust === "UNKNOWN") return "none";
+  if (trust === "STALE") return "stale";
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Tokyo",
     year: "numeric",
