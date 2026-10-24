@@ -11,6 +11,8 @@ const validRequest = (overrides = {}) => ({
   workerAgentId: "creator-content",
   actionType: "ANALYSIS",
   budgetYen: 0,
+  cumulativeBudgetYen: 0,
+  missionsInLast24Hours: 0,
   executionCount: 1,
   deadline: "2026-10-24T12:00:00.000Z",
   delegationDepth: 0,
@@ -48,6 +50,8 @@ test("INVESTのManagerとWorkerも既存Fund Agent IDに限定する", () => {
 
 test("予算・実行回数・期限の上限超過を拒否する", () => {
   assert.equal(authorizeBusinessDelegation(validRequest({ budgetYen: 1 }), NOW).reason, "BUDGET_LIMIT_EXCEEDED");
+  assert.equal(authorizeBusinessDelegation(validRequest({ cumulativeBudgetYen: 1 }), NOW).reason, "CUMULATIVE_BUDGET_LIMIT_EXCEEDED");
+  assert.equal(authorizeBusinessDelegation(validRequest({ missionsInLast24Hours: 6 }), NOW).reason, "MISSION_RATE_LIMIT_EXCEEDED");
   assert.equal(authorizeBusinessDelegation(validRequest({ executionCount: 4 }), NOW).reason, "EXECUTION_LIMIT_EXCEEDED");
   assert.equal(authorizeBusinessDelegation(validRequest({ deadline: "2026-10-25T00:00:01.000Z" }), NOW).reason, "DEADLINE_OUT_OF_BOUNDS");
 });

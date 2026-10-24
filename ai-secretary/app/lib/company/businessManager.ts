@@ -22,6 +22,10 @@ export type MicroBusinessManagerContract = {
   workerAgentIds: readonly string[];
   limits: {
     maxBudgetYenPerTask: number;
+    /** 直近24時間に作成した委任Missionの予算予約合計上限。 */
+    maxBudgetYenPer24Hours: number;
+    /** 同一事業で作成できるMission数。maxExecutionsPerTaskとは別の連続実行上限。 */
+    maxMissionsPer24Hours: number;
     maxExecutionsPerTask: number;
     maxDurationHours: number;
     maxDelegationDepth: 0;
@@ -40,7 +44,7 @@ export const MICRO_BUSINESS_REGISTRY: readonly MicroBusinessManagerContract[] = 
     status: "ready",
     managerAgentId: "personal-note",
     workerAgentIds: ["creator-research", "creator-content", "creator-kpi"],
-    limits: { maxBudgetYenPerTask: 0, maxExecutionsPerTask: 3, maxDurationHours: 24, maxDelegationDepth: 0 },
+    limits: { maxBudgetYenPerTask: 0, maxBudgetYenPer24Hours: 0, maxMissionsPer24Hours: 6, maxExecutionsPerTask: 3, maxDurationHours: 24, maxDelegationDepth: 0 },
     dataContracts: { kpi: "existing_performance_projection", revenue: "revenue_ledger", cost: "business_cost_ledger" },
   },
   {
@@ -50,7 +54,7 @@ export const MICRO_BUSINESS_REGISTRY: readonly MicroBusinessManagerContract[] = 
     // Agent IDやEmployeeAgent.kindは変更しない。
     managerAgentId: "personal-fund",
     workerAgentIds: ["fund-research"],
-    limits: { maxBudgetYenPerTask: 0, maxExecutionsPerTask: 2, maxDurationHours: 24, maxDelegationDepth: 0 },
+    limits: { maxBudgetYenPerTask: 0, maxBudgetYenPer24Hours: 0, maxMissionsPer24Hours: 4, maxExecutionsPerTask: 2, maxDurationHours: 24, maxDelegationDepth: 0 },
     dataContracts: { kpi: "existing_performance_projection", revenue: "investment_pnl_not_revenue", cost: "business_cost_ledger" },
   },
   {
@@ -58,7 +62,7 @@ export const MICRO_BUSINESS_REGISTRY: readonly MicroBusinessManagerContract[] = 
     status: "ready",
     managerAgentId: "personal-note",
     workerAgentIds: ["creator-content", "creator-research", "creator-kpi"],
-    limits: { maxBudgetYenPerTask: 0, maxExecutionsPerTask: 2, maxDurationHours: 24, maxDelegationDepth: 0 },
+    limits: { maxBudgetYenPerTask: 0, maxBudgetYenPer24Hours: 0, maxMissionsPer24Hours: 4, maxExecutionsPerTask: 2, maxDurationHours: 24, maxDelegationDepth: 0 },
     dataContracts: { kpi: "existing_performance_projection", revenue: "revenue_ledger", cost: "business_cost_ledger" },
   },
   {
@@ -66,7 +70,7 @@ export const MICRO_BUSINESS_REGISTRY: readonly MicroBusinessManagerContract[] = 
     status: "unassigned",
     managerAgentId: null,
     workerAgentIds: [],
-    limits: { maxBudgetYenPerTask: 0, maxExecutionsPerTask: 1, maxDurationHours: 24, maxDelegationDepth: 0 },
+    limits: { maxBudgetYenPerTask: 0, maxBudgetYenPer24Hours: 0, maxMissionsPer24Hours: 0, maxExecutionsPerTask: 1, maxDurationHours: 24, maxDelegationDepth: 0 },
     dataContracts: { kpi: "existing_performance_projection", revenue: "revenue_ledger", cost: "business_cost_ledger" },
   },
 ];
@@ -78,6 +82,10 @@ export type DelegationRequest = {
   workerAgentId: string;
   actionType: ActionType;
   budgetYen: number;
+  /** Execution Storeからサーバーが集計した直近24hの予算予約。 */
+  cumulativeBudgetYen: number;
+  /** Execution Storeからサーバーが集計した直近24hの同一事業Mission数。 */
+  missionsInLast24Hours: number;
   executionCount: number;
   deadline: string;
   /** 初回委任のみ許可。再委任は別の人間承認済み契約がない限り禁止。 */
@@ -128,6 +136,12 @@ export function authorizeBusinessDelegation(
   }
   if (!Number.isFinite(request.budgetYen) || request.budgetYen < 0 || request.budgetYen > business.limits.maxBudgetYenPerTask) {
     return { allowed: false, reason: "BUDGET_LIMIT_EXCEEDED" };
+  }
+  if (!Number.isFinite(request.cumulativeBudgetYen) || request.cumulativeBudgetYen < 0 || request.cumulativeBudgetYen + request.budgetYen > business.limits.maxBudgetYenPer24Hours) {
+    return { allowed: false, reason: "CUMULATIVE_BUDGET_LIMIT_EXCEEDED" };
+  }
+  if (!Number.isInteger(request.missionsInLast24Hours) || request.missionsInLast24Hours < 0 || request.missionsInLast24Hours >= business.limits.maxMissionsPer24Hours) {
+    return { allowed: false, reason: "MISSION_RATE_LIMIT_EXCEEDED" };
   }
   if (!Number.isInteger(request.executionCount) || request.executionCount < 1 || request.executionCount > business.limits.maxExecutionsPerTask) {
     return { allowed: false, reason: "EXECUTION_LIMIT_EXCEEDED" };
